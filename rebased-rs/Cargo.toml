@@ -1,0 +1,20 @@
+[package]
+name = "rebased-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A git client UI inspired by Rebased, built with Rust + GPUI"
+
+[dependencies]
+gpui-kit = { version = "0.6.1", features = ["component", "assets"] }
+gpui-pre = { version = "=0.3.3" }
+gpui-pre-platform = { version = "=0.3.3", features = [
+    "font-kit",
+    "x11",
+    "wayland",
+    "runtime_shaders",
+] }
+anyhow = "1"
+chrono = "0.4"
+
+[profile.dev]
+opt-level = 1

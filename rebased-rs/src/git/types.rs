@@ -1,0 +1,150 @@
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CommitId(pub String);
+
+impl CommitId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn short(&self) -> &str {
+        &self.0[..self.0.len().min(7)]
+    }
+}
+
+impl fmt::Display for CommitId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Author {
+    pub name: String,
+    pub email: String,
+}
+
+impl fmt::Display for Author {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Commit {
+    pub id: CommitId,
+    pub parents: Vec<CommitId>,
+    pub author: Author,
+    pub time: i64,
+    pub subject: String,
+    pub body: String,
+    pub refs: Vec<String>,
+}
+
+impl Commit {
+    pub fn is_root(&self) -> bool {
+        self.parents.is_empty()
+    }
+
+    pub fn is_merge(&self) -> bool {
+        self.parents.len() > 1
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+    Untracked,
+    Conflicted,
+}
+
+impl ChangeStatus {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ChangeStatus::Added => "Added",
+            ChangeStatus::Modified => "Modified",
+            ChangeStatus::Deleted => "Deleted",
+            ChangeStatus::Renamed => "Renamed",
+            ChangeStatus::Copied => "Copied",
+            ChangeStatus::TypeChanged => "Type changed",
+            ChangeStatus::Untracked => "Untracked",
+            ChangeStatus::Conflicted => "Conflicted",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            ChangeStatus::Added => "A",
+            ChangeStatus::Modified => "M",
+            ChangeStatus::Deleted => "D",
+            ChangeStatus::Renamed => "R",
+            ChangeStatus::Copied => "C",
+            ChangeStatus::TypeChanged => "T",
+            ChangeStatus::Untracked => "?",
+            ChangeStatus::Conflicted => "U",
+        }
+    }
+
+    pub fn from_letter(c: char) -> Self {
+        match c {
+            'A' => ChangeStatus::Added,
+            'D' => ChangeStatus::Deleted,
+            'R' => ChangeStatus::Renamed,
+            'C' => ChangeStatus::Copied,
+            'T' => ChangeStatus::TypeChanged,
+            '?' | '!' => ChangeStatus::Untracked,
+            'U' => ChangeStatus::Conflicted,
+            _ => ChangeStatus::Modified,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub status: ChangeStatus,
+    pub path: String,
+    pub original_path: Option<String>,
+    pub staged: bool,
+}
+
+impl Change {
+    pub fn display_path(&self) -> String {
+        match &self.original_path {
+            Some(orig) => format!("{orig} -> {}", self.path),
+            None => self.path.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    pub name: String,
+    pub full_name: String,
+    pub commit_id: CommitId,
+    pub is_head: bool,
+    pub is_remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+impl Branch {
+    pub fn is_current(&self) -> bool {
+        self.is_head && !self.is_remote
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RepoStatus {
+    pub head_branch: String,
+    pub unborn: bool,
+    pub changes: Vec<Change>,
+    pub ahead: u32,
+    pub behind: u32,
+}

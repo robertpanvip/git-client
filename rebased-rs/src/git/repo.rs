@@ -1,0 +1,153 @@
+use std::path::{Path, PathBuf};
+
+use super::branches;
+use super::command::GitCommand;
+use super::error::{GitError, Result};
+use super::ops;
+use super::status::STATUS_ARGS;
+use super::types::{Branch, Change, Commit, RepoStatus};
+
+pub struct Repository {
+    cmd: GitCommand,
+}
+
+impl Repository {
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
+        let cmd = GitCommand::new(&path);
+        let output = cmd.execute(&["rev-parse", "--is-inside-work-tree"])?;
+        if !output.success || output.stdout.trim() != "true" {
+            return Err(GitError::with_stderr(
+                format!("{} is not a git repository", path.display()),
+                output.stderr,
+            ));
+        }
+        Ok(Self { cmd })
+    }
+
+    pub fn root(&self) -> &Path {
+        self.cmd.workdir()
+    }
+
+    pub fn log(&self, limit: usize) -> Result<Vec<Commit>> {
+        let args = super::log::log_args(limit, None);
+        let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let output = self.cmd.execute(&args)?;
+        if !output.success {
+            if output.stderr.contains("does not have any commits yet")
+                || output.stderr.contains("bad revision 'HEAD'")
+            {
+                return Ok(Vec::new());
+            }
+            return Err(GitError::with_stderr("git log failed", output.stderr));
+        }
+        Ok(super::log::parse_log(&output.stdout))
+    }
+
+    pub fn status(&self) -> Result<RepoStatus> {
+        let output = self.cmd.execute(&STATUS_ARGS)?;
+        if !output.success {
+            return Err(GitError::with_stderr("git status failed", output.stderr));
+        }
+        Ok(super::status::parse_status(&output.stdout))
+    }
+
+    pub fn branches(&self) -> Result<Vec<Branch>> {
+        let args = branches::ref_args();
+        let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let output = self.cmd.execute(&args)?;
+        if !output.success {
+            return Err(GitError::with_stderr("git for-each-ref failed", output.stderr));
+        }
+        Ok(branches::parse_refs(&output.stdout))
+    }
+
+    pub fn current_branch_name(&self) -> Result<String> {
+        let output = self.cmd.execute(&["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if output.success {
+            Ok(output.stdout.trim().to_string())
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    pub fn branches_containing(&self, commit: &str) -> Result<Vec<String>> {
+        let output = self.cmd.execute(&["branch", "--format=%(refname:short)", "--contains", commit])?;
+        if !output.success {
+            return Err(GitError::with_stderr(
+                "git branch --contains failed",
+                output.stderr,
+            ));
+        }
+        Ok(output
+            .stdout
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    pub fn add(&self, paths: &[&str]) -> Result<()> {
+        ops::add(&self.cmd, paths)
+    }
+
+    pub fn add_all(&self) -> Result<()> {
+        ops::add_all(&self.cmd)
+    }
+
+    pub fn show_files(&self, commit: &str) -> Result<Vec<Change>> {
+        ops::show_files(&self.cmd, commit)
+    }
+
+    pub fn reset(&self, paths: &[&str]) -> Result<()> {
+        ops::reset(&self.cmd, paths)
+    }
+
+    pub fn commit(&self, message: &str, amend: bool) -> Result<()> {
+        ops::commit(&self.cmd, message, amend)
+    }
+
+    pub fn commit_paths(&self, message: &str, paths: &[&str], amend: bool) -> Result<()> {
+        ops::commit_paths(&self.cmd, message, paths, amend)
+    }
+
+    pub fn push(&self, branch: &str, set_upstream: bool) -> Result<()> {
+        ops::push(&self.cmd, "origin", branch, set_upstream)
+    }
+
+    pub fn pull(&self, branch: &str) -> Result<()> {
+        ops::pull(&self.cmd, "origin", branch)
+    }
+
+    pub fn fetch(&self) -> Result<()> {
+        ops::fetch(&self.cmd, None)
+    }
+
+    pub fn checkout(&self, target: &str) -> Result<()> {
+        ops::checkout(&self.cmd, target)
+    }
+
+    pub fn create_branch(&self, name: &str, start_point: Option<&str>) -> Result<()> {
+        ops::create_branch(&self.cmd, name, start_point)
+    }
+
+    pub fn delete_branch(&self, name: &str, force: bool) -> Result<()> {
+        ops::delete_branch(&self.cmd, name, force)
+    }
+
+    pub fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()> {
+        ops::stash_push(&self.cmd, message, include_untracked)
+    }
+
+    pub fn stash_pop(&self) -> Result<()> {
+        ops::stash_pop(&self.cmd)
+    }
+
+    pub fn discard_changes(&self, path: &str) -> Result<()> {
+        ops::discard_changes(&self.cmd, path)
+    }
+
+    pub fn remove_untracked(&self, path: &str) -> Result<()> {
+        ops::remove_untracked(&self.cmd, path)
+    }
+}
