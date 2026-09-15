@@ -19,8 +19,12 @@ chrono = "0.4"
 opt-level = 1
 
 [profile.release]
-opt-level = 3
+# 体积优先：z 按尺寸启发式优化，配合 thin LTO + strip + abort 得到最小产物。
+# diff/log 解析等在后台线程执行，体积模式的性能影响对交互无感。
+opt-level = "z"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
-panic = "unwind"
+# abort 而非 unwind：去掉解包代码与 unwind 表显著减小体积。
+# panic hook 在 abort 前仍会被调用，panic.log 崩溃兜底保持有效。
+panic = "abort"
