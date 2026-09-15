@@ -9,7 +9,7 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants, DropdownButton},
     input::Textarea,
     list::List,
-    menu::{ContextMenuExt, PopupMenuItem},
+    menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
     ActiveTheme,
 };
 
@@ -72,7 +72,7 @@ impl AppView {
             .child(
                 DropdownButton::new("branch-menu")
                     .button(Button::new("branch-button").ghost().label(branch_label))
-                    .dropdown_menu(move |menu, _window, _cx| {
+                    .dropdown_menu(move |menu, window, cx| {
                         let mut result = menu;
                         // 本地分支：点击切换，当前分支打勾并展示 tracking 状态。
                         for branch in branch_entries.iter().filter(|b| !b.is_remote) {
@@ -285,63 +285,67 @@ impl AppView {
                                 );
                             }
                         }
-                        // 远程分支：checkout / Pull into / Rebase onto。
-                        let remotes: Vec<&Branch> =
+                        // 远程分支：按 remote 分组为树形子菜单
+                        // （组 = remote 名，组内 = 分支 → 操作子菜单）。
+                        let remote_branches: Vec<&Branch> =
                             branch_entries.iter().filter(|b| b.is_remote).collect();
-                        if !remotes.is_empty() {
+                        if !remote_branches.is_empty() {
+                            // 组闭包是 move，需绑定到本函数体的局部值，
+                            // 避免捕获外层 Fn 闭包环境里的 weak/current。
+                            let weak = weak.clone();
+                            let current = current.clone();
                             result = result.separator();
-                            result = result.item(PopupMenuItem::label("Remote"));
-                            for branch in remotes {
-                                let name = branch.name.clone();
-                                result = result.item(
-                                    PopupMenuItem::new(format!("⇥ Checkout {name}")).on_click({
-                                        let weak = weak.clone();
+                            result = result.item(PopupMenuItem::label("Remote branches"));
+                            // 分组顺序：先 remote_list（git remote -v 输出序），再补缺失组。
+                            let mut groups: Vec<String> = remote_list
+                                .iter()
+                                .map(|remote| remote.name.clone())
+                                .collect();
+                            for branch in &remote_branches {
+                                if let Some((group, _)) = branch.name.split_once('/') {
+                                    let group = group.to_string();
+                                    if !groups.contains(&group) {
+                                        groups.push(group);
+                                    }
+                                }
+                            }
+                            for group in groups {
+                                let prefix = format!("{group}/");
+                                let names: Vec<String> = remote_branches
+                                    .iter()
+                                    .filter(|b| b.name.starts_with(&prefix))
+                                    .map(|b| b.name.clone())
+                                    .collect();
+                                if names.is_empty() {
+                                    continue;
+                                }
+                                // 每轮迭代 clone 独立副本供组闭包 move 捕获。
+                                let group_weak = weak.clone();
+                                let group_current = current.clone();
+                                result = result.submenu(group, window, cx, move |menu, window, cx| {
+                                    let mut menu = menu;
+                                    for name in &names {
                                         let name = name.clone();
-                                        move |_, _, cx| {
-                                            let _ = weak.update(cx, |this, cx| {
-                                                this.checkout_branch(&name, cx)
-                                            });
-                                        }
-                                    }),
-                                );
-                                let pull_label = format!(
-                                    "⇄ Pull {name} into {}",
-                                    current.clone().unwrap_or_else(|| "HEAD".to_string())
-                                );
-                                result = result.item(PopupMenuItem::new(pull_label).on_click({
-                                    let weak = weak.clone();
-                                    let name = name.clone();
-                                    move |_, _, cx| {
-                                        let _ = weak.update(cx, |this, cx| {
-                                            this.pull_branch_into_current(name.clone(), cx)
-                                        });
-                                    }
-                                }));
-                                result = result.item(
-                                    PopupMenuItem::new(format!("⇅ Rebase onto {name}…"))
-                                        .on_click({
-                                            let weak = weak.clone();
-                                            let name = name.clone();
-                                            move |_, _, cx| {
-                                                let _ = weak.update(cx, |this, cx| {
-                                                    this.rebase_current_onto(name.clone(), cx)
-                                                });
+                                        // 组内条目显示去掉 remote 前缀的短名，操作用全名。
+                                        let short = name
+                                            .strip_prefix(&prefix)
+                                            .unwrap_or(&name)
+                                            .to_string();
+                                        menu = menu.submenu(short, window, cx, {
+                                            let current = group_current.clone();
+                                            let weak = group_weak.clone();
+                                            move |menu, _window, _cx| {
+                                                remote_branch_actions(
+                                                    menu,
+                                                    &name,
+                                                    current.clone(),
+                                                    weak.clone(),
+                                                )
                                             }
-                                        }),
-                                );
-                                let compare_label = format!(
-                                    "⇋ Compare {name} with {}",
-                                    current.clone().unwrap_or_else(|| "HEAD".to_string())
-                                );
-                                result = result.item(PopupMenuItem::new(compare_label).on_click({
-                                    let weak = weak.clone();
-                                    let name = name.clone();
-                                    move |_, _, cx| {
-                                        let _ = weak.update(cx, |this, cx| {
-                                            this.open_branch_compare(name.clone(), cx)
                                         });
                                     }
-                                }));
+                                    menu
+                                });
                             }
                         }
                         // 远程仓库管理：Add / Prune / Remove。
@@ -1135,4 +1139,57 @@ impl AppView {
                 bar.child(div().text_color(muted).child(format!("↓{}", self.state.behind)))
             })
     }
+}
+
+/// 远程分支的操作子菜单：Checkout / Pull into 当前分支 / Rebase onto / Compare。
+fn remote_branch_actions(
+    menu: PopupMenu,
+    name: &str,
+    current: Option<String>,
+    weak: WeakEntity<AppView>,
+) -> PopupMenu {
+    let menu = menu.item(
+        PopupMenuItem::new(format!("⇥ Checkout {name}")).on_click({
+            let weak = weak.clone();
+            let name = name.to_string();
+            move |_, _, cx| {
+                let _ = weak.update(cx, |this, cx| this.checkout_branch(&name, cx));
+            }
+        }),
+    );
+    let pull_label = format!(
+        "⇄ Pull {name} into {}",
+        current.clone().unwrap_or_else(|| "HEAD".to_string())
+    );
+    let menu = menu.item(PopupMenuItem::new(pull_label).on_click({
+        let weak = weak.clone();
+        let name = name.to_string();
+        move |_, _, cx| {
+            let _ = weak.update(cx, |this, cx| {
+                this.pull_branch_into_current(name.clone(), cx)
+            });
+        }
+    }));
+    let menu = menu.item(
+        PopupMenuItem::new(format!("⇅ Rebase onto {name}…")).on_click({
+            let weak = weak.clone();
+            let name = name.to_string();
+            move |_, _, cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    this.rebase_current_onto(name.clone(), cx)
+                });
+            }
+        }),
+    );
+    let compare_label = format!(
+        "⇋ Compare {name} with {}",
+        current.unwrap_or_else(|| "HEAD".to_string())
+    );
+    menu.item(PopupMenuItem::new(compare_label).on_click({
+        let weak = weak.clone();
+        let name = name.to_string();
+        move |_, _, cx| {
+            let _ = weak.update(cx, |this, cx| this.open_branch_compare(name.clone(), cx));
+        }
+    }))
 }

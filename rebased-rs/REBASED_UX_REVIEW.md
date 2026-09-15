@@ -30,7 +30,7 @@
 | 功能 | Rebased | rebased-rs | 状态 | 差距 |
 |---|---|---|---|---|
 | Commit Graph 主列表 | 居中 graph + 行内徽章 | `commit_list.rs` lane_canvas 真 graph 渲染 + 三色 ref 徽章 + subject/author/time | ✅ | — |
-| Branch / Tag 入口 | Git Branches / Tags 弹层 | 工具栏 Branch（含 Remote 分组）/ Tag / Filter 三个下拉 | 🟡 | 无树形分组（origin/* 未折叠） |
+| Branch / Tag 入口 | Git Branches / Tags 弹层 | 工具栏 Branch（含 Remote 分组）/ Tag / Filter 三个下拉 | ✅ | 本轮新增树形分组：远程分支按 remote 折叠（`origin` → 分支 → 操作两级子菜单，组内显示去前缀短名） |
 | Commit Detail | 右侧 meta + 父子 | `detail_view.rs` 完整时间 + author.email + 父提交导航 | ✅ | — |
 | Changes / Composer / Status | 变更双分组 + 提交框 + 状态栏 | Changes 双分组 + Composer（Amend/Shelve）+ 状态栏（repo + branch + ↑↓ ahead/behind） | ✅ | — |
 
@@ -158,13 +158,13 @@
 1. ~~**Graph 行内 ref 徽章可交互**~~ ✅ 已完成：`ref_badge()` 挂 `context_menu`（commit_list.rs），按 ref 类型区分——tag → 删除确认；本地分支 → Checkout（当前分支打 ✓）/ Push（无 upstream 自动 --set-upstream）/ Rename… / Delete…（确认框）；远程分支 → Checkout tracking / Pull into current / Compare。本地/远程判定经 `state.branch_entries` 查询，无匹配按远程降级。徽章均带唯一 element id（避免 CodeLocation 菜单 id 冲突）。
 2. ~~**两个最高频肌肉记忆**~~ ✅ 已完成：Ctrl+K 聚焦 Composer（FocusComposer action + ctrl-k 绑定 + TextareaState::focus，actions.rs）；双击 commit = Checkout（行级 on_click + click_count() >= 2 → checkout_commit，与单击选中互不干扰）。
 
-## D. P1（应继续补齐的 UX）——前四项 ✅ 本轮完成
+## D. P1（应继续补齐的 UX）——前五项 ✅ 本轮完成
 
 1. ~~并排 diff 视图（unified / side-by-side 切换）~~ ✅ 已完成（P1-1）：diff 面板头部切换按钮 + `side_by_side_rows` 纯函数配对（Deleted/Added 段 zip、空半行补位、Context 左右同行），4 个单元测试。
 2. ~~push / pull / fetch 的进度条与取消~~ ✅ 已完成（P1-2）：git 层 `ProgressHandle`（stderr 读线程写最新进度行）+ `CancelToken`（100ms `try_wait` 轮询 + kill）+ `run_with_stdin`；UI 层 `run_op_progress` 后台执行 + 250ms 轮询刷新状态栏进度文本，Cancel 按钮置位即取消，8 行 stderr tail 用于失败报告。
 3. ~~hunk / 行级 staging（diff 面板内选块入暂存）~~ ✅ 已完成（P1-3）：`hunk_patch()` 从解析后 FileDiff 重建单 hunk patch（含文件级头、new/deleted/rename 路径处理），`apply_hunk_to_index` / `revert_hunk_from_index` 走 `git apply --cached [-R] -`；diff 面板 hunk 头行内嵌 Stage / Unstage 按钮（`DiffSource` 区分来源，Commit 只读），操作后重开当前 diff 刷新。已知限制：`\ No newline at end of file` 标记在解析时丢弃，跨文件末尾 hunk 暂存可能失败。
 4. ~~set upstream + remote 管理 UI（add / remove / prune）~~ ✅ 已完成（P1-4）：git 层新增 `Remote` 类型与 `remote_list`（解析 `git remote -v` fetch 行）/ `remote_add` / `remote_remove` / `remote_prune` / `set_upstream`（`--set-upstream-to=`）/ `unset_upstream`，`RepoData.remotes` 随刷新下发；UI 层 branch 下拉菜单新增——当前分支与非当前分支各自的 "⇅ Set upstream… / ⇅ Unset upstream"（Unset 仅在有上游时显示），尾部 "Remotes" 管理分组（"＋ Add remote…" 双输入框对话框 `PromptKind::AddRemote` + `prompt_input2`，每个 remote 显示 `name → url` 与 "⇣ Prune" / "✕ Remove" 确认框 `ConfirmAction::RemoveRemote`）。集成测试 `remote_and_upstream_workflow`（裸仓库推拉 + prune 过期引用全流程）。
-5. 分支下拉树形分组（origin/* 折叠）。
+5. ~~分支下拉树形分组（origin/* 折叠）~~ ✅ 已完成（P1-5）：branch 下拉菜单的远程分支区重构为两级子菜单树——第一级按 remote 名分组（顺序取 `git remote -v` 输出序），第二级为该 remote 下的各分支（组内条目显示去掉 `{remote}/` 前缀的短名），分支节点再展开操作子菜单（Checkout / Pull into / Rebase onto / Compare，提取为 `remote_branch_actions` 辅助函数）。实现基于 gpui-component `PopupMenu::submenu`（builder 内 `&mut Context<PopupMenu>` 可用）；闭包层级的坑：`Fn + 'static` 约束下，组/分支闭包必须 move 捕获 owned 数据且体内只 clone 使用，跨迭代需每轮 clone 独立副本避免 E0382。
 6. Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）。
 7. 快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键。
 8. tag 消息编辑 / push tags。
@@ -186,4 +186,4 @@
 3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单。
 4. **P0 清零后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout，全部能在与 Rebased 相同的位置找到相同语义的入口。
 
-剩余差距（3 窗格合并器、快捷键广度、P1 后五项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前四项（并排 diff、进度+取消、hunk 级 staging、set upstream + remote 管理）已与 Rebased 对齐，下一步按 P1-5（分支下拉树形分组）继续推进。
+剩余差距（3 窗格合并器、快捷键广度、P1 后四项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前五项（并排 diff、进度+取消、hunk 级 staging、set upstream + remote 管理、分支树形分组）已与 Rebased 对齐，下一步按 P1-6（Rebase todo 拖拽排序、autosquash）继续推进。
