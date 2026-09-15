@@ -5,7 +5,7 @@ use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, FileDiff, Remote, RepoStatus, StashEntry, Tag};
+use super::types::{Branch, Change, Commit, FileDiff, ReflogEntry, Remote, RepoStatus, StashEntry, Tag};
 use super::{blame, conflict, diff, merge, rebase};
 use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
@@ -331,20 +331,33 @@ impl Repository {
         ops::delete_tag(&self.cmd, name)
     }
 
-    pub fn diff_unstaged(&self, path: Option<&str>) -> Result<String> {
-        diff::diff_unstaged(&self.cmd, path)
+    pub fn push_tag(&self, tag: &str) -> Result<()> {
+        ops::push_tag(&self.cmd, "origin", tag)
     }
 
-    pub fn diff_staged(&self, path: Option<&str>) -> Result<String> {
-        diff::diff_staged(&self.cmd, path)
+    pub fn recreate_tag(&self, name: &str, commit: &str, message: &str) -> Result<()> {
+        ops::recreate_tag(&self.cmd, name, commit, message)
     }
 
-    pub fn diff_head(&self, path: Option<&str>) -> Result<String> {
-        diff::diff_head(&self.cmd, path)
+    pub fn diff_unstaged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        diff::diff_unstaged(&self.cmd, path, ignore_ws)
     }
 
-    pub fn show_diff(&self, commit: &str, path: Option<&str>) -> Result<String> {
-        diff::show_diff(&self.cmd, commit, path)
+    pub fn diff_staged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        diff::diff_staged(&self.cmd, path, ignore_ws)
+    }
+
+    pub fn diff_head(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        diff::diff_head(&self.cmd, path, ignore_ws)
+    }
+
+    pub fn show_diff(
+        &self,
+        commit: &str,
+        path: Option<&str>,
+        ignore_ws: bool,
+    ) -> Result<String> {
+        diff::show_diff(&self.cmd, commit, path, ignore_ws)
     }
 
     pub fn blame(&self, rev: &str, path: &str) -> Result<Vec<super::BlameGroup>> {
@@ -460,6 +473,11 @@ impl Repository {
 
     pub fn stash_list(&self) -> Result<Vec<StashEntry>> {
         ops::stash_list(&self.cmd)
+    }
+
+    /// 轻量操作历史（HEAD reflog）。
+    pub fn reflog(&self, limit: usize) -> Result<Vec<ReflogEntry>> {
+        ops::reflog(&self.cmd, limit)
     }
 
     pub fn stash_apply_at(&self, index: usize) -> Result<()> {

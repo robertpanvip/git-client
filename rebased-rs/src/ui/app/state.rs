@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rebased_rs::git::{
     BlameGroup, Branch, CancelToken, Change, Commit, ConflictFile, ConflictHunk, FileDiff,
-    HunkChoice, RebaseAction, Remote, StashEntry, Tag,
+    HunkChoice, RebaseAction, ReflogEntry, Remote, StashEntry, Tag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +16,7 @@ pub(crate) enum SidebarMode {
     Conflicts,
     Shelve,
     History,
+    Reflog,
 }
 
 /// 当前 diff 面板内容来源，决定 hunk 按钮行为：
@@ -32,6 +33,8 @@ pub(crate) enum DiffSource {
 pub(crate) enum PromptKind {
     NewBranch { start_point: Option<String> },
     NewTag { commit_id: String },
+    /// 编辑已存在 tag 的 annotated 消息（git 以同 commit `-f` 重建实现）。
+    EditTag { name: String, commit_id: String },
     Stash,
     Reword { commit_id: String },
     RenameBranch,
@@ -183,6 +186,10 @@ pub(crate) struct AppState {
     pub(crate) diff_side_by_side: bool,
     /// 当前 diff 面板的内容来源（决定 hunk 暂存按钮行为；None = 无 diff）。
     pub(crate) diff_source: Option<DiffSource>,
+    /// diff 是否忽略空白变化（`git diff -w`）。
+    pub(crate) ignore_whitespace: bool,
+    /// 当前 commit diff 的 commit id（切换 whitespace 开关后重载用）。
+    pub(crate) diff_commit: Option<String>,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
@@ -199,6 +206,8 @@ pub(crate) struct AppState {
     pub(crate) shelves: Vec<StashEntry>,
     pub(crate) history_path: String,
     pub(crate) history_commits: Vec<Commit>,
+    /// reflog 轻量视图的条目缓存（打开面板时刷新）。
+    pub(crate) reflog_entries: Vec<ReflogEntry>,
     pub(crate) status_message: String,
     pub(crate) error: Option<String>,
     pub(crate) loading: bool,
@@ -208,6 +217,8 @@ pub(crate) struct AppState {
     pub(crate) progress_text: Option<String>,
     /// 当前可取消操作的取消令牌（Some = 状态栏显示取消按钮）。
     pub(crate) cancel_token: Option<CancelToken>,
+    /// Alt+` 唤起的 VCS 操作快切弹层是否可见（与 prompt 互斥）。
+    pub(crate) vcs_palette: bool,
     /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
     pub(crate) compare_mine: String,
     pub(crate) compare_theirs: String,
@@ -243,6 +254,8 @@ impl Default for AppState {
             diff_editing: false,
             diff_side_by_side: false,
             diff_source: None,
+            ignore_whitespace: false,
+            diff_commit: None,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
@@ -258,12 +271,14 @@ impl Default for AppState {
             shelves: Vec::new(),
             history_path: String::new(),
             history_commits: Vec::new(),
+            reflog_entries: Vec::new(),
             status_message: "Ready".to_string(),
             error: None,
             loading: true,
             busy: None,
             progress_text: None,
             cancel_token: None,
+            vcs_palette: false,
             compare_mine: String::new(),
             compare_theirs: String::new(),
             compare_ahead: Vec::new(),

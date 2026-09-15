@@ -119,7 +119,7 @@ fn large_repo_read_benchmarks() {
     assert_eq!(data.commits.len(), DEFAULT_LOG_LIMIT);
 
     let start = Instant::now();
-    let diff = repo.diff_head(None).expect("diff head");
+    let diff = repo.diff_head(None, false).expect("diff head");
     assert_within("diff_head", start.elapsed(), BUDGET);
     assert!(diff.is_empty());
 

@@ -169,7 +169,7 @@ pub(crate) fn open_staged_diff(
     state: &mut AppState,
     path: Option<String>,
 ) -> Result<(), GitError> {
-    let stdout = repo.diff_staged(path.as_deref())?;
+    let stdout = repo.diff_staged(path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
     state.diff_title = match &path {
         Some(p) => format!("Diff · staged · {p}"),
@@ -178,6 +178,7 @@ pub(crate) fn open_staged_diff(
     state.diff_path = path;
     state.diff_editing = false;
     state.diff_source = Some(DiffSource::Staged);
+    state.diff_commit = None;
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -188,7 +189,7 @@ pub(crate) fn open_unstaged_diff(
     state: &mut AppState,
     path: Option<String>,
 ) -> Result<(), GitError> {
-    let stdout = repo.diff_unstaged(path.as_deref())?;
+    let stdout = repo.diff_unstaged(path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
     state.diff_title = match &path {
         Some(p) => format!("Diff · unstaged · {p}"),
@@ -208,7 +209,7 @@ pub(crate) fn open_commit_diff(
     path: Option<String>,
 ) -> Result<(), GitError> {
     let short = &commit_id[..commit_id.len().min(7)];
-    let stdout = repo.show_diff(&commit_id, path.as_deref())?;
+    let stdout = repo.show_diff(&commit_id, path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
     state.diff_title = match &path {
         Some(p) => format!("{short} · {p}"),
@@ -217,6 +218,7 @@ pub(crate) fn open_commit_diff(
     state.diff_path = None;
     state.diff_editing = false;
     state.diff_source = Some(DiffSource::Commit);
+    state.diff_commit = Some(commit_id);
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -242,6 +244,13 @@ pub(crate) fn open_blame(
     state.blame_groups = repo.blame("HEAD", &path)?;
     state.blame_path = path;
     state.sidebar = SidebarMode::Blame;
+    state.error = None;
+    Ok(())
+}
+
+pub(crate) fn open_reflog(repo: &dyn GitBackend, state: &mut AppState) -> Result<(), GitError> {
+    state.reflog_entries = repo.reflog(200)?;
+    state.sidebar = SidebarMode::Reflog;
     state.error = None;
     Ok(())
 }
@@ -489,14 +498,14 @@ mod tests {
         .unwrap();
 
         // U3 上下文下两处相距较远的改动应拆成两个 hunk
-        let stdout = repo.diff_unstaged(Some("a.txt")).unwrap();
+        let stdout = repo.diff_unstaged(Some("a.txt"), false).unwrap();
         let files = parse_unified_diff(&stdout);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].hunks.len(), 2);
 
         // Stage 第一个 hunk：只有 CHANGED1 进入 index
         repo.apply_hunk_to_index(&files[0], 0).unwrap();
-        let staged = parse_unified_diff(&repo.diff_staged(Some("a.txt")).unwrap());
+        let staged = parse_unified_diff(&repo.diff_staged(Some("a.txt"), false).unwrap());
         assert_eq!(staged.len(), 1);
         assert_eq!(staged[0].hunks.len(), 1);
         let staged_text: Vec<&str> = staged[0].hunks[0]
@@ -509,7 +518,7 @@ mod tests {
 
         // Unstage 该 hunk：index 回到 HEAD，staged diff 清空
         repo.revert_hunk_from_index(&staged[0], 0).unwrap();
-        let staged_after = repo.diff_staged(Some("a.txt")).unwrap();
+        let staged_after = repo.diff_staged(Some("a.txt"), false).unwrap();
         assert!(
             parse_unified_diff(&staged_after)
                 .iter()

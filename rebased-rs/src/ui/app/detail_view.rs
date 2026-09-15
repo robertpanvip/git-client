@@ -364,6 +364,23 @@ impl AppView {
                                     );
                                 })),
                         )
+                    })
+                    .when(!is_head, |row| {
+                        row.child(
+                            Button::new("detail-compare")
+                                .ghost()
+                                .compact()
+                                .label("⇄ Compare")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    let id = this
+                                        .state
+                                        .selected
+                                        .as_ref()
+                                        .map(|c| c.id.0.clone())
+                                        .unwrap_or_default();
+                                    this.open_branch_compare(id, cx);
+                                })),
+                        )
                     }),
             )
             .child(

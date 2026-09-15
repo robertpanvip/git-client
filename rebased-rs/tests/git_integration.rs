@@ -433,11 +433,11 @@ fn diff_parsing() {
 
     let repo = Repository::open(&temp.path).expect("open repo");
 
-    let empty = repo.diff_head(None).expect("diff head clean");
+    let empty = repo.diff_head(None, false).expect("diff head clean");
     assert!(parse_unified_diff(&empty).is_empty());
 
     temp.write("file.txt", "one\nTWO\nthree\n");
-    let unstaged = repo.diff_unstaged(None).expect("diff unstaged");
+    let unstaged = repo.diff_unstaged(None, false).expect("diff unstaged");
     let files = parse_unified_diff(&unstaged);
     assert_eq!(files.len(), 1);
     let file = &files[0];
@@ -464,7 +464,7 @@ fn diff_parsing() {
     assert_eq!(lines[3].new_no, Some(3));
 
     repo.add(&["file.txt"]).expect("add");
-    let staged = repo.diff_staged(None).expect("diff staged");
+    let staged = repo.diff_staged(None, false).expect("diff staged");
     let files = parse_unified_diff(&staged);
     assert_eq!(files.len(), 1);
     assert!(files[0]
@@ -474,10 +474,10 @@ fn diff_parsing() {
         .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO"));
 
     repo.commit("update file", false).expect("commit");
-    let after = repo.diff_head(None).expect("diff head after commit");
+    let after = repo.diff_head(None, false).expect("diff head after commit");
     assert!(parse_unified_diff(&after).is_empty());
 
-    let shown = repo.show_diff("HEAD", None).expect("show diff");
+    let shown = repo.show_diff("HEAD", None, false).expect("show diff");
     let files = parse_unified_diff(&shown);
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, "file.txt");
@@ -502,7 +502,7 @@ fn new_file_diff_marks_added() {
     temp.write("brand_new.txt", "brand\nnew\n");
 
     let repo = Repository::open(&temp.path).expect("open repo");
-    let out = repo.diff_unstaged(Some("brand_new.txt")).expect("diff");
+    let out = repo.diff_unstaged(Some("brand_new.txt"), false).expect("diff");
     let files = parse_unified_diff(&out);
     assert_eq!(files.len(), 1);
     assert!(files[0].is_new);
@@ -1028,6 +1028,94 @@ fn force_push_and_push_tags() {
 }
 
 #[test]
+fn push_single_tag_pushes_only_that_ref() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let bare = std::env::temp_dir().join(format!(
+        "rebased-rs-bare-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    temp.git(&["init", "--bare", bare.to_str().expect("utf8 path")]);
+    temp.git(&["remote", "add", "origin", bare.to_str().expect("utf8 path")]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    repo.push("main", true).expect("initial push");
+
+    repo.create_tag("keep", None, None).expect("create keep");
+    repo.create_tag("ship", Some("HEAD"), Some("ship it"))
+        .expect("create ship");
+    repo.push_tag("ship").expect("push single tag");
+
+    let bare_tags = Command::new("git")
+        .arg("--git-dir")
+        .arg(&bare)
+        .args(["tag"])
+        .output()
+        .expect("inspect bare tags");
+    assert_eq!(
+        String::from_utf8_lossy(&bare_tags.stdout).trim(),
+        "ship",
+        "only the requested tag should reach the remote"
+    );
+
+    let _ = std::fs::remove_dir_all(&bare);
+}
+
+#[test]
+fn recreate_tag_rewrites_message_on_same_commit() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let head = repo.log(1).expect("log")[0].id.0.clone();
+    repo.create_tag("v1", Some(&head), Some("old message"))
+        .expect("create tag");
+
+    repo.recreate_tag("v1", &head, "new message")
+        .expect("recreate tag");
+
+    let shown = Command::new("git")
+        .current_dir(&temp.path)
+        .args(["tag", "-l", "--format=%(contents)", "v1"])
+        .output()
+        .expect("read tag message");
+    assert_eq!(
+        String::from_utf8_lossy(&shown.stdout).trim(),
+        "new message",
+        "recreate_tag replaces the annotated message"
+    );
+}
+
+#[test]
+fn reflog_lists_head_operations() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let entries = repo.reflog(10).expect("reflog");
+
+    assert!(!entries.is_empty(), "reflog should record the commits");
+    assert_eq!(entries[0].selector, "HEAD@{0}");
+    assert_eq!(entries[0].message, "commit: second");
+    assert_eq!(entries[0].commit_id.len(), 40);
+    assert!(
+        entries.iter().any(|e| e.message == "commit (initial): initial"),
+        "the root commit's reflog message marks it as initial"
+    );
+}
+
+#[test]
 fn interactive_rebase_squash_merges_messages() {
     let temp = TempRepo::new();
     temp.write("a.txt", "a\n");
@@ -1361,4 +1449,32 @@ fn fetch_updates_remote_refs() {
 
     let _ = std::fs::remove_dir_all(&bare);
     let _ = std::fs::remove_dir_all(&clone);
+}
+
+#[test]
+fn diff_ignore_whitespace_suppresses_whitespace_only_changes() {
+    let temp = TempRepo::new();
+    let repo = Repository::open(&temp.path).expect("open repo");
+
+    temp.write("ws.txt", "alpha line\nbeta line\n");
+    temp.git(&["add", "ws.txt"]);
+    temp.git(&["commit", "-m", "add ws.txt"]);
+
+    // 只改空白：行内容非空白部分不变
+    temp.write("ws.txt", "  alpha   line\n\tbeta line\n");
+    temp.git(&["add", "ws.txt"]);
+
+    let normal = repo.diff_staged(Some("ws.txt"), false).expect("normal diff");
+    let normal_files = parse_unified_diff(&normal);
+    assert!(
+        !normal_files.iter().all(|f| f.hunks.is_empty()),
+        "normal diff should show whitespace-only change"
+    );
+
+    let ignored = repo.diff_staged(Some("ws.txt"), true).expect("ignored diff");
+    let ignored_files = parse_unified_diff(&ignored);
+    assert!(
+        ignored_files.iter().all(|f| f.hunks.is_empty()),
+        "-w diff should suppress whitespace-only change: {ignored}"
+    );
 }

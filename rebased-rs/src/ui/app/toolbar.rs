@@ -394,7 +394,7 @@ impl AppView {
             .child(
                 DropdownButton::new("tag-menu")
                     .button(Button::new("tag-button").ghost().label("Tags"))
-                    .dropdown_menu(move |menu, _window, _cx| {
+                    .dropdown_menu(move |menu, window, _cx| {
                         let mut result = menu.item(PopupMenuItem::new("＋ New tag on HEAD…").on_click({
                             let weak = tag_weak.clone();
                             move |_, _, cx| {
@@ -420,13 +420,69 @@ impl AppView {
                                 let weak = tag_weak.clone();
                                 let commit_id = tag.commit_id.clone();
                                 let label = tag.name.clone();
-                                result = result.item(PopupMenuItem::new(label).on_click(
-                                    move |_, _, cx| {
-                                        let _ = weak.update(cx, |this, cx| {
-                                            this.select_commit_by_id(&commit_id, cx)
-                                        });
+                                result = result.submenu(
+                                    label.clone(),
+                                    window,
+                                    _cx,
+                                    move |menu, _window, _cx| {
+                                        menu.item(PopupMenuItem::new("Select commit").on_click({
+                                            let weak = weak.clone();
+                                            let commit_id = commit_id.clone();
+                                            move |_, _, cx| {
+                                                let _ = weak.update(cx, |this, cx| {
+                                                    this.select_commit_by_id(&commit_id, cx)
+                                                });
+                                            }
+                                        }))
+                                        .item(
+                                            PopupMenuItem::new("Push tag to origin").on_click({
+                                                let weak = weak.clone();
+                                                let label = label.clone();
+                                                move |_, _, cx| {
+                                                    let _ = weak.update(cx, |this, cx| {
+                                                        this.push_tag(label.clone(), cx)
+                                                    });
+                                                }
+                                            }),
+                                        )
+                                        .item(
+                                            PopupMenuItem::new("Edit message…").on_click({
+                                                let weak = weak.clone();
+                                                let label = label.clone();
+                                                let commit_id = commit_id.clone();
+                                                move |_, _, cx| {
+                                                    let _ = weak.update(cx, |this, cx| {
+                                                        this.open_prompt(
+                                                            PromptKind::EditTag {
+                                                                name: label.clone(),
+                                                                commit_id: commit_id.clone(),
+                                                            },
+                                                            cx,
+                                                        )
+                                                    });
+                                                }
+                                            }),
+                                        )
+                                        .item(
+                                            PopupMenuItem::new("Delete tag…").on_click({
+                                                let weak = weak.clone();
+                                                let label = label.clone();
+                                                move |_, _, cx| {
+                                                    let _ = weak.update(cx, |this, cx| {
+                                                        this.open_prompt(
+                                                            PromptKind::Confirm(
+                                                                ConfirmAction::DeleteTag {
+                                                                    name: label.clone(),
+                                                                },
+                                                            ),
+                                                            cx,
+                                                        )
+                                                    });
+                                                }
+                                            }),
+                                        )
                                     },
-                                ));
+                                );
                             }
                         }
                         result
@@ -773,6 +829,17 @@ impl AppView {
                         });
                     }
                 }));
+                result = result.item(
+                    PopupMenuItem::new("Compare with Current Branch").on_click({
+                        let weak = weak.clone();
+                        let id = id.clone();
+                        move |_, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.open_branch_compare(id.clone(), cx)
+                            });
+                        }
+                    }),
+                );
                 result = result.item(PopupMenuItem::new("Copy SHA").on_click({
                     let weak = weak.clone();
                     let id = id.clone();

@@ -1,4 +1,4 @@
-use gpui::{actions, App, AppContext, ClipboardItem, Context, KeyBinding, Window};
+use gpui::{actions, Action, App, AppContext, ClipboardItem, Context, KeyBinding, Window};
 use gpui_kit::base::IndexPath;
 
 use rebased_rs::git::{Change, MergeMode, DEFAULT_LOG_LIMIT};
@@ -16,8 +16,16 @@ actions!(
         SelectPrevCommit,
         SelectNextCommit,
         FocusComposer,
+        ToggleVcsPalette,
+        BlameCurrentFile,
     ]
 );
+
+/// Ctrl+Alt+数字：直接切换到对应侧栏面板（对标 JetBrains Alt+数字工具窗口）。
+/// `no_json`：本应用不从 JSON 加载键位，省去 serde/schemars 依赖。
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = rebased_rs, no_json)]
+pub struct SelectSidebarPanel(pub u8);
 
 /// 全局快捷键。焦点在输入框/列表内时，组件自身的绑定（光标移动、列表上下键、
 /// Esc 取消）更具体、优先生效；未被消费的按键（如输入框内按 Esc）会向上传播
@@ -33,6 +41,17 @@ pub(crate) fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-r", RefreshRepo, None),
         KeyBinding::new("up", SelectPrevCommit, None),
         KeyBinding::new("down", SelectNextCommit, None),
+        KeyBinding::new("alt-backtick", ToggleVcsPalette, None),
+        KeyBinding::new("ctrl-alt-b", BlameCurrentFile, None),
+        KeyBinding::new("ctrl-alt-1", SelectSidebarPanel(1), None),
+        KeyBinding::new("ctrl-alt-2", SelectSidebarPanel(2), None),
+        KeyBinding::new("ctrl-alt-3", SelectSidebarPanel(3), None),
+        KeyBinding::new("ctrl-alt-4", SelectSidebarPanel(4), None),
+        KeyBinding::new("ctrl-alt-5", SelectSidebarPanel(5), None),
+        KeyBinding::new("ctrl-alt-6", SelectSidebarPanel(6), None),
+        KeyBinding::new("ctrl-alt-7", SelectSidebarPanel(7), None),
+        KeyBinding::new("ctrl-alt-8", SelectSidebarPanel(8), None),
+        KeyBinding::new("ctrl-alt-9", SelectSidebarPanel(9), None),
     ]);
 }
 
@@ -397,6 +416,11 @@ impl AppView {
         self.run_op("Pushed all tags", |repo| repo.push_tags(), cx);
     }
 
+    pub(crate) fn push_tag(&mut self, tag: String, cx: &mut Context<Self>) {
+        let message = format!("Pushed tag {tag}");
+        self.run_op(&message, move |repo| repo.push_tag(&tag), cx);
+    }
+
     pub(crate) fn copy_commit_id(&mut self, id: String, cx: &mut Context<Self>) {
         cx.write_to_clipboard(ClipboardItem::new_string(id));
         self.state.error = None;
@@ -476,11 +500,83 @@ impl AppView {
             self.cancel_prompt(cx);
             return;
         }
+        if self.state.vcs_palette {
+            self.state.vcs_palette = false;
+            cx.notify();
+            return;
+        }
         if matches!(
             self.state.sidebar,
             SidebarMode::Diff | SidebarMode::Blame | SidebarMode::History
         ) {
             self.sidebar_back(cx);
+        }
+    }
+
+    /// Alt+`：开关 VCS 操作快切弹层（对标 JetBrains VCS Operations Popup）。
+    /// 打开时先关掉 prompt——两个模态互斥，避免焦点与按键分发混乱。
+    pub(crate) fn on_toggle_vcs_palette(
+        &mut self,
+        _: &ToggleVcsPalette,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.vcs_palette = !self.state.vcs_palette;
+        if self.state.vcs_palette && self.state.prompt.is_some() {
+            self.cancel_prompt(cx);
+        }
+        cx.notify();
+    }
+
+    /// 对「正在查看的文件」打开 blame：优先当前 blame 文件，其次当前 diff 文件。
+    pub(crate) fn blame_current_file(&mut self, cx: &mut Context<Self>) {
+        let path = if self.state.blame_path.is_empty() {
+            self.state.diff_path.clone()
+        } else {
+            Some(self.state.blame_path.clone())
+        };
+        match path {
+            Some(path) => self.open_blame(path, cx),
+            None => {
+                self.state.error = Some("No file selected to blame".to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    pub(crate) fn on_blame_current_file(
+        &mut self,
+        _: &BlameCurrentFile,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.blame_current_file(cx);
+    }
+
+    /// Ctrl+Alt+1..9：直接切换侧栏面板。1 工作区 2 详情 3 Diff 4 历史
+    /// 5 分支对比 6 Shelve 7 Rebase 8 冲突 9 Blame（Blame 走「当前文件」回退）。
+    pub(crate) fn on_select_sidebar_panel(
+        &mut self,
+        action: &SelectSidebarPanel,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action.0 {
+            9 => self.blame_current_file(cx),
+            n @ 1..=8 => {
+                self.state.sidebar = match n {
+                    1 => SidebarMode::Workspace,
+                    2 => SidebarMode::Detail,
+                    3 => SidebarMode::Diff,
+                    4 => SidebarMode::History,
+                    5 => SidebarMode::Compare,
+                    6 => SidebarMode::Shelve,
+                    7 => SidebarMode::Rebase,
+                    _ => SidebarMode::Conflicts,
+                };
+                cx.notify();
+            }
+            _ => {}
         }
     }
 

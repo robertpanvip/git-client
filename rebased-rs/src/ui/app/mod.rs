@@ -346,6 +346,9 @@ impl Render for AppView {
             .on_action(cx.listener(Self::on_select_prev_commit))
             .on_action(cx.listener(Self::on_select_next_commit))
             .on_action(cx.listener(Self::on_focus_composer))
+            .on_action(cx.listener(Self::on_toggle_vcs_palette))
+            .on_action(cx.listener(Self::on_blame_current_file))
+            .on_action(cx.listener(Self::on_select_sidebar_panel))
             .child(self.render_toolbar(cx))
             .child(
                 div()
@@ -359,6 +362,7 @@ impl Render for AppView {
             )
             .child(self.render_composer(cx))
             .child(self.render_statusbar(cx))
+            .children(self.render_vcs_palette(cx))
             .children(self.render_prompt_overlay(cx))
     }
 }

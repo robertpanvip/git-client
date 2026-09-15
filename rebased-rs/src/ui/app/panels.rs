@@ -16,6 +16,7 @@ use rebased_rs::git::{HunkChoice, ResetMode};
 use crate::ui::blame_view::{render_blame, BlameJump};
 use crate::ui::diff_view::{render_diff_files, HunkAction};
 
+use super::actions::FocusComposer;
 use super::{AppView, DiffSource, SidebarMode};
 
 /// 拖拽 payload：被拖动的 rebase 计划行下标。
@@ -701,7 +702,7 @@ impl AppView {
             SidebarMode::Rebase => 480.,
             SidebarMode::Conflicts => 680.,
             SidebarMode::Shelve => 420.,
-            SidebarMode::History => 680.,
+            SidebarMode::History | SidebarMode::Reflog => 680.,
         };
         let base = div()
             .w(px(width))
@@ -724,6 +725,7 @@ impl AppView {
             }
             SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
             SidebarMode::History => base.child(self.render_history_panel(cx)).into_any_element(),
+            SidebarMode::Reflog => base.child(self.render_reflog_panel(cx)).into_any_element(),
             SidebarMode::Detail => match &self.state.selected {
                 Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),
@@ -759,19 +761,33 @@ impl AppView {
                             .child(title),
                     )
                     .when(!self.state.diff_files.is_empty(), |header| {
-                        header.child(
-                            Button::new("diff-view-mode")
-                                .ghost()
-                                .label(if self.state.diff_side_by_side {
-                                    "⇔ Side-by-side"
-                                } else {
-                                    "≡ Unified"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.state.diff_side_by_side = !this.state.diff_side_by_side;
-                                    cx.notify();
-                                })),
-                        )
+                        header
+                            .child(
+                                Button::new("diff-ignore-ws")
+                                    .ghost()
+                                    .label(if self.state.ignore_whitespace {
+                                        "☑ Ignore whitespace"
+                                    } else {
+                                        "☐ Ignore whitespace"
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.toggle_ignore_whitespace(cx)
+                                    })),
+                            )
+                            .child(
+                                Button::new("diff-view-mode")
+                                    .ghost()
+                                    .label(if self.state.diff_side_by_side {
+                                        "⇔ Side-by-side"
+                                    } else {
+                                        "≡ Unified"
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.state.diff_side_by_side =
+                                            !this.state.diff_side_by_side;
+                                        cx.notify();
+                                    })),
+                            )
                     })
                     .when(self.state.diff_path.is_some(), |header| {
                         header.child(
@@ -1041,6 +1057,294 @@ impl AppView {
         panel
     }
 
+    /// reflog 轻量视图：一览 HEAD 的最近操作，点击跳到对应 commit 的 diff。
+    pub(crate) fn render_reflog_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let muted = cx.theme().muted_foreground;
+
+        let mut panel = div()
+            .id("reflog-panel")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .flex_none()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_sm()
+                            .text_color(muted)
+                            .child("Reflog · recent operations"),
+                    )
+                    .child(
+                        Button::new("reflog-refresh")
+                            .ghost()
+                            .compact()
+                            .label("↻")
+                            .on_click(cx.listener(|this, _, _, cx| this.open_reflog(cx))),
+                    )
+                    .child(
+                        Button::new("reflog-close")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                    ),
+            );
+
+        if self.state.reflog_entries.is_empty() {
+            panel = panel.child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("No reflog entries"),
+            );
+        } else {
+            for entry in &self.state.reflog_entries {
+                let id = entry.commit_id.clone();
+                panel = panel.child(
+                    div()
+                        .id(format!("reflog-{}", entry.selector))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.open_commit_diff(id.clone(), None, cx)
+                        }))
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(px(76.))
+                                .text_xs()
+                                .text_color(muted)
+                                .child(SharedString::from(entry.selector.clone())),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_xs()
+                                .child(SharedString::from(entry.message.clone())),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(SharedString::from(entry.short_id.clone())),
+                        ),
+                );
+            }
+        }
+        panel
+    }
+
+    /// Alt+` VCS 操作快切弹层（对标 JetBrains VCS Operations Popup）：
+    /// 一览全部高频 VCS 动作并附带键位提示，动作执行后自动关闭。
+    pub(crate) fn render_vcs_palette(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.state.vcs_palette {
+            return None;
+        }
+        let border = cx.theme().border;
+        let muted = cx.theme().muted_foreground;
+        let head = self.state.head_id.clone();
+
+        let mut items: Vec<AnyElement> = Vec::new();
+        items.push(
+            self.palette_item("pal-commit", "Commit changes…", "Ctrl+K", cx, |this, window, cx| {
+                this.on_focus_composer(&FocusComposer, window, cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-push", "Push", "Ctrl+Shift+K", cx, |this, _, cx| {
+                this.do_push(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-pull", "Pull", "Ctrl+T", cx, |this, _, cx| {
+                this.do_pull(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-fetch", "Fetch", "", cx, |this, _, cx| {
+                this.run_op_progress(
+                    "Fetch",
+                    "Fetched",
+                    |repo, progress, cancel| repo.fetch_with_control(progress, cancel),
+                    cx,
+                );
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-stash", "Stash changes…", "", cx, |this, _, cx| {
+                this.open_prompt(super::PromptKind::Stash, cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-unstash", "Unstash latest", "", cx, |this, _, cx| {
+                this.run_op("Unstashed", |repo| repo.stash_pop(), cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-branch", "New branch…", "", cx, |this, _, cx| {
+                this.open_prompt(
+                    super::PromptKind::NewBranch { start_point: None },
+                    cx,
+                );
+            })
+            .into_any_element(),
+        );
+        if let Some(head) = head {
+            items.push(
+                self.palette_item("pal-tag", "New tag on HEAD…", "", cx, move |this, _, cx| {
+                    this.open_prompt(
+                        super::PromptKind::NewTag {
+                            commit_id: head.clone(),
+                        },
+                        cx,
+                    );
+                })
+                .into_any_element(),
+            );
+        }
+        items.push(
+            self.palette_item("pal-goto", "Go to commit…", "", cx, |this, _, cx| {
+                this.open_prompt(super::PromptKind::GoTo, cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-blame", "Blame current file", "Ctrl+Alt+B", cx, |this, _, cx| {
+                this.blame_current_file(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-reflog", "Show reflog", "", cx, |this, _, cx| {
+                this.open_reflog(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-conflicts", "Show conflicts", "Ctrl+Alt+8", cx, |this, _, cx| {
+                this.open_conflicts(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-shelves", "Show shelves", "Ctrl+Alt+6", cx, |this, _, cx| {
+                this.open_shelves(cx);
+            })
+            .into_any_element(),
+        );
+        items.push(
+            self.palette_item("pal-refresh", "Refresh repository", "F5", cx, |this, _, cx| {
+                this.refresh(cx);
+            })
+            .into_any_element(),
+        );
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(hsla(0.0, 0.0, 0.0, 0.45))
+                .flex()
+                .items_start()
+                .justify_center()
+                .pt(px(96.))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .w(px(420.))
+                        .rounded(px(8.))
+                        .border_1()
+                        .border_color(border)
+                        .bg(cx.theme().background)
+                        .p_3()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .shadow_lg()
+                        .child(
+                            div()
+                                .px_3()
+                                .pt_1()
+                                .text_sm()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("VCS Operations"),
+                        )
+                        .child(
+                            div()
+                                .px_3()
+                                .pb_1()
+                                .text_xs()
+                                .text_color(muted)
+                                .child("Alt+` toggle · Esc to close"),
+                        )
+                        .child(div().flex().flex_col().gap_0p5().children(items)),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// 快切弹层的单行动作条目：名称居左、键位提示居右。
+    fn palette_item(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        keys: &'static str,
+        cx: &mut Context<Self>,
+        run: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> Stateful<Div> {
+        let muted = cx.theme().muted_foreground;
+        div()
+            .id(SharedString::from(id))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .py_1p5()
+            .rounded(px(6.))
+            .text_sm()
+            .hover(move |style| style.bg(muted.opacity(0.12)))
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.state.vcs_palette = false;
+                run(this, window, cx);
+            }))
+            .child(SharedString::from(label))
+            .when(!keys.is_empty(), |row| {
+                row.child(div().text_xs().text_color(muted).child(SharedString::from(keys)))
+            })
+    }
+
     pub(crate) fn render_prompt_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let kind = self.state.prompt.clone()?;
         let border = cx.theme().border;
@@ -1056,6 +1360,13 @@ impl AppView {
             super::PromptKind::NewTag { commit_id } => (
                 "New tag".to_string(),
                 format!("On commit {}", &commit_id[..commit_id.len().min(7)]),
+            ),
+            super::PromptKind::EditTag { name, commit_id } => (
+                "Edit tag message".to_string(),
+                format!(
+                    "Rebuild {name} on commit {} with a new annotated message.",
+                    &commit_id[..commit_id.len().min(7)]
+                ),
             ),
             super::PromptKind::Stash => (
                 "Stash changes".to_string(),
@@ -1205,6 +1516,7 @@ impl AppView {
                 let ok_label = match &kind {
                     super::PromptKind::NewBranch { .. } => "Create",
                     super::PromptKind::NewTag { .. } => "Tag",
+                    super::PromptKind::EditTag { .. } => "Save",
                     super::PromptKind::Stash => "Stash",
                     super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => "Reword",
                     super::PromptKind::RenameBranch => "Rename",

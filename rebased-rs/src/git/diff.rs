@@ -4,8 +4,11 @@ use super::command::GitCommand;
 use super::error::Result;
 use super::types::{DiffLine, DiffLineKind, FileDiff, Hunk};
 
-pub fn diff_unstaged(cmd: &GitCommand, path: Option<&str>) -> Result<String> {
+pub fn diff_unstaged(cmd: &GitCommand, path: Option<&str>, ignore_ws: bool) -> Result<String> {
     let mut args = vec!["diff", "-U3"];
+    if ignore_ws {
+        args.push("-w");
+    }
     if let Some(p) = path {
         args.push("--");
         args.push(p);
@@ -15,8 +18,11 @@ pub fn diff_unstaged(cmd: &GitCommand, path: Option<&str>) -> Result<String> {
     Ok(output)
 }
 
-pub fn diff_staged(cmd: &GitCommand, path: Option<&str>) -> Result<String> {
+pub fn diff_staged(cmd: &GitCommand, path: Option<&str>, ignore_ws: bool) -> Result<String> {
     let mut args = vec!["diff", "--cached", "-U3"];
+    if ignore_ws {
+        args.push("-w");
+    }
     if let Some(p) = path {
         args.push("--");
         args.push(p);
@@ -24,8 +30,11 @@ pub fn diff_staged(cmd: &GitCommand, path: Option<&str>) -> Result<String> {
     cmd.run(&args)
 }
 
-pub fn diff_head(cmd: &GitCommand, path: Option<&str>) -> Result<String> {
+pub fn diff_head(cmd: &GitCommand, path: Option<&str>, ignore_ws: bool) -> Result<String> {
     let mut args = vec!["diff", "HEAD", "-U3"];
+    if ignore_ws {
+        args.push("-w");
+    }
     if let Some(p) = path {
         args.push("--");
         args.push(p);
@@ -72,8 +81,17 @@ fn synthetic_new_file_diff(workdir: &Path, file: &str) -> Option<String> {
     Some(out)
 }
 
-pub fn show_diff(cmd: &GitCommand, commit: &str, path: Option<&str>) -> Result<String> {
-    let mut args = vec!["show", "--format=", "-U3", commit];
+pub fn show_diff(
+    cmd: &GitCommand,
+    commit: &str,
+    path: Option<&str>,
+    ignore_ws: bool,
+) -> Result<String> {
+    let mut args = vec!["show", "--format=", "-U3"];
+    if ignore_ws {
+        args.push("-w");
+    }
+    args.push(commit);
     if let Some(p) = path {
         args.push("--");
         args.push(p);

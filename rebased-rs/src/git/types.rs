@@ -169,6 +169,19 @@ pub struct StashEntry {
     pub message: String,
 }
 
+/// `git reflog` 的一条记录（轻量操作历史）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReflogEntry {
+    /// 选择器，如 `HEAD@{0}`。
+    pub selector: String,
+    /// 指向的完整 commit id。
+    pub commit_id: String,
+    /// 短哈希，显示用。
+    pub short_id: String,
+    /// reflog 消息，如 `commit: fix bug`。
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
     Context,

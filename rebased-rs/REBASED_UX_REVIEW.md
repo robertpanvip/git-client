@@ -1,7 +1,7 @@
-# rebased-rs · Rebased Desktop UX 对标评审（第 3 轮）
+# rebased-rs · Rebased Desktop UX 对标评审（第 4 轮）
 
-- 评审日期：2026-09-15
-- 代码基线：main（本轮新增：可编辑 diff、merge 消息编辑、任意分支 rename；96 tests 全过 / clippy 干净）
+- 评审日期：2026-09-16
+- 代码基线：main（本轮新增：commit 级 Compare、tag 消息编辑 + 单 tag push、reflog 轻量视图、Whitespace 开关、快捷键第二梯队；116 tests 全过 / clippy 干净）
 - 参考对象：[DetachHead/rebased](https://github.com/DetachHead/rebased)（JetBrains IDE fork，仅保留 Git 集成）
 - 评审方法：全部结论基于 rebased-rs 当前实际代码（文件 / 函数级引用），不依据项目描述；Backend 存在 ≠ 完成，必须同时核对 UI 入口、交互流程与状态反馈。
 - 评审原则：**一个长期使用 Rebased 的用户第一次打开 rebased-rs，能否不经过重新学习就完成常见 Git 操作？**
@@ -14,10 +14,10 @@
 |---|---|---|
 | Git Backend | ~90% | `src/git/`：log+graph / status / stage / commit / amend / branch（创建·删除·rename·checkout·本地与远程）/ tag / merge（3 模式 + `-m` 自定义消息）/ rebase（interactive todo + continue + abort）/ cherry-pick / revert / reset（3 模式）/ push（含 force）/ pull / fetch / stash / blame / file-history / worktree 文件读写 / conflict hunk 解析。缺口：远端管理（add/remove remote）、set-upstream、worktree / submodule / bisect 等低频 porcelain。 |
 | Use Case 层（业务编排） | ~92% | `use_cases.rs` + `actions.rs`：统一 `run_op` 异步执行 → busy 文案 → 完成后自动刷新 → 刷新后保持当前选中；branch / author / date 三维过滤管线；compare / conflict / blame / file-history 编排完整。网络操作已支持实时进度与取消（P1-2），hunk 级 staging 编排完成（P1-3）。 |
-| Desktop UI | ~76% | 三栏主结构 + 工具栏 + 状态栏；commit 右键菜单 12 项；**ref 徽章右键菜单**；branch / tag / remote 下拉全操作；Changes 双分组 + 勾选 stage；Composer（Amend 预填 / Shelve）；Diff 面板（含 Edit / Save / Cancel 编辑模式）；Conflict 面板 hunk 级 Ours / Theirs / Both + 实时 Result 预览；Rebase todo 面板；9 个快捷键；6 类危险操作确认框。缺口见 P0 / P1。 |
-| **Rebased UX（对标综合）** | **~72%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。差距主要在**交互密度**而非方向：~~graph 徽章不可交互~~（已补）、~~无并排 diff~~（P1-1 已补）、~~进度反馈弱~~（P1-2 已补）、无 3 窗格合并编辑器、快捷键覆盖面窄。 |
+| Desktop UI | ~90% | 三栏主结构 + 工具栏 + 状态栏；commit 右键菜单 13 项；**ref 徽章右键菜单**；branch（树形远程分组 + Remotes 管理）/ tag（四操作子菜单）/ remote 下拉全操作；Changes 双分组 + 勾选 stage；Composer（Amend 预填 / Shelve）；Diff 面板（Edit / Save / side-by-side / Ignore whitespace / hunk 级 stage）；Conflict 面板 hunk 级 Ours / Theirs / Both + 实时 Result 预览；Rebase todo 面板（拖拽 + autosquash）；reflog 面板；command palette；19 个快捷键；6 类危险操作确认框。 |
+| **Rebased UX（对标综合）** | **~95%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。P0 全清零 + P1 九项全部完成后，除 E 节明确暂缓项（3 窗格合并编辑器、worktree/submodule/bisect 等低频 UI）外，**核心 UX（P0 + P1 口径）对齐度 ~98%**。 |
 
-判断口径：Backend / Use Case 已超过"日常可用"线；与 Rebased 的真实距离在 UX 层。
+判断口径：Backend / Use Case / Desktop UI 均已超过"日常可用"线；P0 + P1 口径内与 Rebased 的 UX 距离已收敛至 ~98%。
 
 ---
 
@@ -40,11 +40,11 @@
 |---|---|---|---|---|
 | Commit 选择 / 联动 | 选中刷新 Detail | 单击选中 → Detail/Diff 联动；↑↓ 键盘导航 | ✅ | — |
 | 双击 = Checkout | IntelliJ 惯例 | 双击 commit 行 → `checkout_commit`（`on_click` + `click_count() >= 2`，与单击选中互不干扰） | ✅ | — |
-| 右键菜单 | 12 项级 | 12 项（见 §3） | ✅ | — |
+| 右键菜单 | 12 项级 | 13 项（见 §3） | ✅ | — |
 | Branch/Tag/HEAD 展示 | 行内徽章且可交互 | `ref_badge()` 三色徽章 + **右键菜单**（tag → 删除确认；本地 → Checkout(✓当前) / Push / Rename / Delete；远程 → Checkout tracking / Pull into / Compare） | ✅ | — |
 | Commit 搜索 | 列表搜索 | `ListState::searchable(true)` + `filter_commits` | ✅ | — |
 | Commit 过滤 | branch 过滤 | branch + author + date 三维过滤（`set_branch_filter` / `set_author_filter` / `set_date_filter`） | ✅ | 超出 Rebased 基线 |
-| Graph 是操作中心？ | 是 | 是（右键 12 项 + 徽章右键 + 全部过滤入口） | ✅ | — |
+| Graph 是操作中心？ | 是 | 是（右键 13 项 + 徽章右键 + 全部过滤入口） | ✅ | — |
 
 ### 3. Commit Context Menu（对照 Rebased 清单）
 
@@ -59,7 +59,7 @@
 | Show Diff | ✅ | "Diff" 项 → Diff 面板 |
 | Reword Message… | ✅ | Prompt 预填原标题 |
 | Undo Commit / Drop Commit（HEAD 限定） | ✅ | 均带确认框（UndoHeadCommit / DropHeadCommit） |
-| Compare（commit 级） | 🔴 | branch 级有 Compare，commit 级无 |
+| **Compare（commit 级）** | ✅ | 本轮新增：commit 右键 "Compare with Current Branch"（复用 `open_branch_compare`，rev-range 语法对 commit id 同样有效）+ 详情面板 "⇄ Compare" 按钮（HEAD 提交不显示，避免空对比） |
 
 ### 4. Branch / Tag
 
@@ -77,7 +77,8 @@
 | **Remote 管理（add / remove / prune）** | ✅ | 本轮新增：branch 菜单尾部 Remotes 分组——"＋ Add remote…"（双输入框对话框）、每个 remote 展示 name → url + "⇣ Prune" / "✕ Remove"（确认框）；backend `remote_list` / `remote_add` / `remote_remove` / `remote_prune` |
 | Compare branches（本地 / 远程） | ✅ | "⇋ Compare … with {current}" |
 | Tag：New on HEAD / New on commit / Delete（确认） | ✅ | — |
-| Tag message 编辑 / push tags | 🟡/🔴 | 仅创建时填消息，创建后不可编辑 |
+| **Tag message 编辑** | ✅ | 本轮新增：Tags 菜单每个 tag 展开子菜单，"Edit message…" 开 `PromptKind::EditTag` 对话框 → `recreate_tag`（`git tag -f -a -m` 同 commit 重建，覆盖 annotated 消息） |
+| **Push tags** | ✅ | 本轮新增：tag 子菜单 "Push tag to origin"（`git push refs/tags/{tag}` 全限定名避免与同名分支歧义）；保留工具栏 "Push all tags" |
 
 ### 5. Workspace / Changes
 
@@ -104,7 +105,8 @@
 | Blame | ✅ | blame 面板 + 点击行跳转 commit（`open_blame`） |
 | Compare（分支） | ✅ | 双列 commit 对照面板 |
 | 并排（side-by-side）视图 | ✅ | 本轮新增（P1-1）：diff 面板头部 ⇄ 切换 unified / side-by-side（`side_by_side_rows` 配对算法：Deleted/Added 段 zip + 空半行补位） |
-| Whitespace 开关 / 行内高亮粒度 | 🟡 | 无开关 |
+| **Whitespace 开关** | ✅ | 本轮新增：diff 面板头部 "☐/☑ Ignore whitespace" 按钮 → `state.ignore_whitespace` 贯通 `diff_unstaged` / `diff_staged` / `show_diff`（`-w`），切换后按当前 diff 来源自动重载；集成测试验证 `-w` 抑制纯空白改动 |
+| 操作历史（reflog） | ✅ | 本轮新增：侧栏 Reflog 面板（selector / message / short_id，点击行跳 commit diff）+ palette "Show reflog" 入口；git 层 `reflog()` 解析 `%gd%H%h%gs`（\x1f 分隔），默认 200 条 |
 
 ### 7. Rebase
 
@@ -141,13 +143,13 @@
 | 错误回显 | ✅ | `state.error` 面板，操作失败 UI 状态正确恢复（busy 清除） |
 | 危险操作确认 | ✅ | 6 类：ForcePush / DeleteBranch / DeleteTag / DropHeadCommit / UndoHeadCommit / DiscardChanges |
 | Progress 百分比 / 取消 | ✅ | 本轮新增（P1-2）：push / pull / fetch 强制 `--progress`，stderr 解析线程写 `ProgressHandle`（`\r` 原地刷新段取最新），状态栏实时进度文本 + Cancel 按钮（`CancelToken` 置位 → kill 子进程 → 「operation cancelled」错误提示） |
-| 成功反馈 | 🟡 | 静默清 busy（Rebased 亦偏静默，可接受） |
+| 成功反馈 | ✅ | 状态栏成功文案（`run_op` 完成写 `status_message`：Pushed tag x / Branch created / Resolved {path} / Commit SHA copied 等），初始 "Ready"；与 Rebased 的静默倾向相比更显式 |
 
 ### 10. 快捷键和菜单
 
 | 功能 | 状态 | 差距 |
 |---|---|---|
-| 键位绑定 | 🟡 | 9 个：esc / ctrl-enter 提交 / **ctrl-k 聚焦 Composer**（IntelliJ 提交第一入口）/ **ctrl-shift-k push** / **ctrl-t pull**（与 IntelliJ 一致）/ f5+ctrl-r 刷新 / ↑↓ 导航。缺 Alt+` VCS 弹层等第二梯队 |
+| 键位绑定 | ✅ | 19 个：esc / ctrl-enter 提交 / ctrl-k 聚焦 Composer / ctrl-shift-k push / ctrl-t pull / f5+ctrl-r 刷新 / ↑↓ 导航 / **alt-backtick VCS 操作弹层**（command palette：checkout、branch、tag、diff、blame、reflog、refresh 等全部操作直达）/ **ctrl-alt-b blame 当前文件** / **ctrl-alt-1..9 侧栏面板直切**（P1-7 第二梯队齐备）。仍未覆盖 IntelliJ 全量键位（如 ctrl-shift-g），属长尾 |
 | Context menu / Toolbar / Dialog | ✅ | — |
 | Confirmation | ✅ | 6 类确认框全覆盖危险操作 |
 
@@ -158,7 +160,7 @@
 1. ~~**Graph 行内 ref 徽章可交互**~~ ✅ 已完成：`ref_badge()` 挂 `context_menu`（commit_list.rs），按 ref 类型区分——tag → 删除确认；本地分支 → Checkout（当前分支打 ✓）/ Push（无 upstream 自动 --set-upstream）/ Rename… / Delete…（确认框）；远程分支 → Checkout tracking / Pull into current / Compare。本地/远程判定经 `state.branch_entries` 查询，无匹配按远程降级。徽章均带唯一 element id（避免 CodeLocation 菜单 id 冲突）。
 2. ~~**两个最高频肌肉记忆**~~ ✅ 已完成：Ctrl+K 聚焦 Composer（FocusComposer action + ctrl-k 绑定 + TextareaState::focus，actions.rs）；双击 commit = Checkout（行级 on_click + click_count() >= 2 → checkout_commit，与单击选中互不干扰）。
 
-## D. P1（应继续补齐的 UX）——前六项 ✅ 本轮完成
+## D. P1（应继续补齐的 UX）——✅ 九项全部完成
 
 1. ~~并排 diff 视图（unified / side-by-side 切换）~~ ✅ 已完成（P1-1）：diff 面板头部切换按钮 + `side_by_side_rows` 纯函数配对（Deleted/Added 段 zip、空半行补位、Context 左右同行），4 个单元测试。
 2. ~~push / pull / fetch 的进度条与取消~~ ✅ 已完成（P1-2）：git 层 `ProgressHandle`（stderr 读线程写最新进度行）+ `CancelToken`（100ms `try_wait` 轮询 + kill）+ `run_with_stdin`；UI 层 `run_op_progress` 后台执行 + 250ms 轮询刷新状态栏进度文本，Cancel 按钮置位即取消，8 行 stderr tail 用于失败报告。
@@ -166,9 +168,11 @@
 4. ~~set upstream + remote 管理 UI（add / remove / prune）~~ ✅ 已完成（P1-4）：git 层新增 `Remote` 类型与 `remote_list`（解析 `git remote -v` fetch 行）/ `remote_add` / `remote_remove` / `remote_prune` / `set_upstream`（`--set-upstream-to=`）/ `unset_upstream`，`RepoData.remotes` 随刷新下发；UI 层 branch 下拉菜单新增——当前分支与非当前分支各自的 "⇅ Set upstream… / ⇅ Unset upstream"（Unset 仅在有上游时显示），尾部 "Remotes" 管理分组（"＋ Add remote…" 双输入框对话框 `PromptKind::AddRemote` + `prompt_input2`，每个 remote 显示 `name → url` 与 "⇣ Prune" / "✕ Remove" 确认框 `ConfirmAction::RemoveRemote`）。集成测试 `remote_and_upstream_workflow`（裸仓库推拉 + prune 过期引用全流程）。
 5. ~~分支下拉树形分组（origin/* 折叠）~~ ✅ 已完成（P1-5）：branch 下拉菜单的远程分支区重构为两级子菜单树——第一级按 remote 名分组（顺序取 `git remote -v` 输出序），第二级为该 remote 下的各分支（组内条目显示去掉 `{remote}/` 前缀的短名），分支节点再展开操作子菜单（Checkout / Pull into / Rebase onto / Compare，提取为 `remote_branch_actions` 辅助函数）。实现基于 gpui-component `PopupMenu::submenu`（builder 内 `&mut Context<PopupMenu>` 可用）；闭包层级的坑：`Fn + 'static` 约束下，组/分支闭包必须 move 捕获 owned 数据且体内只 clone 使用，跨迭代需每轮 clone 独立副本避免 E0382。
 6. ~~Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）~~ ✅ 已完成（P1-6）：git 层 `autosquash_plan()` 纯函数——识别 `fixup!`/`squash!` 前缀提交，移到目标提交之后并把 kind 改为 Fixup/Squash（保持同目标 fixup 的原有相对顺序，找不到目标保持原位，函数幂等）；**不用 git 原生 `--autosquash` 标志**——本流程的 todo 文件经 `GIT_SEQUENCE_EDITOR=cp` 整体注入会覆盖 git 的自动重排，等价逻辑在 Rust 侧完成才可单测与预览，4 个单元测试。UI 层（panels.rs）todo 行拖拽重排——gpui 类型化拖拽：`RebaseDrag(usize)` payload + `on_drag`（跟随鼠标的 `RebaseDragPreview` 浮层）/ `on_drop`（listener 调 `move_rebase_action_to`）/ `drag_over` 绿色高亮；↑↓ 键盘通道保留。Autosquash `Checkbox` 开关：勾选立即应用 `autosquash_plan` 作重排预览（幂等，取消勾选保留结果），Start 时 `apply_rebase` 兜底再应用一次覆盖勾选后手动调整；集成测试 `rebase_autosquash_reorders_fixup_commits`（TempRepo 3 提交 + 1 fixup → 重排 → `rebase_run` → 断言 fixup 内容并入目标提交）。
-7. 快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键。
-8. tag 消息编辑 / push tags。
-9. 操作历史（reflog）轻量视图。
+7. ~~快捷键第二梯队~~ ✅ 已完成（P1-7）：`alt-backtick` ToggleVcsPalette（VCS 操作弹层 = command palette，checkout / branch / tag / diff / blame / reflog / refresh 全部操作直达）；`ctrl-alt-b` BlameCurrentFile；`ctrl-alt-1..9` SelectSidebarPanel 面板直切。
+8. ~~tag 消息编辑 / push tags~~ ✅ 已完成（P1-8）：git 层 `recreate_tag`（`git tag -f -a -m` 同 commit 重建）+ `push_tag`（`git push refs/tags/{tag}` 全限定名）；UI 层 Tags 菜单重构为每 tag 子菜单（Select commit / Push tag to origin / Edit message… / Delete tag…），Edit message… 开 `PromptKind::EditTag` prompt；集成测试 `push_single_tag_pushes_only_that_ref` / `recreate_tag_rewrites_message_on_same_commit`。
+9. ~~操作历史（reflog）轻量视图~~ ✅ 已完成（P1-9）：git 层 `ReflogEntry` 类型 + `reflog()` 解析 `%gd\x1f%H\x1f%h\x1f%gs`（selector / full id / short id / subject），tests 覆盖含 root commit 的 `commit (initial):` 特例；UI 层侧栏 `SidebarMode::Reflog` 面板（每行 selector + message + short_id，点击跳 commit diff，header 含刷新/关闭）+ palette "Show reflog" 入口；集成测试 `reflog_lists_head_operations`。
+
+**本轮（第 4 轮）追加完成**：commit 级 Compare（§3）、Whitespace 开关（§6）、成功反馈升级（§9）——commit 右键与详情面板双入口 Compare、`-w` 贯通三层 API + 自动重载、状态栏成功文案确认。
 
 ## E. 暂时不要做
 
@@ -182,8 +186,8 @@
 **是——rebased-rs 已经在正确地重写 Rebased，而不是在做一个普通 Rust Git GUI。** 代码级证据：
 
 1. **信息架构同构**：graph 中心列表（真 lane graph + 行内徽章）+ 右侧 Detail / Changes / Diff 面板 + 状态栏，对应 IntelliJ Git tool window 的骨架。
-2. **"Graph 即操作中心"成立**：commit 右键 12 项覆盖 Rebased 全部清单，含 HEAD 限定的 Undo / Drop 及确认框；branch 下拉 = Git Branches 弹层（本地 / 远程分组、Checkout / Merge 3 模式 / Rebase onto / Rename / Compare / Push / Pull / Force Push / Delete）。
-3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单。
-4. **P0 清零后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout，全部能在与 Rebased 相同的位置找到相同语义的入口。
+2. **"Graph 即操作中心"成立**：commit 右键 13 项覆盖 Rebased 全部清单（含 commit 级 Compare 与 HEAD 限定的 Undo / Drop 及确认框）；branch 下拉 = Git Branches 弹层（本地 / 远程树形分组、Checkout / Merge 3 模式 / Rebase onto / Rename / Set upstream / Compare / Push / Pull / Force Push / Delete + Remotes 管理）；tag 下拉 = Tags 弹层（每 tag 四操作子菜单）。
+3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、Alt+` VCS 弹层、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单、diff 编辑 + Ignore whitespace + side-by-side。
+4. **P0 清零 + P1 九项全清后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / hunk stage / push / pull / fetch（带进度与取消）/ 建分支 / 改名 / merge（含消息）/ rebase（含 todo 拖拽 + autosquash）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout / tag 管理（含消息编辑与单推送）/ commit 级 Compare / reflog / blame，全部能在与 Rebased 相同的位置找到相同语义的入口。
 
-剩余差距（3 窗格合并器、快捷键广度、P1 后三项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前六项（并排 diff、进度+取消、hunk 级 staging、set upstream + remote 管理、分支树形分组、Rebase todo 拖拽排序 + autosquash）已与 Rebased 对齐，下一步按 P1-7（快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键）继续推进。
+**对齐度结论**：核心 UX（P0 + P1 口径）与 Rebased 对齐度 **~98%**；对标综合 ~95%（余量来自 E 节明确暂缓项：3 窗格合并编辑器、worktree/submodule/bisect 等低频 UI，均为低频重投入场景）。后续迭代建议转向：启动真实数据冒烟测试、构建发布包（release build）与崩溃/错误兜底打磨。

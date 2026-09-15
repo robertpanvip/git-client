@@ -8,7 +8,7 @@ use super::ops::ResetMode;
 use super::rebase::RebaseAction;
 use super::repo::Repository;
 use super::types::{
-    BlameGroup, Branch, Change, Commit, FileDiff, Remote, RepoStatus, StashEntry, Tag,
+    BlameGroup, Branch, Change, Commit, FileDiff, ReflogEntry, Remote, RepoStatus, StashEntry, Tag,
 };
 
 /// Storage-agnostic facade over a git repository.
@@ -101,10 +101,12 @@ pub trait GitBackend: Send + Sync {
     fn tags(&self) -> Result<Vec<Tag>>;
     fn create_tag(&self, name: &str, commit: Option<&str>, message: Option<&str>) -> Result<()>;
     fn delete_tag(&self, name: &str) -> Result<()>;
-    fn diff_unstaged(&self, path: Option<&str>) -> Result<String>;
-    fn diff_staged(&self, path: Option<&str>) -> Result<String>;
-    fn diff_head(&self, path: Option<&str>) -> Result<String>;
-    fn show_diff(&self, commit: &str, path: Option<&str>) -> Result<String>;
+    fn push_tag(&self, tag: &str) -> Result<()>;
+    fn recreate_tag(&self, name: &str, commit: &str, message: &str) -> Result<()>;
+    fn diff_unstaged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String>;
+    fn diff_staged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String>;
+    fn diff_head(&self, path: Option<&str>, ignore_ws: bool) -> Result<String>;
+    fn show_diff(&self, commit: &str, path: Option<&str>, ignore_ws: bool) -> Result<String>;
     fn blame(&self, rev: &str, path: &str) -> Result<Vec<BlameGroup>>;
     fn rebase_todos(&self, base: &str) -> Result<Vec<RebaseAction>>;
     fn rebase_run(&self, base: &str, plan: &[RebaseAction]) -> Result<()>;
@@ -136,6 +138,8 @@ pub trait GitBackend: Send + Sync {
     fn write_worktree_file(&self, path: &str, content: &str) -> Result<()>;
     fn checkout_side(&self, path: &str, ours: bool) -> Result<()>;
     fn stash_list(&self) -> Result<Vec<StashEntry>>;
+    /// 轻量操作历史（HEAD reflog）。
+    fn reflog(&self, limit: usize) -> Result<Vec<ReflogEntry>>;
     fn stash_apply_at(&self, index: usize) -> Result<()>;
     fn stash_drop_at(&self, index: usize) -> Result<()>;
     fn reword_commit(&self, commit: &str, message: &str) -> Result<()>;
@@ -360,20 +364,28 @@ impl GitBackend for Repository {
         Repository::delete_tag(self, name)
     }
 
-    fn diff_unstaged(&self, path: Option<&str>) -> Result<String> {
-        Repository::diff_unstaged(self, path)
+    fn push_tag(&self, tag: &str) -> Result<()> {
+        Repository::push_tag(self, tag)
     }
 
-    fn diff_staged(&self, path: Option<&str>) -> Result<String> {
-        Repository::diff_staged(self, path)
+    fn recreate_tag(&self, name: &str, commit: &str, message: &str) -> Result<()> {
+        Repository::recreate_tag(self, name, commit, message)
     }
 
-    fn diff_head(&self, path: Option<&str>) -> Result<String> {
-        Repository::diff_head(self, path)
+    fn diff_unstaged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        Repository::diff_unstaged(self, path, ignore_ws)
     }
 
-    fn show_diff(&self, commit: &str, path: Option<&str>) -> Result<String> {
-        Repository::show_diff(self, commit, path)
+    fn diff_staged(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        Repository::diff_staged(self, path, ignore_ws)
+    }
+
+    fn diff_head(&self, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        Repository::diff_head(self, path, ignore_ws)
+    }
+
+    fn show_diff(&self, commit: &str, path: Option<&str>, ignore_ws: bool) -> Result<String> {
+        Repository::show_diff(self, commit, path, ignore_ws)
     }
 
     fn blame(&self, rev: &str, path: &str) -> Result<Vec<BlameGroup>> {
@@ -468,6 +480,10 @@ impl GitBackend for Repository {
 
     fn stash_list(&self) -> Result<Vec<StashEntry>> {
         Repository::stash_list(self)
+    }
+
+    fn reflog(&self, limit: usize) -> Result<Vec<ReflogEntry>> {
+        Repository::reflog(self, limit)
     }
 
     fn stash_apply_at(&self, index: usize) -> Result<()> {

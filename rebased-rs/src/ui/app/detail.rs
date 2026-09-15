@@ -5,7 +5,7 @@ use rebased_rs::git::{Commit, MergeMode, RebaseActionKind, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
 
-use super::{use_cases, AppView, PromptKind, SidebarMode};
+use super::{use_cases, AppView, DiffSource, PromptKind, SidebarMode};
 
 impl AppView {
     pub(crate) fn load_commit_detail(&mut self, commit: Commit, cx: &mut Context<Self>) {
@@ -84,6 +84,24 @@ impl AppView {
         cx.notify();
     }
 
+    /// 切换「忽略空白」开关，并按当前 diff 来源重新加载。
+    pub(crate) fn toggle_ignore_whitespace(&mut self, cx: &mut Context<Self>) {
+        self.state.ignore_whitespace = !self.state.ignore_whitespace;
+        let path = self.state.diff_path.clone();
+        match self.state.diff_source {
+            Some(DiffSource::Staged) => self.open_staged_diff(path, cx),
+            Some(DiffSource::Unstaged) => self.open_unstaged_diff(path, cx),
+            Some(DiffSource::Commit) => {
+                let Some(id) = self.state.diff_commit.clone() else {
+                    cx.notify();
+                    return;
+                };
+                self.open_commit_diff(id, None, cx);
+            }
+            None => cx.notify(),
+        }
+    }
+
     pub(crate) fn open_blame(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
@@ -99,6 +117,16 @@ impl AppView {
             return;
         };
         if let Err(e) = use_cases::open_file_history(repo.as_ref(), &mut self.state, path) {
+            self.state.error = Some(e.to_string());
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_reflog(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = use_cases::open_reflog(repo.as_ref(), &mut self.state) {
             self.state.error = Some(e.to_string());
         }
         cx.notify();
@@ -253,6 +281,18 @@ impl AppView {
                     self.run_op(
                         &message,
                         move |repo| repo.create_tag(&input, Some(&commit_id), None),
+                        cx,
+                    );
+                }
+            }
+            PromptKind::EditTag { name, commit_id } => {
+                if input.is_empty() {
+                    self.state.error = Some("Tag message is empty".to_string());
+                } else {
+                    let message = format!("Updated tag {name}");
+                    self.run_op(
+                        &message,
+                        move |repo| repo.recreate_tag(&name, &commit_id, &input),
                         cx,
                     );
                 }

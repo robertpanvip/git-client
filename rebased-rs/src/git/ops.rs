@@ -1,6 +1,6 @@
 use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
-use super::types::{Change, ChangeStatus, Remote, StashEntry, Tag};
+use super::types::{Change, ChangeStatus, ReflogEntry, Remote, StashEntry, Tag};
 
 pub fn add_all(cmd: &GitCommand) -> Result<()> {
     cmd.run_ok(&["add", "-A"])
@@ -277,6 +277,39 @@ pub fn stash_apply_at(cmd: &GitCommand, index: usize) -> Result<()> {
     cmd.run_ok(&["stash", "apply", &rev])
 }
 
+pub fn reflog(cmd: &GitCommand, limit: usize) -> Result<Vec<ReflogEntry>> {
+    let output = cmd.execute(&[
+        "reflog",
+        "--format=%gd\x1f%H\x1f%h\x1f%gs",
+        "-n",
+        &limit.to_string(),
+    ])?;
+    if !output.success {
+        return Err(GitError::with_stderr("git reflog failed", output.stderr));
+    }
+    Ok(parse_reflog(&output.stdout))
+}
+
+pub fn parse_reflog(stdout: &str) -> Vec<ReflogEntry> {
+    let mut entries = Vec::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(4, '\x1f');
+        let (Some(selector), Some(commit_id), Some(short_id)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let message = parts.next().unwrap_or("").trim().to_string();
+        entries.push(ReflogEntry {
+            selector: selector.trim().to_string(),
+            commit_id: commit_id.trim().to_string(),
+            short_id: short_id.trim().to_string(),
+            message,
+        });
+    }
+    entries
+}
+
 pub fn stash_drop_at(cmd: &GitCommand, index: usize) -> Result<()> {
     let rev = format!("stash@{{{}}}", index);
     cmd.run_ok(&["stash", "drop", &rev])
@@ -340,6 +373,16 @@ pub fn create_tag(
 
 pub fn delete_tag(cmd: &GitCommand, name: &str) -> Result<()> {
     cmd.run_ok(&["tag", "-d", name])
+}
+
+/// 推送单个 tag（refs/tags 全限定名，避免与同名分支歧义）。
+pub fn push_tag(cmd: &GitCommand, remote: &str, tag: &str) -> Result<()> {
+    cmd.run_ok(&["push", remote, &format!("refs/tags/{tag}")])
+}
+
+/// 编辑 annotated tag 消息：git 无原位修改，用 -f 以同 commit 重建。
+pub fn recreate_tag(cmd: &GitCommand, name: &str, commit: &str, message: &str) -> Result<()> {
+    cmd.run_ok(&["tag", "-f", "-a", "-m", message, name, commit])
 }
 
 pub fn parse_tags(stdout: &str) -> Vec<Tag> {
@@ -459,5 +502,29 @@ mod tests {
         assert_eq!(entries[0].index, 0);
         assert_eq!(entries[0].message, "fallback ref");
         assert_eq!(entries[1].index, 2);
+    }
+
+    #[test]
+    fn test_parse_reflog_entries() {
+        let out = concat!(
+            "HEAD@{0}\x1f0123456789abcdef0123456789abcdef01234567\x1f0123456\x1fcommit: fix bug\n",
+            "HEAD@{1}\x1f89abcdef0123456789abcdef0123456789abcdef\x1f89abcde\x1fcheckout: moving from main to dev\n",
+        );
+        let entries = parse_reflog(out);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].selector, "HEAD@{0}");
+        assert_eq!(entries[0].commit_id, "0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(entries[0].short_id, "0123456");
+        assert_eq!(entries[0].message, "commit: fix bug");
+        assert_eq!(entries[1].message, "checkout: moving from main to dev");
+    }
+
+    #[test]
+    fn test_parse_reflog_tolerates_missing_message_and_bad_lines() {
+        let out = "HEAD@{0}\x1faaa\x1faaa111\nnot-a-reflog-line\n\n";
+        let entries = parse_reflog(out);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].selector, "HEAD@{0}");
+        assert_eq!(entries[0].message, "");
     }
 }
