@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    filter_commits, load_repo_data, parse_unified_diff, ChangeStatus, DiffLineKind,
-    RebaseActionKind, Repository, DEFAULT_LOG_LIMIT,
+    conflict_hunks, filter_commits, load_repo_data, parse_unified_diff, ChangeStatus,
+    ConflictKind, DiffLineKind, HunkChoice, RebaseActionKind, Repository, DEFAULT_LOG_LIMIT,
 };
 
 struct TempRepo {
@@ -540,6 +540,141 @@ fn rebase_conflict_and_abort() {
     assert!(repo.is_rebase_in_progress());
 
     repo.rebase_abort().expect("abort");
+    assert!(!repo.is_rebase_in_progress());
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "feature\n");
+}
+
+#[test]
+fn reword_head_commit_via_amend() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "original message"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let head = repo.log(10).expect("log")[0].id.0.clone();
+
+    repo.reword_commit(&head, "reworded message").expect("reword");
+
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].subject, "reworded message");
+    assert_ne!(log[0].id.0, head);
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "one\n");
+}
+
+#[test]
+fn reword_middle_commit_via_rebase() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "first"]);
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    temp.write("a.txt", "two\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    temp.write("a.txt", "three\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let log = repo.log(10).expect("log");
+    assert_eq!(log[0].subject, "third");
+    let target = log[1].id.0.clone();
+
+    repo.reword_commit(&target, "renamed second").expect("reword");
+
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 3);
+    assert_eq!(log[0].subject, "third");
+    assert_eq!(log[1].subject, "renamed second");
+    assert_eq!(log[2].subject, "first");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "three\n");
+}
+
+#[test]
+fn shelve_stash_roundtrip() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    temp.write("a.txt", "shelved work\n");
+
+    repo.stash_push(Some("my shelve"), false).expect("stash push");
+    let entries = repo.stash_list().expect("stash list");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].index, 0);
+    assert_eq!(entries[0].message, "On main: my shelve");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "one\n");
+
+    repo.stash_apply_at(0).expect("stash apply");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "shelved work\n");
+
+    repo.stash_drop_at(0).expect("stash drop");
+    assert!(repo.stash_list().expect("stash list").is_empty());
+}
+
+fn setup_conflicted_repo() -> (TempRepo, Repository) {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "feature"]);
+    temp.write("a.txt", "feature\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature edit"]);
+    temp.git(&["checkout", "main"]);
+    temp.write("a.txt", "main\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "main edit"]);
+    temp.git(&["checkout", "feature"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let plan = repo.rebase_todos("main").expect("todos");
+    assert_eq!(plan.len(), 1);
+    assert!(repo.rebase_run("main", &plan).is_err());
+    assert!(repo.is_rebase_in_progress());
+    (temp, repo)
+}
+
+#[test]
+fn conflict_take_theirs_and_stage() {
+    let (temp, repo) = setup_conflicted_repo();
+
+    let conflicts = repo.conflicted_files().expect("conflicts");
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].path, "a.txt");
+    assert_eq!(conflicts[0].kind, ConflictKind::BothModified);
+
+    repo.checkout_side("a.txt", false).expect("take theirs");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "feature\n");
+    assert!(repo.conflicted_files().expect("conflicts").is_empty());
+}
+
+#[test]
+fn conflict_markers_resolve_loop() {
+    let (temp, repo) = setup_conflicted_repo();
+
+    let raw = repo.conflict_file_content("a.txt").expect("read a.txt");
+    let hunks = conflict_hunks(&raw);
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].ours, vec!["main"]);
+    assert_eq!(hunks[0].theirs, vec!["feature"]);
+
+    repo.resolve_conflict_markers("a.txt", &raw, &[HunkChoice::Theirs])
+        .expect("resolve markers");
+
+    assert!(repo.conflicted_files().expect("conflicts").is_empty());
+    repo.rebase_continue().expect("continue rebase");
     assert!(!repo.is_rebase_in_progress());
     let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
     assert_eq!(content, "feature\n");

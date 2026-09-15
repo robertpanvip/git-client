@@ -155,6 +155,13 @@ pub struct Tag {
     pub commit_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StashEntry {
+    pub index: usize,
+    pub ref_name: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
     Context,

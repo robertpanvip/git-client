@@ -134,6 +134,83 @@ pub fn continue_rebase(cmd: &GitCommand) -> Result<()> {
     Ok(())
 }
 
+fn full_sha(cmd: &GitCommand, rev: &str) -> Result<String> {
+    let output = cmd.execute(&["rev-parse", rev])?;
+    if !output.success {
+        return Err(GitError::with_stderr(
+            format!("rev-parse {rev} failed"),
+            output.stderr,
+        ));
+    }
+    Ok(output.stdout.trim().to_string())
+}
+
+pub fn reword(cmd: &GitCommand, commit: &str, message: &str) -> Result<()> {
+    let full = full_sha(cmd, commit)?;
+    let head = full_sha(cmd, "HEAD")?;
+    if full == head {
+        let staged = cmd.execute(&["diff", "--cached", "--quiet"])?;
+        if !staged.success {
+            return Err(GitError::with_stderr(
+                "reword failed",
+                "staged changes would be swept into the amend; unstage them first",
+            ));
+        }
+        return cmd.run_ok(&["commit", "--amend", "-m", message]);
+    }
+    let parent = full_sha(cmd, &format!("{full}^"))?;
+    let base_todos = todos(cmd, &parent)?;
+    if !base_todos.iter().any(|action| action.id == full) {
+        return Err(GitError::with_stderr(
+            "reword failed",
+            format!("{commit} is not found in the rebase plan"),
+        ));
+    }
+    let mut todo = String::new();
+    for action in base_todos {
+        let keyword = if action.id == full {
+            "reword"
+        } else {
+            action.kind.keyword()
+        };
+        let short = &action.id[..action.id.len().min(10)];
+        todo.push_str(&format!("{keyword} {short} {}\n", action.subject));
+    }
+    let tmp_todo = std::env::temp_dir()
+        .join(format!("rebased-rs-reword-todo-{}", std::process::id()));
+    let tmp_msg = std::env::temp_dir()
+        .join(format!("rebased-rs-reword-msg-{}", std::process::id()));
+    std::fs::write(&tmp_todo, todo)
+        .map_err(|e| GitError::with_stderr("failed to write reword todo", e.to_string()))?;
+    std::fs::write(&tmp_msg, message)
+        .map_err(|e| GitError::with_stderr("failed to write reword message", e.to_string()))?;
+    let seq_editor = format!("cp {}", tmp_todo.display());
+    let msg_editor = format!("cp {}", tmp_msg.display());
+    let output = cmd.execute_env(
+        &["rebase", "-i", &parent],
+        &[
+            ("GIT_SEQUENCE_EDITOR", seq_editor.as_str()),
+            ("GIT_EDITOR", msg_editor.as_str()),
+        ],
+    );
+    let _ = std::fs::remove_file(&tmp_todo);
+    let _ = std::fs::remove_file(&tmp_msg);
+    match output {
+        Err(err) => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(err)
+        }
+        Ok(out) if !out.success => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(GitError::with_stderr(
+                "interactive rebase failed",
+                out.stderr,
+            ))
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
 pub fn in_progress(cmd: &GitCommand) -> bool {
     let Ok(out) = cmd.run(&["rev-parse", "--git-dir"]) else {
         return false;

@@ -1,6 +1,6 @@
 use super::command::GitCommand;
 use super::error::{GitError, Result};
-use super::types::{Change, ChangeStatus, Tag};
+use super::types::{Change, ChangeStatus, StashEntry, Tag};
 
 pub fn add_all(cmd: &GitCommand) -> Result<()> {
     cmd.run_ok(&["add", "-A"])
@@ -97,6 +97,51 @@ pub fn stash_push(cmd: &GitCommand, message: Option<&str>, include_untracked: bo
 
 pub fn stash_pop(cmd: &GitCommand) -> Result<()> {
     cmd.run_ok(&["stash", "pop"])
+}
+
+pub fn stash_list(cmd: &GitCommand) -> Result<Vec<StashEntry>> {
+    let output = cmd.execute(&["stash", "list", "--format=%gd%x1f%gs"])?;
+    if !output.success {
+        return Err(GitError::with_stderr("git stash list failed", output.stderr));
+    }
+    Ok(parse_stash_list(&output.stdout))
+}
+
+pub fn parse_stash_list(stdout: &str) -> Vec<StashEntry> {
+    let mut entries = Vec::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, '\x1f');
+        let (Some(ref_name), Some(message)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let ref_name = ref_name.trim().to_string();
+        if ref_name.is_empty() {
+            continue;
+        }
+        let index = ref_name
+            .find('{')
+            .and_then(|start| {
+                let end = ref_name[start + 1..].find('}')? + start + 1;
+                ref_name[start + 1..end].parse::<usize>().ok()
+            })
+            .unwrap_or(entries.len());
+        entries.push(StashEntry {
+            index,
+            ref_name,
+            message: message.trim().to_string(),
+        });
+    }
+    entries
+}
+
+pub fn stash_apply_at(cmd: &GitCommand, index: usize) -> Result<()> {
+    let rev = format!("stash@{{{}}}", index);
+    cmd.run_ok(&["stash", "apply", &rev])
+}
+
+pub fn stash_drop_at(cmd: &GitCommand, index: usize) -> Result<()> {
+    let rev = format!("stash@{{{}}}", index);
+    cmd.run_ok(&["stash", "drop", &rev])
 }
 
 pub fn discard_changes(cmd: &GitCommand, path: &str) -> Result<()> {
@@ -254,5 +299,27 @@ mod tests {
         let changes = parse_name_status(out);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "a.rs");
+    }
+
+    #[test]
+    fn test_parse_stash_list_entries() {
+        let out = "stash@{0}\x1fWIP on main: abc1234 work\nstash@{1}\x1fOn feature: tweak\n";
+        let entries = parse_stash_list(out);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].index, 0);
+        assert_eq!(entries[0].ref_name, "stash@{0}");
+        assert_eq!(entries[0].message, "WIP on main: abc1234 work");
+        assert_eq!(entries[1].index, 1);
+        assert_eq!(entries[1].message, "On feature: tweak");
+    }
+
+    #[test]
+    fn test_parse_stash_list_skips_bad_lines() {
+        let out = "garbage\nstash\x1ffallback ref\nstash@{2}\x1ffallback\n\n";
+        let entries = parse_stash_list(out);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].index, 0);
+        assert_eq!(entries[0].message, "fallback ref");
+        assert_eq!(entries[1].index, 2);
     }
 }

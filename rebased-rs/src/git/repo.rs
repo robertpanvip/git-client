@@ -5,8 +5,9 @@ use super::command::GitCommand;
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, RepoStatus, Tag};
-use super::{blame, diff, rebase};
+use super::types::{Branch, Change, Commit, RepoStatus, StashEntry, Tag};
+use super::{blame, conflict, diff, rebase};
+use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
 
 pub struct Repository {
@@ -230,5 +231,55 @@ impl Repository {
 
     pub fn is_rebase_in_progress(&self) -> bool {
         rebase::in_progress(&self.cmd)
+    }
+
+    pub fn conflicted_files(&self) -> Result<Vec<ConflictFile>> {
+        conflict::conflicted_files(&self.cmd)
+    }
+
+    pub fn conflict_file_content(&self, path: &str) -> Result<String> {
+        let full = self.cmd.workdir().join(path);
+        let content = std::fs::read_to_string(&full)
+            .map_err(|e| GitError::with_stderr(format!("read {} failed", path), e.to_string()))?;
+        Ok(content)
+    }
+
+    pub fn resolve_conflict_markers(
+        &self,
+        path: &str,
+        content: &str,
+        choices: &[HunkChoice],
+    ) -> Result<()> {
+        let resolved = conflict::resolve_markers(content, choices).ok_or_else(|| {
+            GitError::with_stderr("resolve failed", "choice count does not match hunks")
+        })?;
+        let full = self.cmd.workdir().join(path);
+        std::fs::write(&full, resolved)
+            .map_err(|e| GitError::with_stderr(format!("write {} failed", path), e.to_string()))?;
+        conflict::stage_file(&self.cmd, path)
+    }
+
+    pub fn stage_file(&self, path: &str) -> Result<()> {
+        conflict::stage_file(&self.cmd, path)
+    }
+
+    pub fn checkout_side(&self, path: &str, ours: bool) -> Result<()> {
+        conflict::checkout_side(&self.cmd, path, ours)
+    }
+
+    pub fn stash_list(&self) -> Result<Vec<StashEntry>> {
+        ops::stash_list(&self.cmd)
+    }
+
+    pub fn stash_apply_at(&self, index: usize) -> Result<()> {
+        ops::stash_apply_at(&self.cmd, index)
+    }
+
+    pub fn stash_drop_at(&self, index: usize) -> Result<()> {
+        ops::stash_drop_at(&self.cmd, index)
+    }
+
+    pub fn reword_commit(&self, commit: &str, message: &str) -> Result<()> {
+        rebase::reword(&self.cmd, commit, message)
     }
 }

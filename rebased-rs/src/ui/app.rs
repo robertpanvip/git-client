@@ -4,7 +4,7 @@ use std::sync::Arc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, hsla, px, size, AnyElement, Bounds, AppContext, Context, Div, Entity, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowBounds,
     WindowOptions,
 };
@@ -16,8 +16,9 @@ use gpui_kit::component::{
     ActiveTheme, Root,
 };
 use rebased_rs::git::{
-    load_repo_data, parse_unified_diff, BlameGroup, Change, ChangeStatus, Commit, FileDiff,
-    GitError, RebaseAction, RepoData, Repository, Tag, DEFAULT_LOG_LIMIT,
+    conflict_hunks, load_repo_data, parse_unified_diff, BlameGroup, Change, ChangeStatus, Commit,
+    ConflictFile, ConflictHunk, FileDiff, GitError, HunkChoice, RebaseAction, RepoData,
+    Repository, StashEntry, Tag, DEFAULT_LOG_LIMIT,
 };
 
 use crate::ui::blame_view::render_blame;
@@ -32,6 +33,8 @@ enum SidebarMode {
     Diff,
     Blame,
     Rebase,
+    Conflicts,
+    Shelve,
 }
 
 #[derive(Clone)]
@@ -39,6 +42,7 @@ enum PromptKind {
     NewBranch { start_point: Option<String> },
     NewTag { commit_id: String },
     Stash,
+    Reword { commit_id: String },
 }
 
 struct Loaded {
@@ -82,6 +86,12 @@ pub struct AppView {
     rebase_plan: Vec<RebaseAction>,
     rebase_base: String,
     rebase_in_progress: bool,
+    conflict_files: Vec<ConflictFile>,
+    conflict_path: Option<String>,
+    conflict_hunks: Vec<ConflictHunk>,
+    conflict_choices: Vec<Option<HunkChoice>>,
+    conflict_raw: String,
+    shelves: Vec<StashEntry>,
     status_message: SharedString,
     error: Option<SharedString>,
     loading: bool,
@@ -130,6 +140,12 @@ impl AppView {
             rebase_plan: Vec::new(),
             rebase_base: String::new(),
             rebase_in_progress: false,
+            conflict_files: Vec::new(),
+            conflict_path: None,
+            conflict_hunks: Vec::new(),
+            conflict_choices: Vec::new(),
+            conflict_raw: String::new(),
+            shelves: Vec::new(),
             status_message: SharedString::from("Ready"),
             error: None,
             loading: true,
@@ -183,10 +199,18 @@ impl AppView {
         self.prompt = None;
         self.rebase_plan.clear();
         self.rebase_base.clear();
+        self.conflict_files.clear();
+        self.conflict_path = None;
+        self.conflict_hunks.clear();
+        self.conflict_choices.clear();
+        self.conflict_raw.clear();
         self.rebase_in_progress = self
             .repo
             .as_ref()
             .is_some_and(|repo| repo.is_rebase_in_progress());
+        if self.rebase_in_progress {
+            self.reload_conflict_state(cx);
+        }
         self.list.update(cx, |list, cx| {
             list.delegate_mut().set_data(LogData { commits, graph });
             cx.notify();
@@ -468,6 +492,18 @@ impl AppView {
                     cx,
                 );
             }
+            PromptKind::Reword { commit_id } => {
+                if input.is_empty() {
+                    self.error = Some("Commit message is empty".into());
+                } else {
+                    let message = format!("Reworded {}", &commit_id[..commit_id.len().min(7)]);
+                    self.run_op(
+                        &message,
+                        move |repo| repo.reword_commit(&commit_id, &input),
+                        cx,
+                    );
+                }
+            }
         }
         cx.notify();
     }
@@ -577,6 +613,176 @@ impl AppView {
 
     fn continue_rebase(&mut self, cx: &mut Context<Self>) {
         self.run_op("Rebase continued", |repo| repo.rebase_continue(), cx);
+    }
+
+    fn open_conflicts(&mut self, cx: &mut Context<Self>) {
+        self.sidebar = SidebarMode::Conflicts;
+        self.reload_conflict_state(cx);
+    }
+
+    fn reload_conflict_state(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.conflicted_files() {
+            Ok(files) => {
+                self.conflict_files = files;
+                if !self.conflict_files.is_empty() {
+                    let first = self.conflict_files[0].path.clone();
+                    self.sidebar = SidebarMode::Conflicts;
+                    self.select_conflict_file(&first, cx);
+                }
+                cx.notify();
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn select_conflict_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.conflict_file_content(path) {
+            Ok(raw) => {
+                let hunks = conflict_hunks(&raw);
+                self.conflict_path = Some(path.to_string());
+                self.conflict_raw = raw;
+                self.conflict_choices = vec![None; hunks.len()];
+                self.conflict_hunks = hunks;
+                cx.notify();
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn choose_hunk(&mut self, index: usize, choice: HunkChoice, cx: &mut Context<Self>) {
+        if let Some(slot) = self.conflict_choices.get_mut(index) {
+            *slot = Some(choice);
+            cx.notify();
+        }
+    }
+
+    fn apply_conflict_resolutions(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let Some(path) = self.conflict_path.clone() else {
+            return;
+        };
+        if self.conflict_choices.iter().any(|choice| choice.is_none()) {
+            self.error = Some("Resolve every hunk before applying".into());
+            cx.notify();
+            return;
+        }
+        let choices: Vec<HunkChoice> = self
+            .conflict_choices
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let raw = self.conflict_raw.clone();
+        match repo.resolve_conflict_markers(&path, &raw, &choices) {
+            Ok(()) => {
+                self.error = None;
+                self.status_message = format!("Resolved {}", path).into();
+                self.conflict_path = None;
+                self.conflict_raw.clear();
+                self.conflict_hunks.clear();
+                self.conflict_choices.clear();
+                self.reload_conflict_state(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn take_conflict_side(&mut self, path: String, ours: bool, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.checkout_side(&path, ours) {
+            Ok(()) => {
+                self.error = None;
+                let side = if ours { "ours" } else { "theirs" };
+                self.status_message = format!("Took {side} for {path}").into();
+                if self.conflict_path.as_deref() == Some(path.as_str()) {
+                    self.conflict_path = None;
+                    self.conflict_raw.clear();
+                    self.conflict_hunks.clear();
+                    self.conflict_choices.clear();
+                }
+                self.reload_conflict_state(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn open_shelves(&mut self, cx: &mut Context<Self>) {
+        self.sidebar = SidebarMode::Shelve;
+        self.reload_shelves(cx);
+    }
+
+    fn reload_shelves(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.stash_list() {
+            Ok(entries) => {
+                self.shelves = entries;
+                cx.notify();
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn unshelve_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.stash_apply_at(index) {
+            Ok(()) => {
+                self.error = None;
+                self.status_message = "Unshelved".into();
+                self.refresh(cx);
+                self.sidebar = SidebarMode::Shelve;
+                self.reload_shelves(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn drop_shelve_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.stash_drop_at(index) {
+            Ok(()) => {
+                self.error = None;
+                self.status_message = "Dropped shelve".into();
+                self.reload_shelves(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
     }
 
     fn delete_branch(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -731,6 +937,18 @@ impl AppView {
                     .ghost()
                     .label("Refresh")
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
+            )
+            .child(
+                Button::new("conflicts")
+                    .ghost()
+                    .label("Conflicts")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_conflicts(cx))),
+            )
+            .child(
+                Button::new("shelves")
+                    .ghost()
+                    .label("Shelves")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
             )
             .when(self.rebase_in_progress, |bar| {
                 bar.child(
@@ -1125,6 +1343,20 @@ impl AppView {
                             })),
                     )
                     .child(
+                        Button::new("detail-reword")
+                            .ghost()
+                            .compact()
+                            .label("Reword…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::Reword { commit_id }, cx);
+                            })),
+                    )
+                    .child(
                         Button::new("detail-diff")
                             .ghost()
                             .compact()
@@ -1318,6 +1550,294 @@ impl AppView {
         )
     }
 
+    fn render_conflicts_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let border = cx.theme().border;
+        let muted = cx.theme().muted_foreground;
+        let mut panel = div()
+            .id("conflicts-panel")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Conflicts"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(
+                                "Rebase is paused. Resolve conflicts, then continue the rebase.",
+                            ),
+                    ),
+            );
+
+        if self.conflict_files.is_empty() {
+            panel = panel.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("No conflicted files."),
+            );
+        }
+
+        for (index, file) in self.conflict_files.iter().enumerate() {
+            let selected = self.conflict_path.as_deref() == Some(file.path.as_str());
+            let label = if selected {
+                format!("● {}", file.path)
+            } else {
+                file.path.clone()
+            };
+            panel = panel.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Button::new(("conflict-file", index))
+                            .ghost()
+                            .compact()
+                            .label(label)
+                            .on_click(cx.listener({
+                                let path = file.path.clone();
+                                move |this, _, _, cx| this.select_conflict_file(&path, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(("take-ours", index))
+                            .ghost()
+                            .compact()
+                            .label("Take ours")
+                            .on_click(cx.listener({
+                                let path = file.path.clone();
+                                move |this, _, _, cx| {
+                                    this.take_conflict_side(path.clone(), true, cx)
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new(("take-theirs", index))
+                            .ghost()
+                            .compact()
+                            .label("Take theirs")
+                            .on_click(cx.listener({
+                                let path = file.path.clone();
+                                move |this, _, _, cx| {
+                                    this.take_conflict_side(path.clone(), false, cx)
+                                }
+                            })),
+                    ),
+            );
+        }
+
+        if let Some(path) = self.conflict_path.clone() {
+            if self.conflict_hunks.is_empty() {
+                panel = panel.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(
+                            "No textual hunks in this file. Use the buttons above to take one side.",
+                        ),
+                );
+            }
+            for (index, hunk) in self.conflict_hunks.iter().enumerate() {
+                let ours_text = if hunk.ours.is_empty() {
+                    "(empty)".to_string()
+                } else {
+                    hunk.ours.join("\n")
+                };
+                let theirs_text = if hunk.theirs.is_empty() {
+                    "(empty)".to_string()
+                } else {
+                    hunk.theirs.join("\n")
+                };
+                let ours_label = match self.conflict_choices.get(index) {
+                    Some(Some(HunkChoice::Ours)) => "✓ Use ours".to_string(),
+                    _ => "Use ours".to_string(),
+                };
+                let theirs_label = match self.conflict_choices.get(index) {
+                    Some(Some(HunkChoice::Theirs)) => "✓ Use theirs".to_string(),
+                    _ => "Use theirs".to_string(),
+                };
+                let both_label = match self.conflict_choices.get(index) {
+                    Some(Some(HunkChoice::Both)) => "✓ Use both".to_string(),
+                    _ => "Use both".to_string(),
+                };
+                panel = panel.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .border_1()
+                        .border_color(border)
+                        .rounded(px(4.))
+                        .p_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(format!("Hunk {} in {}", index + 1, path)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_1()
+                                .child(
+                                    Button::new(("hunk-ours", index))
+                                        .ghost()
+                                        .compact()
+                                        .label(ours_label)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.choose_hunk(index, HunkChoice::Ours, cx)
+                                        })),
+                                )
+                                .child(
+                                    Button::new(("hunk-theirs", index))
+                                        .ghost()
+                                        .compact()
+                                        .label(theirs_label)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.choose_hunk(index, HunkChoice::Theirs, cx)
+                                        })),
+                                )
+                                .child(
+                                    Button::new(("hunk-both", index))
+                                        .ghost()
+                                        .compact()
+                                        .label(both_label)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.choose_hunk(index, HunkChoice::Both, cx)
+                                        })),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!("Ours:\n{}", ours_text)),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!("Theirs:\n{}", theirs_text)),
+                        ),
+                );
+            }
+            if !self.conflict_hunks.is_empty() {
+                panel = panel.child(
+                    Button::new("conflict-apply")
+                        .primary()
+                        .compact()
+                        .label("Apply Resolutions")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.apply_conflict_resolutions(cx)
+                        })),
+                );
+            }
+        }
+
+        panel
+    }
+
+    fn render_shelve_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let muted = cx.theme().muted_foreground;
+        let mut panel = div()
+            .id("shelve-panel")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Shelves"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("Stashed workspaces. Unshelve to bring changes back."),
+                    ),
+            );
+
+        if self.shelves.is_empty() {
+            panel = panel.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(
+                        "Nothing on the shelf. Use Shelve in the commit composer.",
+                    ),
+            );
+        }
+
+        for entry in &self.shelves {
+            let index = entry.index;
+            panel = panel.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .text_ellipsis()
+                            .overflow_hidden()
+                            .child(entry.message.clone()),
+                    )
+                    .child(
+                        Button::new(("shelve-apply", index))
+                            .ghost()
+                            .compact()
+                            .label("Unshelve")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.unshelve_at(index, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(("shelve-drop", index))
+                            .ghost()
+                            .compact()
+                            .label("Drop")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.drop_shelve_at(index, cx)
+                            })),
+                    ),
+            );
+        }
+
+        panel.child(
+            Button::new("shelve-reload")
+                .ghost()
+                .compact()
+                .label("Reload")
+                .on_click(cx.listener(|this, _, _, cx| this.reload_shelves(cx))),
+        )
+    }
+
     fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
         let width = match self.sidebar {
@@ -1325,6 +1845,8 @@ impl AppView {
             SidebarMode::Detail => 420.,
             SidebarMode::Diff | SidebarMode::Blame => 680.,
             SidebarMode::Rebase => 480.,
+            SidebarMode::Conflicts => 680.,
+            SidebarMode::Shelve => 420.,
         };
         let base = div()
             .w(px(width))
@@ -1341,6 +1863,10 @@ impl AppView {
             SidebarMode::Diff => base.child(self.render_diff_panel(cx)).into_any_element(),
             SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
             SidebarMode::Rebase => base.child(self.render_rebase_panel(cx)).into_any_element(),
+            SidebarMode::Conflicts => {
+                base.child(self.render_conflicts_panel(cx)).into_any_element()
+            }
+            SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
             SidebarMode::Detail => match &self.selected {
                 Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),
@@ -1495,6 +2021,14 @@ impl AppView {
                     .justify_end()
                     .gap_2()
                     .child(
+                        Button::new("shelve")
+                            .ghost()
+                            .label("Shelve…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_prompt(PromptKind::Stash, cx)
+                            })),
+                    )
+                    .child(
                         Button::new("amend")
                             .ghost()
                             .label(amend_label)
@@ -1572,6 +2106,14 @@ impl AppView {
                 "Stash changes",
                 "Optional message; untracked files are included".to_string(),
                 "Stash",
+            ),
+            PromptKind::Reword { commit_id } => (
+                "Reword commit",
+                format!(
+                    "New message for {}",
+                    &commit_id[..commit_id.len().min(7)]
+                ),
+                "Reword",
             ),
         };
         Some(
