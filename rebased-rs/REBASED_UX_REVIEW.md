@@ -48,7 +48,7 @@
 | HEAD 展示 | ✓ | ✓ | ✅ | — |
 | Graph↔Detail 联动 | 选中即更新 | ✓ | ✅ | — |
 | Commit 搜索 | 过滤框+正则 | perform_search 匹配 subject/author/hash | ✅ | 基本一致 |
-| Commit 过滤 | branch/user/date filter | 仅搜索子串 | 🔴 | 无结构化过滤器 |
+| Commit 过滤 | branch/user/date filter | ✓ branch 范围 + author + date（P1-5/P2） | ✅ | — |
 | 是否操作核心入口 | 是（右键直达） | 否，"日志展示 + 中转站" | 🔴 | — |
 
 ### 3. Commit Context Menu
@@ -233,4 +233,5 @@
 - [x] P2-1 Compare with Branch：后端 `Repository::compare_branches`（复用 `log_filtered` 的 range 语法：`theirs..mine` = ahead / `mine..theirs` = behind）+ trait/impl 双委托 + `AppState` 字段存 mine/theirs/ahead/behind（`SidebarMode` 保持 `Copy`，仅加 unit 变体 `Compare`）+ `render_compare_panel` 双列表（每列标注 `{branch} only (n)`，提交行可点击跳转）+ Branches 菜单本地与远程分支的 ⇋ Compare 入口（`open_branch_compare` 异步执行）。测试 `compare_branches_reports_ahead_and_behind`。
 - [x] P2-2 Merge ff 选项：`git/merge.rs` 引入 `MergeMode` 三档（Default=`--no-edit` / NoFastForward=`--no-ff --no-edit` / FastForwardOnly=`--ff-only`），`merge_branch_with` 全链路传递；Branches 菜单 Merge 单项扩为三档（`⇄ Merge {name} into {target}` / `(no ff)` / `(ff only)`）；顺带修复 P1-6 漏网的 `merge_branch_into_current` 同步调用，改为 `run_op` 异步路径。测试 `merge_branch_with_ff_only_fast_forwards_without_merge_commit` / `merge_branch_with_no_ff_creates_merge_commit`。
 - [x] P2-3 自动刷新：`Repository::repo_digest` 轻量指纹（`rev-parse HEAD` + `status --porcelain` 行数）+ `AppView.repo_digest` 字段 + 5s 周期后台循环——指纹变化才全量 `refresh`，busy/loading 期间跳过检测，首次检测只记基准不触发刷新，entity 释放后退出循环。测试 `repo_digest_reflects_head_and_worktree`。
-- 新增 4 个集成测试（TempRepo 真实 git 仓库），共 92 个测试全部通过，clippy 无警告。
+- [x] P2-4 日期过滤：`log_args` / `log_filtered` / `load_repo_data_filtered` 增加 `since` 参数（git `--since` 表达式）+ `AppState.filter_since`（展示名 + 表达式）+ toolbar 📅 下拉（All time / Today / This week / This month / This year）。测试 `log_args_includes_since` / `log_filtered_since_filters_by_commit_time`。
+- 新增 6 个测试（4 集成 TempRepo 真实 git 仓库 + 2 单元），共 94 个测试全部通过，clippy 无警告。

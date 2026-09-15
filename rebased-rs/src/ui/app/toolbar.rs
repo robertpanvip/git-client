@@ -43,6 +43,8 @@ impl AppView {
         let filter_weak = weak.clone();
         let branch_names: Vec<String> = branch_entries.iter().map(|b| b.name.clone()).collect();
         let filter_branch = self.state.filter_branch.clone();
+        let date_weak = weak.clone();
+        let filter_since = self.state.filter_since.clone();
         let mut branch_label = current
             .clone()
             .unwrap_or_else(|| "main".to_string());
@@ -347,6 +349,56 @@ impl AppView {
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open_prompt(PromptKind::FilterAuthor, cx)
                     })),
+            )
+            .child(
+                DropdownButton::new("date-filter-menu")
+                    .button(
+                        Button::new("date-filter-button").ghost().label(format!(
+                            "📅 {}",
+                            filter_since
+                                .as_ref()
+                                .map(|(label, _)| label.clone())
+                                .unwrap_or_else(|| "All time".to_string())
+                        )),
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(
+                            PopupMenuItem::new("All time")
+                                .checked(filter_since.is_none())
+                                .on_click({
+                                    let weak = date_weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_date_filter(None, cx)
+                                        });
+                                    }
+                                }),
+                        );
+                        let date_specs = [
+                            ("Today", "midnight"),
+                            ("This week", "1 week ago"),
+                            ("This month", "1 month ago"),
+                            ("This year", "1 year ago"),
+                        ];
+                        for (label, expr) in date_specs {
+                            let checked =
+                                filter_since.as_ref().map(|(_, e)| e.as_str()) == Some(expr);
+                            let weak = date_weak.clone();
+                            result = result.item(
+                                PopupMenuItem::new(label)
+                                    .checked(checked)
+                                    .on_click(move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_date_filter(
+                                                Some((label.to_string(), expr.to_string())),
+                                                cx,
+                                            )
+                                        });
+                                    }),
+                            );
+                        }
+                        result
+                    }),
             )
             .child(
                 Button::new("goto")

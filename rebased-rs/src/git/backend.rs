@@ -17,12 +17,14 @@ use super::types::{
 pub trait GitBackend: Send + Sync {
     fn root(&self) -> &Path;
     fn log(&self, limit: usize) -> Result<Vec<Commit>>;
-    /// 结构化过滤器版 log：`from` 限定分支（None = `--all`），`author` 按作者子串过滤。
+    /// 结构化过滤器版 log：`from` 限定分支（None = `--all`），`author` 按作者子串过滤，
+    /// `since` 为 git 日期表达式（None = 不限时间）。
     fn log_filtered(
         &self,
         limit: usize,
         from: Option<&str>,
         author: Option<&str>,
+        since: Option<&str>,
     ) -> Result<Vec<Commit>>;
     /// 解析任意 hash / 分支 / 标签为完整提交 id，用于 Go to 功能。
     fn rev_parse(&self, rev: &str) -> Result<String>;
@@ -119,8 +121,9 @@ impl GitBackend for Repository {
         limit: usize,
         from: Option<&str>,
         author: Option<&str>,
+        since: Option<&str>,
     ) -> Result<Vec<Commit>> {
-        Repository::log_filtered(self, limit, from, author)
+        Repository::log_filtered(self, limit, from, author, since)
     }
 
     fn rev_parse(&self, rev: &str) -> Result<String> {

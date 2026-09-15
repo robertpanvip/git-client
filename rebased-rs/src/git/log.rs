@@ -6,8 +6,14 @@ pub const RECORD_SEP: char = '\u{1e}';
 
 pub const LOG_FORMAT: &str = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1f%D%x1e";
 
-/// `from` 为 Some 时只列出该 rev 可达的提交，否则 `--all`；`author` 为 Some 时按作者过滤。
-pub fn log_args(limit: usize, from: Option<&str>, author: Option<&str>) -> Vec<String> {
+/// `from` 为 Some 时只列出该 rev 可达的提交，否则 `--all`；`author` 按作者过滤；
+/// `since` 为 git 日期表达式（如 `midnight`、`1 week ago`），按提交时间过滤。
+pub fn log_args(
+    limit: usize,
+    from: Option<&str>,
+    author: Option<&str>,
+    since: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "log".to_string(),
         format!("--max-count={limit}"),
@@ -20,6 +26,9 @@ pub fn log_args(limit: usize, from: Option<&str>, author: Option<&str>) -> Vec<S
     }
     if let Some(author) = author {
         args.push(format!("--author={author}"));
+    }
+    if let Some(since) = since {
+        args.push(format!("--since={since}"));
     }
     args
 }
@@ -181,5 +190,14 @@ mod tests {
         assert_eq!(args[3], "--follow");
         assert_eq!(args[4], "--");
         assert_eq!(args[5], "src/main.rs");
+    }
+
+    #[test]
+    fn log_args_includes_since() {
+        let args = log_args(50, None, None, Some("midnight"));
+        assert!(args.contains(&"--since=midnight".to_string()));
+
+        let args = log_args(50, None, None, None);
+        assert!(!args.iter().any(|a| a.starts_with("--since")));
     }
 }

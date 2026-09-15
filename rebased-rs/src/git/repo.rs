@@ -33,17 +33,19 @@ impl Repository {
     }
 
     pub fn log(&self, limit: usize) -> Result<Vec<Commit>> {
-        self.log_filtered(limit, None, None)
+        self.log_filtered(limit, None, None, None)
     }
 
-    /// 结构化过滤器版 log：`from` 限定分支（None = `--all`），`author` 按作者子串过滤。
+    /// 结构化过滤器版 log：`from` 限定分支（None = `--all`），`author` 按作者子串过滤，
+    /// `since` 为 git 日期表达式（None = 不限时间）。
     pub fn log_filtered(
         &self,
         limit: usize,
         from: Option<&str>,
         author: Option<&str>,
+        since: Option<&str>,
     ) -> Result<Vec<Commit>> {
-        let args = super::log::log_args(limit, from, author);
+        let args = super::log::log_args(limit, from, author, since);
         let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = self.cmd.execute(&args)?;
         if !output.success {
@@ -78,8 +80,8 @@ impl Repository {
         theirs: &str,
         limit: usize,
     ) -> Result<(Vec<Commit>, Vec<Commit>)> {
-        let ahead = self.log_filtered(limit, Some(&format!("{theirs}..{mine}")), None)?;
-        let behind = self.log_filtered(limit, Some(&format!("{mine}..{theirs}")), None)?;
+        let ahead = self.log_filtered(limit, Some(&format!("{theirs}..{mine}")), None, None)?;
+        let behind = self.log_filtered(limit, Some(&format!("{mine}..{theirs}")), None, None)?;
         Ok((ahead, behind))
     }
 
@@ -465,6 +467,26 @@ mod tests {
         let (ahead, behind) = repo.compare_branches("main", "feature", 50).unwrap();
         assert_eq!(subjects(&ahead), ["main work"]);
         assert_eq!(subjects(&behind), ["feature work"]);
+    }
+
+    #[test]
+    fn log_filtered_since_filters_by_commit_time() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        let all = repo.log_filtered(50, None, None, None).unwrap();
+        assert_eq!(subjects(&all), ["base"]);
+        // 未来日期：过滤掉全部提交。
+        let none = repo
+            .log_filtered(50, None, None, Some("2038-01-01"))
+            .unwrap();
+        assert!(none.is_empty());
+        // 远古日期：全部保留。
+        let ancient = repo
+            .log_filtered(50, None, None, Some("1970-01-01"))
+            .unwrap();
+        assert_eq!(subjects(&ancient), ["base"]);
     }
 
     #[test]

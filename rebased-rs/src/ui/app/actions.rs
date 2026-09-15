@@ -137,6 +137,16 @@ impl AppView {
         self.refresh(cx);
     }
 
+    /// 设置日期过滤器并重新加载日志（None = 不限时间）。
+    pub(crate) fn set_date_filter(
+        &mut self,
+        filter: Option<(String, String)>,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.filter_since = filter;
+        self.refresh(cx);
+    }
+
     /// Go to Hash/Branch/Tag：把输入解析为提交 id 并在日志中选中。
     pub(crate) fn goto_revision(&mut self, input: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {

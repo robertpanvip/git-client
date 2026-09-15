@@ -33,7 +33,7 @@ struct Loaded {
 
 fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
     let repo = open_backend(path)?;
-    let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None)?;
+    let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None, None)?;
     Ok(Loaded { repo, data })
 }
 
@@ -157,12 +157,14 @@ impl AppView {
         let author = self.state.filter_author.trim().to_string();
         let author = if author.is_empty() { None } else { Some(author) };
         let branch = self.state.filter_branch.clone();
+        let since = self.state.filter_since.clone().map(|(_, expr)| expr);
         let task = cx.background_spawn(async move {
             load_repo_data_filtered(
                 repo.as_ref(),
                 DEFAULT_LOG_LIMIT,
                 branch.as_deref(),
                 author.as_deref(),
+                since.as_deref(),
             )
         });
         cx.spawn(async move |this, cx| {

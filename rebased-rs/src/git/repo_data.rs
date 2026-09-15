@@ -14,18 +14,19 @@ pub struct RepoData {
 }
 
 pub fn load_repo_data(repo: &dyn GitBackend, log_limit: usize) -> Result<RepoData> {
-    load_repo_data_filtered(repo, log_limit, None, None)
+    load_repo_data_filtered(repo, log_limit, None, None, None)
 }
 
 /// 带结构化过滤器的加载：`branch` 限定提交范围（None = 所有分支），
-/// `author` 按作者匹配（None / 空串 = 不过滤）。
+/// `author` 按作者匹配（None / 空串 = 不过滤），`since` 为 git 日期表达式（None = 不限时间）。
 pub fn load_repo_data_filtered(
     repo: &dyn GitBackend,
     log_limit: usize,
     branch: Option<&str>,
     author: Option<&str>,
+    since: Option<&str>,
 ) -> Result<RepoData> {
-    let commits = repo.log_filtered(log_limit, branch, author)?;
+    let commits = repo.log_filtered(log_limit, branch, author, since)?;
     let graph = build_graph(&commits);
     let status = repo.status()?;
     let branches = repo.branches()?;
