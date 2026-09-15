@@ -1,4 +1,4 @@
-use super::command::GitCommand;
+use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
 use super::types::{Change, ChangeStatus, StashEntry, Tag};
 
@@ -101,6 +101,58 @@ pub fn fetch(cmd: &GitCommand, remote: Option<&str>) -> Result<()> {
         Some(r) => cmd.run_ok(&["fetch", r]),
         None => cmd.run_ok(&["fetch", "--all"]),
     }
+}
+
+pub fn push_progress(
+    cmd: &GitCommand,
+    remote: &str,
+    branch: &str,
+    set_upstream: bool,
+    progress: ProgressHandle,
+    cancel: CancelToken,
+) -> Result<()> {
+    let mut args: Vec<&str> = vec!["push", "--progress"];
+    if set_upstream {
+        args.push("--set-upstream");
+    }
+    args.push(remote);
+    args.push(branch);
+    cmd.run_with_control(&args, progress, cancel)
+}
+
+pub fn pull_progress(
+    cmd: &GitCommand,
+    remote: &str,
+    branch: &str,
+    progress: ProgressHandle,
+    cancel: CancelToken,
+) -> Result<()> {
+    cmd.run_with_control(&["pull", "--progress", remote, branch], progress, cancel)
+}
+
+pub fn fetch_progress(
+    cmd: &GitCommand,
+    remote: Option<&str>,
+    progress: ProgressHandle,
+    cancel: CancelToken,
+) -> Result<()> {
+    let mut args: Vec<&str> = vec!["fetch", "--progress"];
+    match remote {
+        Some(r) => args.push(r),
+        None => args.push("--all"),
+    }
+    cmd.run_with_control(&args, progress, cancel)
+}
+
+/// 从 stdin 应用 patch 到 index（--cached）。
+/// `reverse` 为 true 时等价 `git apply --cached -R`，用于把已暂存 hunk 撤回工作区。
+pub fn apply_patch_cached(cmd: &GitCommand, patch: &str, reverse: bool) -> Result<()> {
+    let mut args: Vec<&str> = vec!["apply", "--cached"];
+    if reverse {
+        args.push("-R");
+    }
+    args.push("-");
+    cmd.run_with_stdin(&args, patch)
 }
 
 pub fn checkout(cmd: &GitCommand, target: &str) -> Result<()> {

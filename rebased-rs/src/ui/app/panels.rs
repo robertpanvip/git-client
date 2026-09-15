@@ -8,9 +8,9 @@ use gpui_kit::component::{button::{Button, ButtonVariants}, input::Textarea, Act
 use rebased_rs::git::{HunkChoice, ResetMode};
 
 use crate::ui::blame_view::{render_blame, BlameJump};
-use crate::ui::diff_view::render_diff_files;
+use crate::ui::diff_view::{render_diff_files, HunkAction};
 
-use super::{AppView, SidebarMode};
+use super::{AppView, DiffSource, SidebarMode};
 
 impl AppView {
     pub(crate) fn render_rebase_panel(&self, cx: &mut Context<Self>) -> Div {
@@ -703,6 +703,21 @@ impl AppView {
                             .text_color(muted)
                             .child(title),
                     )
+                    .when(!self.state.diff_files.is_empty(), |header| {
+                        header.child(
+                            Button::new("diff-view-mode")
+                                .ghost()
+                                .label(if self.state.diff_side_by_side {
+                                    "⇔ Side-by-side"
+                                } else {
+                                    "≡ Unified"
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.state.diff_side_by_side = !this.state.diff_side_by_side;
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .when(self.state.diff_path.is_some(), |header| {
                         header.child(
                             Button::new("diff-blame")
@@ -776,13 +791,40 @@ impl AppView {
                     .child("No changes"),
             );
         } else {
+            let hunk_controls: Option<(&'static str, HunkAction)> =
+                match self.state.diff_source {
+                    Some(source @ (DiffSource::Staged | DiffSource::Unstaged)) => {
+                        let label = if source == DiffSource::Staged {
+                            "Unstage"
+                        } else {
+                            "Stage"
+                        };
+                        let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                        Some((
+                            label,
+                            std::sync::Arc::new(
+                                move |file_index, hunk_index, app: &mut gpui::App| {
+                                    let _ = weak.update(app, |this, cx| {
+                                        this.toggle_hunk_stage(file_index, hunk_index, cx)
+                                    });
+                                },
+                            ),
+                        ))
+                    }
+                    _ => None,
+                };
             panel = panel.child(
                 div()
                     .id("diff-content")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(render_diff_files(&self.state.diff_files, cx)),
+                    .child(render_diff_files(
+                        &self.state.diff_files,
+                        self.state.diff_side_by_side,
+                        hunk_controls.as_ref().map(|(label, action)| (*label, action)),
+                        cx,
+                    )),
             );
         }
         panel

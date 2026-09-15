@@ -228,6 +228,44 @@ fn split_diff_git_paths(rest: &str) -> (Option<String>, Option<String>) {
     }
 }
 
+/// 从解析后的 FileDiff 重建单个 hunk 的 patch 文本（含文件级头），
+/// 供 `git apply --cached [-R] -` 使用。
+/// 注意：parse_unified_diff 会丢弃 "\ No newline at end of file" 行，
+/// 跨文件末尾改动的 hunk 重建后不含该标记（P1 已知限制）。
+pub fn hunk_patch(file: &FileDiff, hunk_index: usize) -> String {
+    let Some(hunk) = file.hunks.get(hunk_index) else {
+        return String::new();
+    };
+    let old_seg = file.old_path.as_deref().unwrap_or(&file.path);
+    let mut out = format!("diff --git a/{old_seg} b/{}\n", file.path);
+    if file.is_new {
+        out.push_str("new file mode 100644\n");
+    }
+    if file.is_deleted {
+        out.push_str("deleted file mode 100644\n");
+    }
+    let old_path = if file.is_new {
+        "/dev/null".to_string()
+    } else {
+        format!("a/{old_seg}")
+    };
+    let new_path = if file.is_deleted {
+        "/dev/null".to_string()
+    } else {
+        format!("b/{}", file.path)
+    };
+    out.push_str(&format!("--- {old_path}\n"));
+    out.push_str(&format!("+++ {new_path}\n"));
+    out.push_str(&hunk.header);
+    out.push('\n');
+    for line in &hunk.lines {
+        out.push_str(line.kind.prefix());
+        out.push_str(&line.content);
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,6 +334,41 @@ index 0000000..1111111
         assert!(file.is_new);
         assert_eq!(file.hunks[0].lines.len(), 2);
         assert_eq!(file.hunks[0].lines[0].new_no, Some(1));
+    }
+
+    #[test]
+    fn rebuilds_hunk_patch() {
+        let files = parse_unified_diff(SAMPLE);
+        let patch = hunk_patch(&files[0], 0);
+        assert!(
+            patch.starts_with("diff --git a/src/lib.rs b/src/lib.rs\n"),
+            "patch should start with file header: {patch}"
+        );
+        assert!(patch.contains("--- a/src/lib.rs\n"));
+        assert!(patch.contains("+++ b/src/lib.rs\n"));
+        assert!(patch.contains("@@ -1,4 +1,5 @@\n"));
+        assert!(patch.contains(" fn main() {\n"));
+        assert!(patch.contains("-    println!(\"old\");\n"));
+        assert!(patch.contains("+    println!(\"new\");\n"));
+        assert!(patch.ends_with("+\n"));
+    }
+
+    #[test]
+    fn hunk_patch_out_of_range_is_empty() {
+        let files = parse_unified_diff(SAMPLE);
+        assert_eq!(hunk_patch(&files[0], 9), "");
+    }
+
+    #[test]
+    fn rebuilds_new_file_hunk_patch() {
+        let files = parse_unified_diff(
+            "diff --git a/created.txt b/created.txt\nnew file mode 100644\n--- /dev/null\n+++ b/created.txt\n@@ -0,0 +1,2 @@\n+hello\n+world\n",
+        );
+        let patch = hunk_patch(&files[0], 0);
+        assert!(patch.contains("new file mode 100644\n"));
+        assert!(patch.contains("--- /dev/null\n"));
+        assert!(patch.contains("+++ b/created.txt\n"));
+        assert!(patch.ends_with("+world\n"));
     }
 
     #[test]

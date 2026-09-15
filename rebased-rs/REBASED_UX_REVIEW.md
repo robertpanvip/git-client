@@ -13,9 +13,9 @@
 | 层 | 完成度 | 依据（代码级） |
 |---|---|---|
 | Git Backend | ~90% | `src/git/`：log+graph / status / stage / commit / amend / branch（创建·删除·rename·checkout·本地与远程）/ tag / merge（3 模式 + `-m` 自定义消息）/ rebase（interactive todo + continue + abort）/ cherry-pick / revert / reset（3 模式）/ push（含 force）/ pull / fetch / stash / blame / file-history / worktree 文件读写 / conflict hunk 解析。缺口：远端管理（add/remove remote）、set-upstream、worktree / submodule / bisect 等低频 porcelain。 |
-| Use Case 层（业务编排） | ~85% | `use_cases.rs` + `actions.rs`：统一 `run_op` 异步执行 → busy 文案 → 完成后自动刷新 → 刷新后保持当前选中；branch / author / date 三维过滤管线；compare / conflict / blame / file-history 编排完整。缺口：网络操作无进度事件、不可取消。 |
+| Use Case 层（业务编排） | ~92% | `use_cases.rs` + `actions.rs`：统一 `run_op` 异步执行 → busy 文案 → 完成后自动刷新 → 刷新后保持当前选中；branch / author / date 三维过滤管线；compare / conflict / blame / file-history 编排完整。网络操作已支持实时进度与取消（P1-2），hunk 级 staging 编排完成（P1-3）。 |
 | Desktop UI | ~76% | 三栏主结构 + 工具栏 + 状态栏；commit 右键菜单 12 项；**ref 徽章右键菜单**；branch / tag / remote 下拉全操作；Changes 双分组 + 勾选 stage；Composer（Amend 预填 / Shelve）；Diff 面板（含 Edit / Save / Cancel 编辑模式）；Conflict 面板 hunk 级 Ours / Theirs / Both + 实时 Result 预览；Rebase todo 面板；9 个快捷键；6 类危险操作确认框。缺口见 P0 / P1。 |
-| **Rebased UX（对标综合）** | **~65%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。差距主要在**交互密度**而非方向：~~graph 徽章不可交互~~（已补）、无并排 diff、无 3 窗格合并编辑器、进度反馈弱、快捷键覆盖面窄。 |
+| **Rebased UX（对标综合）** | **~72%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。差距主要在**交互密度**而非方向：~~graph 徽章不可交互~~（已补）、~~无并排 diff~~（P1-1 已补）、~~进度反馈弱~~（P1-2 已补）、无 3 窗格合并编辑器、快捷键覆盖面窄。 |
 
 判断口径：Backend / Use Case 已超过"日常可用"线；与 Rebased 的真实距离在 UX 层。
 
@@ -89,7 +89,7 @@
 | Commit / Amend（预填上次消息） | ✅ | Composer `Commit ({n})` 支持多选提交 |
 | Commit message 编辑 | ✅ | Textarea + Shelve 暂存 |
 | Shelve（stash） | ✅ | `shelves.rs` Shelves 面板 apply / drop |
-| **Hunk / 行级 stage** | 🔴 | Rebased 可在 diff 内按块暂存 |
+| **Hunk / 行级 stage** | ✅ | 本轮新增（P1-3）：diff 面板 hunk 头行内 Stage / Unstage 按钮（`apply_hunk_to_index` / `revert_hunk_from_index` → `git apply --cached [-R] -`）；Commit 来源只读无按钮；操作后自动重开当前 diff |
 
 ### 6. Diff / File History / Blame
 
@@ -102,7 +102,7 @@
 | File History | ✅ | 文件头按钮 + 变更行入口（`use_cases.rs::open_file_history`） |
 | Blame | ✅ | blame 面板 + 点击行跳转 commit（`open_blame`） |
 | Compare（分支） | ✅ | 双列 commit 对照面板 |
-| 并排（side-by-side）视图 | 🔴 | 仅 unified |
+| 并排（side-by-side）视图 | ✅ | 本轮新增（P1-1）：diff 面板头部 ⇄ 切换 unified / side-by-side（`side_by_side_rows` 配对算法：Deleted/Added 段 zip + 空半行补位） |
 | Whitespace 开关 / 行内高亮粒度 | 🟡 | 无开关 |
 
 ### 7. Rebase
@@ -139,7 +139,7 @@
 | 自动刷新 + 选中保持 | ✅ | 刷新后当前 commit / 面板状态保持 |
 | 错误回显 | ✅ | `state.error` 面板，操作失败 UI 状态正确恢复（busy 清除） |
 | 危险操作确认 | ✅ | 6 类：ForcePush / DeleteBranch / DeleteTag / DropHeadCommit / UndoHeadCommit / DiscardChanges |
-| Progress 百分比 / 取消 | 🔴 | 网络（push/pull/fetch）无进度条与取消按钮 |
+| Progress 百分比 / 取消 | ✅ | 本轮新增（P1-2）：push / pull / fetch 强制 `--progress`，stderr 解析线程写 `ProgressHandle`（`\r` 原地刷新段取最新），状态栏实时进度文本 + Cancel 按钮（`CancelToken` 置位 → kill 子进程 → 「operation cancelled」错误提示） |
 | 成功反馈 | 🟡 | 静默清 busy（Rebased 亦偏静默，可接受） |
 
 ### 10. 快捷键和菜单
@@ -157,11 +157,11 @@
 1. ~~**Graph 行内 ref 徽章可交互**~~ ✅ 已完成：`ref_badge()` 挂 `context_menu`（commit_list.rs），按 ref 类型区分——tag → 删除确认；本地分支 → Checkout（当前分支打 ✓）/ Push（无 upstream 自动 --set-upstream）/ Rename… / Delete…（确认框）；远程分支 → Checkout tracking / Pull into current / Compare。本地/远程判定经 `state.branch_entries` 查询，无匹配按远程降级。徽章均带唯一 element id（避免 CodeLocation 菜单 id 冲突）。
 2. ~~**两个最高频肌肉记忆**~~ ✅ 已完成：Ctrl+K 聚焦 Composer（FocusComposer action + ctrl-k 绑定 + TextareaState::focus，actions.rs）；双击 commit = Checkout（行级 on_click + click_count() >= 2 → checkout_commit，与单击选中互不干扰）。
 
-## D. P1（应继续补齐的 UX）
+## D. P1（应继续补齐的 UX）——前三项 ✅ 本轮完成
 
-1. 并排 diff 视图（unified / side-by-side 切换）。
-2. push / pull / fetch 的进度条与取消。
-3. hunk / 行级 staging（diff 面板内选块入暂存）。
+1. ~~并排 diff 视图（unified / side-by-side 切换）~~ ✅ 已完成（P1-1）：diff 面板头部切换按钮 + `side_by_side_rows` 纯函数配对（Deleted/Added 段 zip、空半行补位、Context 左右同行），4 个单元测试。
+2. ~~push / pull / fetch 的进度条与取消~~ ✅ 已完成（P1-2）：git 层 `ProgressHandle`（stderr 读线程写最新进度行）+ `CancelToken`（100ms `try_wait` 轮询 + kill）+ `run_with_stdin`；UI 层 `run_op_progress` 后台执行 + 250ms 轮询刷新状态栏进度文本，Cancel 按钮置位即取消，8 行 stderr tail 用于失败报告。
+3. ~~hunk / 行级 staging（diff 面板内选块入暂存）~~ ✅ 已完成（P1-3）：`hunk_patch()` 从解析后 FileDiff 重建单 hunk patch（含文件级头、new/deleted/rename 路径处理），`apply_hunk_to_index` / `revert_hunk_from_index` 走 `git apply --cached [-R] -`；diff 面板 hunk 头行内嵌 Stage / Unstage 按钮（`DiffSource` 区分来源，Commit 只读），操作后重开当前 diff 刷新。已知限制：`\ No newline at end of file` 标记在解析时丢弃，跨文件末尾 hunk 暂存可能失败。
 4. set upstream + remote 管理 UI（add / remove / prune）。
 5. 分支下拉树形分组（origin/* 折叠）。
 6. Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）。
@@ -185,4 +185,4 @@
 3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单。
 4. **P0 清零后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout，全部能在与 Rebased 相同的位置找到相同语义的入口。
 
-剩余差距（并排 diff、3 窗格合并器、进度、快捷键广度）属于**同方向上的纵深推进**，不改变路线正确性。下一步按 P1 顺序推进即可。
+剩余差距（3 窗格合并器、快捷键广度、P1 后六项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前三项（并排 diff、进度+取消、hunk 级 staging）已与 Rebased 对齐，下一步按 P1-4 起继续推进。

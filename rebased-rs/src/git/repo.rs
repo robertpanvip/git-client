@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use super::branches;
-use super::command::GitCommand;
+use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, RepoStatus, StashEntry, Tag};
+use super::types::{Branch, Change, Commit, FileDiff, RepoStatus, StashEntry, Tag};
 use super::{blame, conflict, diff, merge, rebase};
 use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
@@ -193,6 +193,51 @@ impl Repository {
 
     pub fn fetch(&self) -> Result<()> {
         ops::fetch(&self.cmd, None)
+    }
+
+    pub fn push_with_control(
+        &self,
+        branch: &str,
+        set_upstream: bool,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()> {
+        ops::push_progress(&self.cmd, "origin", branch, set_upstream, progress, cancel)
+    }
+
+    pub fn pull_with_control(
+        &self,
+        branch: &str,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()> {
+        ops::pull_progress(&self.cmd, "origin", branch, progress, cancel)
+    }
+
+    pub fn fetch_with_control(
+        &self,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()> {
+        ops::fetch_progress(&self.cmd, None, progress, cancel)
+    }
+
+    /// 把工作区 diff 中的单个 hunk 暂存到 index。
+    pub fn apply_hunk_to_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        let patch = diff::hunk_patch(file, hunk_index);
+        if patch.is_empty() {
+            return Err(GitError::new("hunk not found"));
+        }
+        ops::apply_patch_cached(&self.cmd, &patch, false)
+    }
+
+    /// 把已暂存 diff 中的单个 hunk 撤回工作区。
+    pub fn revert_hunk_from_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        let patch = diff::hunk_patch(file, hunk_index);
+        if patch.is_empty() {
+            return Err(GitError::new("hunk not found"));
+        }
+        ops::apply_patch_cached(&self.cmd, &patch, true)
     }
 
     pub fn checkout(&self, target: &str) -> Result<()> {

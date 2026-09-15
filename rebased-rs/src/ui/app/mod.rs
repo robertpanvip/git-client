@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use gpui::{
     div, px, size, AppContext, Bounds, Context, Entity, IntoElement, InteractiveElement,
@@ -7,7 +9,8 @@ use gpui::{
 };
 use gpui_kit::component::{input::TextareaState, list::ListState, ActiveTheme, Root};
 use rebased_rs::git::{
-    load_repo_data_filtered, open_backend, GitBackend, GitError, RepoData, DEFAULT_LOG_LIMIT,
+    load_repo_data_filtered, open_backend, CancelToken, GitBackend, GitError, ProgressHandle,
+    RepoData, DEFAULT_LOG_LIMIT,
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
@@ -23,7 +26,7 @@ mod state;
 mod toolbar;
 mod use_cases;
 
-pub(crate) use state::{AppState, ConfirmAction, PromptKind, RebaseFlow, SidebarMode};
+pub(crate) use state::{AppState, ConfirmAction, DiffSource, PromptKind, RebaseFlow, SidebarMode};
 use use_cases::sync_repo_state;
 
 struct Loaded {
@@ -226,6 +229,93 @@ impl AppView {
                     }
                 }
             });
+        })
+        .detach();
+    }
+
+    /// 带进度反馈与取消的 run_op 变体：op 额外接收进度槽与取消令牌，
+    /// 执行期间每 250ms 把最新进度文本同步到状态栏；取消与失败走错误显示。
+    fn run_op_progress(
+        &mut self,
+        busy_message: &str,
+        done_message: &str,
+        op: impl FnOnce(&dyn GitBackend, ProgressHandle, CancelToken) -> Result<(), GitError>
+            + Send
+            + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        // 已有操作在后台执行时忽略新请求，避免并发写操作互相踩踏。
+        if self.state.busy.is_some() {
+            return;
+        }
+        let done_message = done_message.to_string();
+        let progress: ProgressHandle = Arc::new(Mutex::new(None));
+        let progress_watch = Arc::clone(&progress);
+        let cancel: CancelToken = Arc::new(AtomicBool::new(false));
+        self.state.progress_text = None;
+        self.state.cancel_token = Some(Arc::clone(&cancel));
+        self.state.busy = Some(busy_message.to_string());
+        self.state.error = None;
+        cx.notify();
+
+        // 共享完成槽：后台任务结束时写入结果，轮询循环据此收尾
+        let done: Arc<Mutex<Option<Result<(), GitError>>>> = Arc::new(Mutex::new(None));
+        let done_slot = Arc::clone(&done);
+        cx.background_spawn(async move {
+            let result = op(repo.as_ref(), progress, cancel);
+            if let Ok(mut slot) = done_slot.lock() {
+                *slot = Some(result);
+            }
+        })
+        .detach();
+
+        let executor = cx.background_executor().clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                executor.timer(Duration::from_millis(250)).await;
+                let (result, text) = {
+                    let result = done.lock().ok().and_then(|mut slot| slot.take());
+                    let text = progress_watch
+                        .lock()
+                        .ok()
+                        .and_then(|slot| slot.as_ref().cloned());
+                    (result, text)
+                };
+                let keep_going = this
+                    .update(cx, |this, cx| {
+                        if text.is_some() {
+                            this.state.progress_text = text;
+                            cx.notify();
+                        }
+                        match result {
+                            Some(result) => {
+                                this.state.busy = None;
+                                this.state.cancel_token = None;
+                                this.state.progress_text = None;
+                                match result {
+                                    Ok(()) => {
+                                        this.state.error = None;
+                                        this.state.status_message = done_message.clone();
+                                        this.refresh(cx);
+                                    }
+                                    Err(e) => {
+                                        this.state.error = Some(e.to_string());
+                                        cx.notify();
+                                    }
+                                }
+                                false
+                            }
+                            None => true,
+                        }
+                    })
+                    .unwrap_or(false);
+                if !keep_going {
+                    break;
+                }
+            }
         })
         .detach();
     }

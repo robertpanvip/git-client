@@ -17,12 +17,12 @@ pub mod types;
 
 pub use backend::{GitBackend, open_backend};
 pub use blame::parse_blame;
-pub use command::GitCommand;
+pub use command::{CancelToken, GitCommand, ProgressHandle};
 pub use conflict::{
     conflict_hunks, parse_conflict_markers, resolve_markers, ConflictFile, ConflictHunk,
     ConflictKind, ConflictSection, HunkChoice,
 };
-pub use diff::parse_unified_diff;
+pub use diff::{hunk_patch, parse_unified_diff};
 pub use error::{GitError, Result};
 pub use graph::{build_graph, Graph, GraphRow, RowEdge, MAX_COLORS};
 pub use merge::MergeMode;

@@ -3,7 +3,7 @@ use gpui_kit::base::IndexPath;
 
 use rebased_rs::git::{Change, MergeMode, DEFAULT_LOG_LIMIT};
 
-use super::{use_cases::commit_selected, AppView, ConfirmAction, SidebarMode};
+use super::{use_cases::commit_selected, AppView, ConfirmAction, DiffSource, SidebarMode};
 
 actions!(
     rebased_rs,
@@ -43,6 +43,43 @@ impl AppView {
             self.run_op("Unstaged", move |repo| repo.reset(&[path.as_str()]), cx);
         } else {
             self.run_op("Staged", move |repo| repo.add(&[path.as_str()]), cx);
+        }
+    }
+
+    /// hunk 级暂存/取消暂存（diff 面板按钮）：
+    /// Unstaged 来源 → Stage（`git apply --cached`）；Staged 来源 → Unstage（`-R` 撤回）。
+    /// git apply 毫秒级完成，与 open_*_diff 一样在 UI 线程同步执行，完成后重开当前 diff 刷新面板。
+    pub(crate) fn toggle_hunk_stage(
+        &mut self,
+        file_index: usize,
+        hunk_index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(source) = self.state.diff_source else {
+            return;
+        };
+        let Some(file) = self.state.diff_files.get(file_index).cloned() else {
+            return;
+        };
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let result = match source {
+            DiffSource::Unstaged => repo.apply_hunk_to_index(&file, hunk_index),
+            DiffSource::Staged => repo.revert_hunk_from_index(&file, hunk_index),
+            DiffSource::Commit => return,
+        };
+        if let Err(e) = result {
+            self.state.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.state.error = None;
+        let path = self.state.diff_path.clone();
+        match source {
+            DiffSource::Unstaged => self.open_unstaged_diff(path, cx),
+            DiffSource::Staged => self.open_staged_diff(path, cx),
+            DiffSource::Commit => {}
         }
     }
 
@@ -110,7 +147,12 @@ impl AppView {
             cx.notify();
             return;
         };
-        self.run_op("Pulled", move |repo| repo.pull(&branch), cx);
+        self.run_op_progress(
+            "Pull",
+            "Pulled",
+            move |repo, progress, cancel| repo.pull_with_control(&branch, progress, cancel),
+            cx,
+        );
     }
 
     pub(crate) fn checkout_branch(&mut self, name: &str, cx: &mut Context<Self>) {

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use super::command::{CancelToken, ProgressHandle};
 use super::conflict::{ConflictFile, HunkChoice};
 use super::error::Result;
 use super::merge::MergeMode;
@@ -7,7 +8,7 @@ use super::ops::ResetMode;
 use super::rebase::RebaseAction;
 use super::repo::Repository;
 use super::types::{
-    BlameGroup, Branch, Change, Commit, RepoStatus, StashEntry, Tag,
+    BlameGroup, Branch, Change, Commit, FileDiff, RepoStatus, StashEntry, Tag,
 };
 
 /// Storage-agnostic facade over a git repository.
@@ -58,6 +59,26 @@ pub trait GitBackend: Send + Sync {
     fn drop_head_commit(&self) -> Result<()>;
     fn pull(&self, branch: &str) -> Result<()>;
     fn fetch(&self) -> Result<()>;
+    /// 带进度与取消的网络操作：`progress` 实时保存最新一行进度文本，
+    /// `cancel` 置位后子进程被终止并返回取消错误。
+    fn push_with_control(
+        &self,
+        branch: &str,
+        set_upstream: bool,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()>;
+    fn pull_with_control(
+        &self,
+        branch: &str,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()>;
+    fn fetch_with_control(&self, progress: ProgressHandle, cancel: CancelToken) -> Result<()>;
+    /// 把工作区 diff 中的单个 hunk 暂存到 index（`git apply --cached`）。
+    fn apply_hunk_to_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()>;
+    /// 把已暂存 diff 中的单个 hunk 撤回工作区（`git apply --cached -R`）。
+    fn revert_hunk_from_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()>;
     fn checkout(&self, target: &str) -> Result<()>;
     fn create_branch(&self, name: &str, start_point: Option<&str>) -> Result<()>;
     fn delete_branch(&self, name: &str, force: bool) -> Result<()>;
@@ -221,6 +242,37 @@ impl GitBackend for Repository {
 
     fn fetch(&self) -> Result<()> {
         Repository::fetch(self)
+    }
+
+    fn push_with_control(
+        &self,
+        branch: &str,
+        set_upstream: bool,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()> {
+        Repository::push_with_control(self, branch, set_upstream, progress, cancel)
+    }
+
+    fn pull_with_control(
+        &self,
+        branch: &str,
+        progress: ProgressHandle,
+        cancel: CancelToken,
+    ) -> Result<()> {
+        Repository::pull_with_control(self, branch, progress, cancel)
+    }
+
+    fn fetch_with_control(&self, progress: ProgressHandle, cancel: CancelToken) -> Result<()> {
+        Repository::fetch_with_control(self, progress, cancel)
+    }
+
+    fn apply_hunk_to_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        Repository::apply_hunk_to_index(self, file, hunk_index)
+    }
+
+    fn revert_hunk_from_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        Repository::revert_hunk_from_index(self, file, hunk_index)
     }
 
     fn checkout(&self, target: &str) -> Result<()> {

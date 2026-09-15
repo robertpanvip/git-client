@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, hsla, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
@@ -425,10 +427,16 @@ impl AppView {
                     .on_click(cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::GoTo, cx))),
             )
             .child(
-                Button::new("fetch")
-                    .ghost()
-                    .label("Fetch")
-                    .on_click(cx.listener(|this, _, _, cx| this.run_op("Fetched", |repo| repo.fetch(), cx))),
+                Button::new("fetch").ghost().label("Fetch").on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.run_op_progress(
+                            "Fetch",
+                            "Fetched",
+                            |repo, progress, cancel| repo.fetch_with_control(progress, cancel),
+                            cx,
+                        )
+                    }),
+                ),
             )
             .child(
                 Button::new("pull")
@@ -955,10 +963,30 @@ impl AppView {
                         .text_color(hsla(0.0, 0.75, 0.55, 1.0))
                         .child(error.clone())
                         .into_any_element(),
-                    (None, Some(busy), _) => div()
-                        .text_color(muted)
-                        .child(format!("⏳ {busy}…"))
-                        .into_any_element(),
+                    (None, Some(busy), _) => {
+                        let mut busy_row = div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .text_color(muted);
+                        match &self.state.progress_text {
+                            Some(text) => busy_row = busy_row.child(format!("⏳ {busy}… {text}")),
+                            None => busy_row = busy_row.child(format!("⏳ {busy}…")),
+                        }
+                        if let Some(token) = self.state.cancel_token.clone() {
+                            busy_row = busy_row.child(
+                                Button::new("cancel-op")
+                                    .ghost()
+                                    .text_xs()
+                                    .label("Cancel")
+                                    .on_click(move |_, _, _| {
+                                        token.store(true, Ordering::SeqCst);
+                                    }),
+                            );
+                        }
+                        busy_row.into_any_element()
+                    }
                     (None, None, false) => div()
                         .text_color(muted)
                         .child(self.state.status_message.clone())

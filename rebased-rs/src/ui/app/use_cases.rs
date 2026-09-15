@@ -6,7 +6,7 @@ use rebased_rs::git::{
 #[cfg(test)]
 use rebased_rs::git::{load_repo_data, open_backend, DEFAULT_LOG_LIMIT};
 
-use super::state::{AppState, RebaseFlow, SidebarMode};
+use super::state::{AppState, DiffSource, RebaseFlow, SidebarMode};
 
 pub(crate) fn commit_with_autoadd(
     repo: &dyn GitBackend,
@@ -175,6 +175,7 @@ pub(crate) fn open_staged_diff(
     };
     state.diff_path = path;
     state.diff_editing = false;
+    state.diff_source = Some(DiffSource::Staged);
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -192,6 +193,7 @@ pub(crate) fn open_unstaged_diff(
         None => "Diff · unstaged".to_string(),
     };
     state.diff_path = path;
+    state.diff_source = Some(DiffSource::Unstaged);
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -212,6 +214,7 @@ pub(crate) fn open_commit_diff(
     };
     state.diff_path = None;
     state.diff_editing = false;
+    state.diff_source = Some(DiffSource::Commit);
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -463,5 +466,53 @@ mod tests {
         assert_eq!(state.sidebar, SidebarMode::Diff);
         assert!(state.diff_title.contains("staged"));
         assert!(!state.diff_files.is_empty());
+    }
+
+    #[test]
+    fn hunk_stage_and_unstage_roundtrip() {
+        let repo_dir = TempRepo::new();
+        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        let repo = open_backend(&repo_dir.path).unwrap();
+        std::fs::write(
+            repo_dir.path.join("a.txt"),
+            "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n",
+        )
+        .unwrap();
+        git(&repo_dir.path, &["add", "a.txt"]);
+        git(&repo_dir.path, &["commit", "-m", "add a.txt"]);
+        std::fs::write(
+            repo_dir.path.join("a.txt"),
+            "CHANGED1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nCHANGED10\n",
+        )
+        .unwrap();
+
+        // U3 上下文下两处相距较远的改动应拆成两个 hunk
+        let stdout = repo.diff_unstaged(Some("a.txt")).unwrap();
+        let files = parse_unified_diff(&stdout);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].hunks.len(), 2);
+
+        // Stage 第一个 hunk：只有 CHANGED1 进入 index
+        repo.apply_hunk_to_index(&files[0], 0).unwrap();
+        let staged = parse_unified_diff(&repo.diff_staged(Some("a.txt")).unwrap());
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].hunks.len(), 1);
+        let staged_text: Vec<&str> = staged[0].hunks[0]
+            .lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect();
+        assert!(staged_text.contains(&"CHANGED1"));
+        assert!(!staged_text.contains(&"CHANGED10"));
+
+        // Unstage 该 hunk：index 回到 HEAD，staged diff 清空
+        repo.revert_hunk_from_index(&staged[0], 0).unwrap();
+        let staged_after = repo.diff_staged(Some("a.txt")).unwrap();
+        assert!(
+            parse_unified_diff(&staged_after)
+                .iter()
+                .all(|file| file.hunks.is_empty()),
+            "staged diff should be empty after unstage: {staged_after}"
+        );
     }
 }

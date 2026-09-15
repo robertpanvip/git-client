@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    BlameGroup, Branch, Change, Commit, ConflictFile, ConflictHunk, FileDiff, HunkChoice,
-    RebaseAction, StashEntry, Tag,
+    BlameGroup, Branch, CancelToken, Change, Commit, ConflictFile, ConflictHunk, FileDiff,
+    HunkChoice, RebaseAction, StashEntry, Tag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +16,16 @@ pub(crate) enum SidebarMode {
     Conflicts,
     Shelve,
     History,
+}
+
+/// 当前 diff 面板内容来源，决定 hunk 按钮行为：
+/// Staged = `git diff --cached`（按钮为 Unstage），Unstaged = `git diff`（按钮为 Stage），
+/// Commit = `git show`（只读，无按钮）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DiffSource {
+    Staged,
+    Unstaged,
+    Commit,
 }
 
 #[derive(Clone)]
@@ -157,6 +167,10 @@ pub(crate) struct AppState {
     pub(crate) diff_title: String,
     pub(crate) diff_path: Option<String>,
     pub(crate) diff_editing: bool,
+    /// diff 视图布局：true = 并排（side-by-side），false = 统一（unified）。
+    pub(crate) diff_side_by_side: bool,
+    /// 当前 diff 面板的内容来源（决定 hunk 暂存按钮行为；None = 无 diff）。
+    pub(crate) diff_source: Option<DiffSource>,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
@@ -176,6 +190,10 @@ pub(crate) struct AppState {
     pub(crate) loading: bool,
     /// 正在后台执行的 git 操作描述（Some = 忙碌，同时防止并发写操作）。
     pub(crate) busy: Option<String>,
+    /// 后台网络操作（push/pull/fetch）的最新进度文本（250ms 轮询快照）。
+    pub(crate) progress_text: Option<String>,
+    /// 当前可取消操作的取消令牌（Some = 状态栏显示取消按钮）。
+    pub(crate) cancel_token: Option<CancelToken>,
     /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
     pub(crate) compare_mine: String,
     pub(crate) compare_theirs: String,
@@ -208,6 +226,8 @@ impl Default for AppState {
             diff_title: String::new(),
             diff_path: None,
             diff_editing: false,
+            diff_side_by_side: false,
+            diff_source: None,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
@@ -226,6 +246,8 @@ impl Default for AppState {
             error: None,
             loading: true,
             busy: None,
+            progress_text: None,
+            cancel_token: None,
             compare_mine: String::new(),
             compare_theirs: String::new(),
             compare_ahead: Vec::new(),
