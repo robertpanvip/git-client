@@ -84,6 +84,12 @@ pub trait GitBackend: Send + Sync {
     fn rebase_stopped_commit(&self) -> Option<String>;
     fn merge_branch(&self, branch: &str) -> Result<()>;
     fn merge_branch_with(&self, branch: &str, mode: MergeMode) -> Result<()>;
+    fn merge_branch_with_message(
+        &self,
+        branch: &str,
+        mode: MergeMode,
+        message: Option<&str>,
+    ) -> Result<()>;
     fn merge_continue(&self) -> Result<()>;
     fn merge_abort(&self) -> Result<()>;
     fn is_merge_in_progress(&self) -> bool;
@@ -96,6 +102,8 @@ pub trait GitBackend: Send + Sync {
         choices: &[HunkChoice],
     ) -> Result<()>;
     fn stage_file(&self, path: &str) -> Result<()>;
+    fn worktree_file_content(&self, path: &str) -> Result<String>;
+    fn write_worktree_file(&self, path: &str, content: &str) -> Result<()>;
     fn checkout_side(&self, path: &str, ours: bool) -> Result<()>;
     fn stash_list(&self) -> Result<Vec<StashEntry>>;
     fn stash_apply_at(&self, index: usize) -> Result<()>;
@@ -319,6 +327,15 @@ impl GitBackend for Repository {
         Repository::merge_branch_with(self, branch, mode)
     }
 
+    fn merge_branch_with_message(
+        &self,
+        branch: &str,
+        mode: MergeMode,
+        message: Option<&str>,
+    ) -> Result<()> {
+        Repository::merge_branch_with_message(self, branch, mode, message)
+    }
+
     fn merge_continue(&self) -> Result<()> {
         Repository::merge_continue(self)
     }
@@ -350,6 +367,14 @@ impl GitBackend for Repository {
 
     fn stage_file(&self, path: &str) -> Result<()> {
         Repository::stage_file(self, path)
+    }
+
+    fn worktree_file_content(&self, path: &str) -> Result<String> {
+        Repository::worktree_file_content(self, path)
+    }
+
+    fn write_worktree_file(&self, path: &str, content: &str) -> Result<()> {
+        Repository::write_worktree_file(self, path, content)
     }
 
     fn checkout_side(&self, path: &str, ours: bool) -> Result<()> {

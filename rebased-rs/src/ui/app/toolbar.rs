@@ -128,7 +128,7 @@ impl AppView {
                             let merge_specs = [
                                 (format!("⇄ Merge {name} into {target}"), MergeMode::Default),
                                 (
-                                    format!("⇄ Merge {name} into {target} (no ff)"),
+                                    format!("⇄ Merge {name} into {target} (no ff)…"),
                                     MergeMode::NoFastForward,
                                 ),
                                 (
@@ -141,10 +141,17 @@ impl AppView {
                                     let weak = weak.clone();
                                     let name = name.clone();
                                     move |_, _, cx| {
-                                        let _ = weak.update(cx, |this, cx| {
-                                            this.merge_branch_into_current(
-                                                name.clone(), mode, cx,
-                                            )
+                                        let _ = weak.update_in(cx, |this, window, cx| {
+                                            if mode == MergeMode::NoFastForward {
+                                                this.open_merge_message(name.clone(), window, cx);
+                                            } else {
+                                                this.merge_branch_into_current(
+                                                    name.clone(),
+                                                    mode,
+                                                    None,
+                                                    cx,
+                                                );
+                                            }
                                         });
                                     }
                                 }));
@@ -173,6 +180,17 @@ impl AppView {
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
                                         this.open_branch_compare(name.clone(), cx)
+                                    });
+                                }
+                            }));
+                            result = result.item(PopupMenuItem::new(format!(
+                                "✎ Rename {name}…"
+                            )).on_click({
+                                let weak = weak.clone();
+                                let name = name.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update_in(cx, |this, window, cx| {
+                                        this.open_rename_branch_by_name(name.clone(), window, cx)
                                     });
                                 }
                             }));

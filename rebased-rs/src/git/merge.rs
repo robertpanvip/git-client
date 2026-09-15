@@ -9,13 +9,24 @@ pub enum MergeMode {
     FastForwardOnly,
 }
 
-pub fn merge_branch(cmd: &GitCommand, branch: &str, mode: MergeMode) -> Result<()> {
+pub fn merge_branch(
+    cmd: &GitCommand,
+    branch: &str,
+    mode: MergeMode,
+    message: Option<&str>,
+) -> Result<()> {
     let mut args: Vec<&str> = vec!["merge"];
     match mode {
         MergeMode::Default => args.push("--no-edit"),
         MergeMode::NoFastForward => {
             args.push("--no-ff");
-            args.push("--no-edit");
+            match message {
+                Some(m) => {
+                    args.push("-m");
+                    args.push(m);
+                }
+                None => args.push("--no-edit"),
+            }
         }
         MergeMode::FastForwardOnly => args.push("--ff-only"),
     }

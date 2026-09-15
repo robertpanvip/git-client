@@ -174,6 +174,7 @@ pub(crate) fn open_staged_diff(
         None => "Diff · staged".to_string(),
     };
     state.diff_path = path;
+    state.diff_editing = false;
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())
@@ -210,6 +211,7 @@ pub(crate) fn open_commit_diff(
         None => format!("Commit {short}"),
     };
     state.diff_path = None;
+    state.diff_editing = false;
     state.sidebar = SidebarMode::Diff;
     state.error = None;
     Ok(())

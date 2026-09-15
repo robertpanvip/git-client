@@ -256,14 +256,17 @@ impl AppView {
         &mut self,
         name: String,
         mode: MergeMode,
+        message: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let message = match mode {
+        let op_message = match mode {
             MergeMode::Default => format!("Merged {name}"),
             MergeMode::NoFastForward => format!("Merged {name} (no ff)"),
             MergeMode::FastForwardOnly => format!("Fast-forwarded {name}"),
         };
-        self.run_op(&message, move |repo| repo.merge_branch_with(&name, mode), cx);
+        self.run_op(&op_message, move |repo| {
+            repo.merge_branch_with_message(&name, mode, message.as_deref())
+        }, cx);
     }
 
     pub(crate) fn abort_merge(&mut self, cx: &mut Context<Self>) {

@@ -311,7 +311,16 @@ impl Repository {
     }
 
     pub fn merge_branch_with(&self, branch: &str, mode: merge::MergeMode) -> Result<()> {
-        merge::merge_branch(&self.cmd, branch, mode)
+        self.merge_branch_with_message(branch, mode, None)
+    }
+
+    pub fn merge_branch_with_message(
+        &self,
+        branch: &str,
+        mode: merge::MergeMode,
+        message: Option<&str>,
+    ) -> Result<()> {
+        merge::merge_branch(&self.cmd, branch, mode, message)
     }
 
     pub fn merge_continue(&self) -> Result<()> {
@@ -354,6 +363,25 @@ impl Repository {
 
     pub fn stage_file(&self, path: &str) -> Result<()> {
         conflict::stage_file(&self.cmd, path)
+    }
+
+    pub fn worktree_file_content(&self, path: &str) -> Result<String> {
+        let full = self.cmd.workdir().join(path);
+        let content = std::fs::read_to_string(&full)
+            .map_err(|e| GitError::with_stderr(format!("read {} failed", path), e.to_string()))?;
+        Ok(content)
+    }
+
+    pub fn write_worktree_file(&self, path: &str, content: &str) -> Result<()> {
+        let full = self.cmd.workdir().join(path);
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GitError::with_stderr(format!("mkdir for {} failed", path), e.to_string())
+            })?;
+        }
+        std::fs::write(&full, content)
+            .map_err(|e| GitError::with_stderr(format!("write {} failed", path), e.to_string()))?;
+        Ok(())
     }
 
     pub fn checkout_side(&self, path: &str, ours: bool) -> Result<()> {
@@ -523,6 +551,45 @@ mod tests {
         assert_eq!(log[0].subject, "Merge branch 'feature'");
         assert!(subjects(&log).contains(&"main work"));
         assert!(subjects(&log).contains(&"feature work"));
+    }
+
+    #[test]
+    fn merge_branch_with_message_uses_custom_message() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+        git(&dir.path, &["checkout", "-b", "feature"]);
+        commit_file(&dir.path, "feature.txt", "feature work");
+        git(&dir.path, &["checkout", "main"]);
+        commit_file(&dir.path, "main.txt", "main work");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        repo.merge_branch_with_message(
+            "feature",
+            merge::MergeMode::NoFastForward,
+            Some("custom merge message"),
+        )
+        .unwrap();
+        let log = repo.log(10).unwrap();
+        assert_eq!(log[0].parents.len(), 2);
+        assert_eq!(log[0].subject, "custom merge message");
+    }
+
+    #[test]
+    fn worktree_file_content_and_write_roundtrip() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "a.txt", "original");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        let content = repo.worktree_file_content("a.txt").unwrap();
+        assert_eq!(content, "original");
+
+        repo.write_worktree_file("a.txt", "edited content")
+            .unwrap();
+        let edited = std::fs::read_to_string(dir.path.join("a.txt")).unwrap();
+        assert_eq!(edited, "edited content");
+
+        let err = repo.worktree_file_content("missing.txt").unwrap_err();
+        assert!(err.to_string().contains("read missing.txt failed"));
     }
 
     #[test]

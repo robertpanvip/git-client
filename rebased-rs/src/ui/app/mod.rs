@@ -46,6 +46,7 @@ pub struct AppView {
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
+    diff_edit_input: Entity<TextareaState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -62,6 +63,11 @@ impl AppView {
                 .placeholder("Name / message")
                 .soft_wrap(false)
         });
+        let diff_edit_input = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder("File content")
+                .soft_wrap(true)
+        });
         let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
         list.update(cx, |list, cx| list.focus(window, cx));
 
@@ -73,6 +79,7 @@ impl AppView {
             list,
             message_input,
             prompt_input,
+            diff_edit_input,
             _subscriptions: subscriptions,
         };
 

@@ -1,7 +1,7 @@
 use gpui::{Context, Entity, Window};
 use gpui_kit::component::list::{ListEvent, ListState};
 
-use rebased_rs::git::{Commit, RebaseActionKind, ResetMode};
+use rebased_rs::git::{Commit, MergeMode, RebaseActionKind, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
 
@@ -137,6 +137,73 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn open_rename_branch_by_name(
+        &mut self,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.prompt_input
+            .update(cx, |state, cx| state.set_value(&name, window, cx));
+        self.state.prompt = Some(PromptKind::RenameBranchByName { name });
+        cx.notify();
+    }
+
+    pub(crate) fn open_merge_message(
+        &mut self,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let target = self
+            .state
+            .current_branch
+            .clone()
+            .unwrap_or_else(|| "HEAD".to_string());
+        let prefill = format!("Merge branch '{name}' into {target}");
+        self.prompt_input
+            .update(cx, |state, cx| state.set_value(&prefill, window, cx));
+        self.state.prompt = Some(PromptKind::MergeMessage { name });
+        cx.notify();
+    }
+
+    pub(crate) fn open_diff_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let Some(path) = self.state.diff_path.clone() else {
+            return;
+        };
+        match repo.worktree_file_content(&path) {
+            Ok(content) => {
+                self.diff_edit_input
+                    .update(cx, |state, cx| state.set_value(&content, window, cx));
+                self.state.diff_editing = true;
+            }
+            Err(e) => {
+                self.state.error = Some(format!("Cannot edit {path}: {e}"));
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn save_diff_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.state.diff_path.clone() else {
+            return;
+        };
+        let content = self.diff_edit_input.read(cx).value().to_string();
+        self.state.diff_editing = false;
+        let message = format!("Saved {path}");
+        self.run_op(&message, move |repo| {
+            repo.write_worktree_file(&path, &content)
+        }, cx);
+    }
+
+    pub(crate) fn cancel_diff_edit(&mut self, cx: &mut Context<Self>) {
+        self.state.diff_editing = false;
+        cx.notify();
+    }
+
     pub(crate) fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
         self.state.prompt = None;
         cx.notify();
@@ -222,6 +289,18 @@ impl AppView {
                     let message = format!("Renamed {old} to {input}");
                     self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
                 }
+            }
+            PromptKind::RenameBranchByName { name } => {
+                if input.is_empty() {
+                    self.state.error = Some("Branch name is empty".to_string());
+                } else {
+                    let message = format!("Renamed {name} to {input}");
+                    self.run_op(&message, move |repo| repo.rename_branch(&name, &input), cx);
+                }
+            }
+            PromptKind::MergeMessage { name } => {
+                let message = if input.is_empty() { None } else { Some(input) };
+                self.merge_branch_into_current(name, MergeMode::NoFastForward, message, cx);
             }
             PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
             PromptKind::RebaseEdit { index } => {

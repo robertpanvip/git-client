@@ -714,6 +714,38 @@ impl AppView {
                                 })),
                         )
                     })
+                    .when(
+                        self.state.diff_path.is_some() && !self.state.diff_editing,
+                        |header| {
+                            header.child(
+                                Button::new("diff-edit")
+                                    .ghost()
+                                    .label("✎ Edit")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_diff_edit(window, cx)
+                                    })),
+                            )
+                        },
+                    )
+                    .when(self.state.diff_editing, |header| {
+                        header
+                            .child(
+                                Button::new("diff-save")
+                                    .ghost()
+                                    .label("Save")
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.save_diff_edit(cx)),
+                                    ),
+                            )
+                            .child(
+                                Button::new("diff-cancel")
+                                    .ghost()
+                                    .label("Cancel")
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx)),
+                                    ),
+                            )
+                    })
                     .child(
                         Button::new("diff-close")
                             .ghost()
@@ -722,7 +754,17 @@ impl AppView {
                     ),
             );
 
-        if self.state.diff_files.is_empty() {
+        if self.state.diff_editing {
+            panel = panel.child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .child(Textarea::new(&self.diff_edit_input).flex_1()),
+            );
+        } else if self.state.diff_files.is_empty() {
             panel = panel.child(
                 div()
                     .flex_1()
@@ -932,6 +974,14 @@ impl AppView {
                     Some(name) => format!("Rename current branch {name} to:"),
                     None => "No current branch".to_string(),
                 },
+            ),
+            super::PromptKind::RenameBranchByName { name } => (
+                "Rename branch".to_string(),
+                format!("Rename {name} to:"),
+            ),
+            super::PromptKind::MergeMessage { name } => (
+                "Merge message".to_string(),
+                format!("Merge commit message for merging {name} (no ff):"),
             ),
             super::PromptKind::RebaseEdit { .. } => (
                 "Edit commit message".to_string(),
