@@ -1,0 +1,338 @@
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, hsla, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled,
+};
+use gpui_kit::component::{button::{Button, ButtonVariants}, ActiveTheme};
+
+use rebased_rs::git::{Change, Commit, Tag};
+
+use crate::ui::commit_list::format_time;
+use crate::ui::graph_view::{lane_color, status_color};
+
+use super::{AppView, PromptKind};
+
+impl AppView {
+    pub(crate) fn render_detail_file_row(
+        &self,
+        index: usize,
+        change: &Change,
+        commit_id: &str,
+        fg: gpui::Hsla,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let color = status_color(&change.status);
+        let path = change.display_path();
+        let diff_path = change.path.clone();
+        let blame_path = change.path.clone();
+        let file_commit_id = commit_id.to_string();
+
+        div()
+            .id(format!("detail-file-{index}"))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py_0p5()
+            .rounded(px(4.))
+            .cursor_pointer()
+            .hover(move |style| style.bg(hsla(fg.h, fg.s, fg.l, 0.07)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.open_commit_diff(file_commit_id.clone(), Some(diff_path.clone()), cx)
+            }))
+            .child(
+                div()
+                    .w(px(14.))
+                    .flex_none()
+                    .text_xs()
+                    .text_color(color)
+                    .child(change.status.short_label()),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_xs()
+                    .child(path),
+            )
+            .child(
+                Button::new(format!("detail-blame-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("B")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.open_blame(blame_path.clone(), cx);
+                    })),
+            )
+            .into_any_element()
+    }
+
+    pub(crate) fn render_detail(&self, commit: &Commit, cx: &mut Context<Self>) -> Div {
+        let fg = cx.theme().foreground;
+        let muted = cx.theme().muted_foreground;
+        let commit_id = commit.id.0.clone();
+        let tag_color = lane_color(5);
+        let is_head = self
+            .head_id
+            .as_ref()
+            .is_some_and(|head| head == &commit_id);
+
+        let commit_tags: Vec<Tag> = self
+            .tags
+            .iter()
+            .filter(|tag| tag.commit_id == commit_id)
+            .cloned()
+            .collect();
+
+        let file_rows: Vec<AnyElement> = self
+            .detail_files
+            .iter()
+            .enumerate()
+            .map(|(index, change)| {
+                self.render_detail_file_row(index, change, &commit_id, fg, cx)
+            })
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_start()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_sm()
+                            .text_color(fg)
+                            .child(commit.subject.clone()),
+                    )
+                    .child(
+                        Button::new("close-detail")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.clear_detail(cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!(
+                        "{} · {} · {}",
+                        &commit.id.0[..commit.id.0.len().min(7)],
+                        commit.author.name,
+                        format_time(commit.time)
+                    )),
+            )
+            .when(!commit.body.is_empty(), |detail| {
+                detail.child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(muted)
+                        .whitespace_normal()
+                        .child(commit.body.clone()),
+                )
+            })
+            .when(!self.detail_branches.is_empty(), |detail| {
+                detail.child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(tag_color)
+                        .child(format!("∟ {}", self.detail_branches.join(", "))),
+                )
+            })
+            .when(!commit_tags.is_empty(), |detail| {
+                detail.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_1()
+                        .flex_none()
+                        .child(div().flex_none().text_xs().text_color(muted).child("Tags"))
+                        .children(commit_tags.into_iter().map(|tag| {
+                            let name = tag.name;
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_0p5()
+                                .rounded(px(4.))
+                                .px_1p5()
+                                .py_0p5()
+                                .bg(hsla(tag_color.h, tag_color.s, tag_color.l, 0.15))
+                                .child(
+                                    div().text_xs().text_color(tag_color).child(name.clone()),
+                                )
+                                .child(
+                                    Button::new(format!("delete-tag-{name}"))
+                                        .ghost()
+                                        .compact()
+                                        .label("✕")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.delete_tag(&name, cx);
+                                        })),
+                                )
+                        })),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_1()
+                    .flex_none()
+                    .child(
+                        Button::new("detail-cherry-pick")
+                            .ghost()
+                            .compact()
+                            .label("Cherry-pick")
+                            .on_click(cx.listener(|this, _, _, cx| this.cherry_pick_selected(cx))),
+                    )
+                    .child(
+                        Button::new("detail-revert")
+                            .ghost()
+                            .compact()
+                            .label("Revert")
+                            .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
+                    )
+                    .child(
+                        Button::new("detail-rebase")
+                            .ghost()
+                            .compact()
+                            .label("Rebase from here")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let base = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.start_rebase(base, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-reword")
+                            .ghost()
+                            .compact()
+                            .label("Reword…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::Reword { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-diff")
+                            .ghost()
+                            .compact()
+                            .label("Diff")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_commit_diff(id, None, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-branch")
+                            .ghost()
+                            .compact()
+                            .label("Branch…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let start_point = this.selected.as_ref().map(|c| c.id.0.clone());
+                                this.open_prompt(PromptKind::NewBranch { start_point }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-tag")
+                            .ghost()
+                            .compact()
+                            .label("Tag…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::NewTag { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-checkout")
+                            .ghost()
+                            .compact()
+                            .label("Checkout")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let Some(commit) = this.selected.clone() else {
+                                    return;
+                                };
+                                let id = commit.id.0.clone();
+                                let short = &id[..id.len().min(7)];
+                                let message = format!("Checked out {short}");
+                                this.run_op(&message, move |repo| repo.checkout(&id), cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-copy-sha")
+                            .ghost()
+                            .compact()
+                            .label("⧉ Copy SHA")
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_commit_sha(cx))),
+                    )
+                    .when(is_head, |row| {
+                        row.child(
+                            Button::new("detail-undo-commit")
+                                .ghost()
+                                .compact()
+                                .label("↶ Undo Commit")
+                                .on_click(cx.listener(|this, _, _, cx| this.undo_head(cx))),
+                        )
+                        .child(
+                            Button::new("detail-drop-commit")
+                                .danger()
+                                .compact()
+                                .label("✕ Drop Commit")
+                                .on_click(cx.listener(|this, _, _, cx| this.drop_head(cx))),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("Files ({})", self.detail_files.len())),
+            )
+            .child(
+                div()
+                    .id("detail-files")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .children(file_rows),
+            )
+    }
+}
