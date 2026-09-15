@@ -56,6 +56,42 @@ pub fn push(cmd: &GitCommand, remote: &str, branch: &str, set_upstream: bool) ->
     cmd.run_ok(&args)
 }
 
+pub fn push_force(cmd: &GitCommand, remote: &str, branch: &str) -> Result<()> {
+    cmd.run_ok(&["push", "--force-with-lease", remote, branch])
+}
+
+pub fn push_tags(cmd: &GitCommand, remote: &str) -> Result<()> {
+    cmd.run_ok(&["push", "--tags", remote])
+}
+
+pub fn rename_branch(cmd: &GitCommand, old: &str, new: &str) -> Result<()> {
+    cmd.run_ok(&["branch", "-m", old, new])
+}
+
+pub fn undo_head_commit(cmd: &GitCommand) -> Result<()> {
+    let has_parent = cmd
+        .execute(&["rev-parse", "--verify", "--quiet", "HEAD^"])?
+        .success;
+    if has_parent {
+        cmd.run_ok(&["reset", "--soft", "HEAD^"])
+    } else {
+        cmd.run_ok(&["update-ref", "-d", "HEAD"])
+    }
+}
+
+pub fn drop_head_commit(cmd: &GitCommand) -> Result<()> {
+    let has_parent = cmd
+        .execute(&["rev-parse", "--verify", "--quiet", "HEAD^"])?
+        .success;
+    if !has_parent {
+        return Err(GitError::with_stderr(
+            "drop failed",
+            "cannot drop the root commit; use rebase instead",
+        ));
+    }
+    cmd.run_ok(&["reset", "--hard", "HEAD^"])
+}
+
 pub fn pull(cmd: &GitCommand, remote: &str, branch: &str) -> Result<()> {
     cmd.run_ok(&["pull", remote, branch])
 }

@@ -9,6 +9,7 @@ pub enum RebaseActionKind {
     Squash,
     Fixup,
     Drop,
+    Edit,
 }
 
 impl RebaseActionKind {
@@ -18,6 +19,7 @@ impl RebaseActionKind {
             RebaseActionKind::Squash => "squash",
             RebaseActionKind::Fixup => "fixup",
             RebaseActionKind::Drop => "drop",
+            RebaseActionKind::Edit => "edit",
         }
     }
 
@@ -27,6 +29,7 @@ impl RebaseActionKind {
             RebaseActionKind::Squash => "Squash",
             RebaseActionKind::Fixup => "Fixup",
             RebaseActionKind::Drop => "Drop",
+            RebaseActionKind::Edit => "Edit",
         }
     }
 
@@ -35,7 +38,8 @@ impl RebaseActionKind {
             RebaseActionKind::Pick => RebaseActionKind::Squash,
             RebaseActionKind::Squash => RebaseActionKind::Fixup,
             RebaseActionKind::Fixup => RebaseActionKind::Drop,
-            RebaseActionKind::Drop => RebaseActionKind::Pick,
+            RebaseActionKind::Drop => RebaseActionKind::Edit,
+            RebaseActionKind::Edit => RebaseActionKind::Pick,
         }
     }
 }
@@ -97,7 +101,8 @@ pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     if plan.is_empty() {
         return Err(GitError::with_stderr("rebase aborted", "empty rebase plan"));
     }
-    let tmp = std::env::temp_dir().join(format!("rebased-rs-todo-{}", std::process::id()));
+    let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let tmp = std::env::temp_dir().join(format!("rebased-rs-todo-{}", unique));
     std::fs::write(&tmp, render_todo(plan))
         .map_err(|e| GitError::with_stderr("failed to write rebase todo", e.to_string()))?;
     let editor = format!("cp {}", tmp.display());
@@ -114,6 +119,12 @@ pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
         return Err(GitError::with_stderr(
             "interactive rebase failed",
             output.stderr,
+        ));
+    }
+    if in_progress(cmd) {
+        return Err(GitError::with_stderr(
+            "rebase stopped for editing",
+            "rebase paused at an 'edit' action; amend or commit, then continue the rebase",
         ));
     }
     Ok(())
@@ -176,10 +187,11 @@ pub fn reword(cmd: &GitCommand, commit: &str, message: &str) -> Result<()> {
         let short = &action.id[..action.id.len().min(10)];
         todo.push_str(&format!("{keyword} {short} {}\n", action.subject));
     }
+    let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let tmp_todo = std::env::temp_dir()
-        .join(format!("rebased-rs-reword-todo-{}", std::process::id()));
+        .join(format!("rebased-rs-reword-todo-{}", unique));
     let tmp_msg = std::env::temp_dir()
-        .join(format!("rebased-rs-reword-msg-{}", std::process::id()));
+        .join(format!("rebased-rs-reword-msg-{}", unique));
     std::fs::write(&tmp_todo, todo)
         .map_err(|e| GitError::with_stderr("failed to write reword todo", e.to_string()))?;
     std::fs::write(&tmp_msg, message)
@@ -222,6 +234,13 @@ pub fn in_progress(cmd: &GitCommand) -> bool {
         cmd.workdir().join(git_dir)
     };
     base.join("rebase-merge").exists() || base.join("rebase-apply").exists()
+}
+
+pub fn stopped_commit(cmd: &GitCommand) -> Option<String> {
+    let output = cmd
+        .execute(&["rev-parse", "-q", "--verify", "REBASE_HEAD"])
+        .ok()?;
+    output.success.then(|| output.stdout.trim().to_string())
 }
 
 #[cfg(test)]
@@ -267,10 +286,12 @@ mod tests {
     #[test]
     fn kind_cycles() {
         let mut kind = RebaseActionKind::Pick;
-        for _ in 0..4 {
+        for _ in 0..5 {
             kind = kind.next();
         }
         assert_eq!(kind, RebaseActionKind::Pick);
         assert_eq!(RebaseActionKind::Fixup.next(), RebaseActionKind::Drop);
+        assert_eq!(RebaseActionKind::Drop.next(), RebaseActionKind::Edit);
+        assert_eq!(RebaseActionKind::Edit.keyword(), "edit");
     }
 }

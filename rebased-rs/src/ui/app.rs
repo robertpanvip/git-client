@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, size, AnyElement, Bounds, AppContext, Context, Div, Entity, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowBounds,
+    div, hsla, px, size, AnyElement, Bounds, AppContext, ClipboardItem, Context, Div, Entity,
+    FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowBounds,
     WindowOptions,
 };
 use gpui_kit::component::{
@@ -43,6 +43,7 @@ enum PromptKind {
     NewTag { commit_id: String },
     Stash,
     Reword { commit_id: String },
+    RenameBranch,
 }
 
 struct Loaded {
@@ -86,6 +87,9 @@ pub struct AppView {
     rebase_plan: Vec<RebaseAction>,
     rebase_base: String,
     rebase_in_progress: bool,
+    rebase_stopped: Option<String>,
+    merge_in_progress: bool,
+    head_id: Option<String>,
     conflict_files: Vec<ConflictFile>,
     conflict_path: Option<String>,
     conflict_hunks: Vec<ConflictHunk>,
@@ -140,6 +144,9 @@ impl AppView {
             rebase_plan: Vec::new(),
             rebase_base: String::new(),
             rebase_in_progress: false,
+            rebase_stopped: None,
+            merge_in_progress: false,
+            head_id: None,
             conflict_files: Vec::new(),
             conflict_path: None,
             conflict_hunks: Vec::new(),
@@ -174,6 +181,7 @@ impl AppView {
             branches,
             tags,
         } = data;
+        self.head_id = commits.first().map(|commit| commit.id.0.clone());
         self.changes = status.changes;
         let current = branches.iter().find(|branch| branch.is_current());
         self.ahead = current.map_or(0, |branch| branch.ahead);
@@ -208,7 +216,18 @@ impl AppView {
             .repo
             .as_ref()
             .is_some_and(|repo| repo.is_rebase_in_progress());
-        if self.rebase_in_progress {
+        self.merge_in_progress = self
+            .repo
+            .as_ref()
+            .is_some_and(|repo| repo.is_merge_in_progress());
+        self.rebase_stopped = if self.rebase_in_progress {
+            self.repo
+                .as_ref()
+                .and_then(|repo| repo.rebase_stopped_commit())
+        } else {
+            None
+        };
+        if self.rebase_in_progress || self.merge_in_progress {
             self.reload_conflict_state(cx);
         }
         self.list.update(cx, |list, cx| {
@@ -504,6 +523,19 @@ impl AppView {
                     );
                 }
             }
+            PromptKind::RenameBranch => {
+                let Some(old) = self.current_branch.clone() else {
+                    self.error = Some("No current branch".into());
+                    cx.notify();
+                    return;
+                };
+                if input.is_empty() {
+                    self.error = Some("Branch name is empty".into());
+                } else {
+                    let message = format!("Renamed {old} to {input}");
+                    self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
+                }
+            }
         }
         cx.notify();
     }
@@ -797,6 +829,70 @@ impl AppView {
         self.run_op(&message, move |repo| repo.delete_tag(&name), cx);
     }
 
+    fn merge_branch_into_current(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.merge_branch(&name) {
+            Ok(()) => {
+                self.error = None;
+                self.status_message = format!("Merged {name}").into();
+                self.refresh(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                self.refresh(cx);
+            }
+        }
+    }
+
+    fn abort_merge(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Merge aborted", |repo| repo.merge_abort(), cx);
+    }
+
+    fn continue_merge_op(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Merge continued", |repo| repo.merge_continue(), cx);
+    }
+
+    fn undo_head(&mut self, cx: &mut Context<Self>) {
+        self.run_op(
+            "Undid HEAD commit (changes kept staged)",
+            |repo| repo.undo_head_commit(),
+            cx,
+        );
+    }
+
+    fn drop_head(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Dropped HEAD commit", |repo| repo.drop_head_commit(), cx);
+    }
+
+    fn force_push_current(&mut self, cx: &mut Context<Self>) {
+        let Some(branch) = self.current_branch.clone() else {
+            self.error = Some("No current branch".into());
+            cx.notify();
+            return;
+        };
+        self.run_op(
+            "Force pushed (with lease)",
+            move |repo| repo.push_force(&branch),
+            cx,
+        );
+    }
+
+    fn push_all_tags(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Pushed all tags", |repo| repo.push_tags(), cx);
+    }
+
+    fn copy_commit_sha(&mut self, cx: &mut Context<Self>) {
+        let Some(commit) = self.selected.clone() else {
+            return;
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(commit.id.0));
+        self.error = None;
+        self.status_message = "Commit SHA copied".into();
+        cx.notify();
+    }
+
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
         let branches = self.branches.clone();
@@ -848,12 +944,45 @@ impl AppView {
                                 });
                             }
                         }));
+                        result = result.item(
+                            PopupMenuItem::new("✎ Rename current branch…").on_click({
+                                let weak = weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(PromptKind::RenameBranch, cx)
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new("⇪ Force push (with lease)").on_click({
+                                let weak = weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.force_push_current(cx)
+                                    });
+                                }
+                            }),
+                        );
                         for name in branches.iter() {
                             if Some(name.as_str()) == current.as_deref() {
                                 continue;
                             }
                             let weak = weak.clone();
                             let name = name.clone();
+                            let merge_label = format!(
+                                "⇄ Merge {name} into {}",
+                                current.clone().unwrap_or_else(|| "HEAD".to_string())
+                            );
+                            result = result.item(PopupMenuItem::new(merge_label).on_click({
+                                let weak = weak.clone();
+                                let name = name.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.merge_branch_into_current(name.clone(), cx)
+                                    });
+                                }
+                            }));
                             result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
@@ -880,6 +1009,14 @@ impl AppView {
                                 });
                             }
                         }));
+                        result = result.item(
+                            PopupMenuItem::new("⇪ Push all tags to origin").on_click({
+                                let weak = tag_weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| this.push_all_tags(cx));
+                                }
+                            }),
+                        );
                         if !tags.is_empty() {
                             result = result.separator();
                             for tag in tags.iter() {
@@ -964,6 +1101,22 @@ impl AppView {
                         .compact()
                         .label("Continue Rebase")
                         .on_click(cx.listener(|this, _, _, cx| this.continue_rebase(cx))),
+                )
+            })
+            .when(self.merge_in_progress, |bar| {
+                bar.child(
+                    Button::new("merge-abort")
+                        .danger()
+                        .compact()
+                        .label("Abort Merge")
+                        .on_click(cx.listener(|this, _, _, cx| this.abort_merge(cx))),
+                )
+                .child(
+                    Button::new("merge-continue")
+                        .danger()
+                        .compact()
+                        .label("Continue Merge")
+                        .on_click(cx.listener(|this, _, _, cx| this.continue_merge_op(cx))),
                 )
             })
     }
@@ -1196,6 +1349,10 @@ impl AppView {
         let muted = cx.theme().muted_foreground;
         let commit_id = commit.id.0.clone();
         let tag_color = lane_color(5);
+        let is_head = self
+            .head_id
+            .as_ref()
+            .is_some_and(|head| head == &commit_id);
 
         let commit_tags: Vec<Tag> = self
             .tags
@@ -1408,7 +1565,30 @@ impl AppView {
                                 let message = format!("Checked out {short}");
                                 this.run_op(&message, move |repo| repo.checkout(&id), cx);
                             })),
-                    ),
+                    )
+                    .child(
+                        Button::new("detail-copy-sha")
+                            .ghost()
+                            .compact()
+                            .label("⧉ Copy SHA")
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_commit_sha(cx))),
+                    )
+                    .when(is_head, |row| {
+                        row.child(
+                            Button::new("detail-undo-commit")
+                                .ghost()
+                                .compact()
+                                .label("↶ Undo Commit")
+                                .on_click(cx.listener(|this, _, _, cx| this.undo_head(cx))),
+                        )
+                        .child(
+                            Button::new("detail-drop-commit")
+                                .danger()
+                                .compact()
+                                .label("✕ Drop Commit")
+                                .on_click(cx.listener(|this, _, _, cx| this.drop_head(cx))),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -1575,19 +1755,24 @@ impl AppView {
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child(
-                                "Rebase is paused. Resolve conflicts, then continue the rebase.",
-                            ),
+                            .child(if self.merge_in_progress {
+                                "Merge is paused. Resolve conflicts, then continue the merge."
+                            } else {
+                                "Rebase is paused. Resolve conflicts, then continue the rebase."
+                            }),
                     ),
             );
 
         if self.conflict_files.is_empty() {
-            panel = panel.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child("No conflicted files."),
-            );
+            let message = if let Some(sha) = &self.rebase_stopped {
+                format!(
+                    "Rebase stopped for editing at {}… Make changes, amend or commit, then click Continue Rebase.",
+                    &sha[..sha.len().min(7)]
+                )
+            } else {
+                "No conflicted files.".to_string()
+            };
+            panel = panel.child(div().text_xs().text_color(muted).child(message));
         }
 
         for (index, file) in self.conflict_files.iter().enumerate() {
@@ -2114,6 +2299,14 @@ impl AppView {
                     &commit_id[..commit_id.len().min(7)]
                 ),
                 "Reword",
+            ),
+            PromptKind::RenameBranch => (
+                "Rename branch",
+                match &self.current_branch {
+                    Some(name) => format!("Rename current branch {name} to:"),
+                    None => "No current branch".to_string(),
+                },
+                "Rename",
             ),
         };
         Some(

@@ -6,7 +6,7 @@ use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
 use super::types::{Branch, Change, Commit, RepoStatus, StashEntry, Tag};
-use super::{blame, conflict, diff, rebase};
+use super::{blame, conflict, diff, merge, rebase};
 use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
 
@@ -116,6 +116,26 @@ impl Repository {
 
     pub fn push(&self, branch: &str, set_upstream: bool) -> Result<()> {
         ops::push(&self.cmd, "origin", branch, set_upstream)
+    }
+
+    pub fn push_force(&self, branch: &str) -> Result<()> {
+        ops::push_force(&self.cmd, "origin", branch)
+    }
+
+    pub fn push_tags(&self) -> Result<()> {
+        ops::push_tags(&self.cmd, "origin")
+    }
+
+    pub fn rename_branch(&self, old: &str, new: &str) -> Result<()> {
+        ops::rename_branch(&self.cmd, old, new)
+    }
+
+    pub fn undo_head_commit(&self) -> Result<()> {
+        ops::undo_head_commit(&self.cmd)
+    }
+
+    pub fn drop_head_commit(&self) -> Result<()> {
+        ops::drop_head_commit(&self.cmd)
     }
 
     pub fn pull(&self, branch: &str) -> Result<()> {
@@ -231,6 +251,26 @@ impl Repository {
 
     pub fn is_rebase_in_progress(&self) -> bool {
         rebase::in_progress(&self.cmd)
+    }
+
+    pub fn rebase_stopped_commit(&self) -> Option<String> {
+        rebase::stopped_commit(&self.cmd)
+    }
+
+    pub fn merge_branch(&self, branch: &str) -> Result<()> {
+        merge::merge_branch(&self.cmd, branch)
+    }
+
+    pub fn merge_continue(&self) -> Result<()> {
+        merge::continue_merge(&self.cmd)
+    }
+
+    pub fn merge_abort(&self) -> Result<()> {
+        merge::abort(&self.cmd)
+    }
+
+    pub fn is_merge_in_progress(&self) -> bool {
+        merge::in_progress(&self.cmd)
     }
 
     pub fn conflicted_files(&self) -> Result<Vec<ConflictFile>> {

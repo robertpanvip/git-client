@@ -679,3 +679,265 @@ fn conflict_markers_resolve_loop() {
     let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
     assert_eq!(content, "feature\n");
 }
+
+#[test]
+fn merge_branch_fast_forward() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "feature"]);
+    temp.write("feature.txt", "feature work\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature work"]);
+    temp.git(&["checkout", "main"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    assert!(!repo.is_merge_in_progress());
+
+    repo.merge_branch("feature").expect("merge");
+    assert!(!repo.is_merge_in_progress());
+
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].subject, "feature work");
+    let branches = repo.branches().expect("branches");
+    let main = branches.iter().find(|b| b.name == "main").expect("main");
+    let feature = branches
+        .iter()
+        .find(|b| b.name == "feature")
+        .expect("feature");
+    assert_eq!(main.commit_id, feature.commit_id, "fast-forward moved main");
+    assert!(temp.path.join("feature.txt").exists());
+}
+
+#[test]
+fn merge_conflict_resolve_and_continue() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "feature"]);
+    temp.write("a.txt", "feature\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature edit"]);
+    temp.git(&["checkout", "main"]);
+    temp.write("a.txt", "main\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "main edit"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    assert!(repo.merge_branch("feature").is_err(), "merge conflicts");
+    assert!(repo.is_merge_in_progress());
+
+    let conflicts = repo.conflicted_files().expect("conflicts");
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].path, "a.txt");
+
+    repo.checkout_side("a.txt", true).expect("take ours");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "main\n");
+    assert!(repo.conflicted_files().expect("conflicts").is_empty());
+
+    repo.merge_continue().expect("continue merge");
+    assert!(!repo.is_merge_in_progress());
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 4);
+    assert_eq!(log[0].subject, "Merge branch 'feature'");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "main\n");
+}
+
+#[test]
+fn undo_head_commit_keeps_changes() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let head_before = repo.log(10).expect("log")[0].id.0.clone();
+
+    repo.undo_head_commit().expect("undo head");
+    let log = repo.log(10).expect("log after undo");
+    assert_eq!(log.len(), 1);
+    assert_ne!(log[0].id.0, head_before);
+    let status = repo.status().expect("status");
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "b.txt" && c.staged),
+        "undo keeps changes staged"
+    );
+
+    let root = TempRepo::new();
+    root.write("a.txt", "a\n");
+    root.git(&["add", "."]);
+    root.git(&["commit", "-m", "root"]);
+    let root_repo = Repository::open(&root.path).expect("open root repo");
+    root_repo.undo_head_commit().expect("undo root commit");
+    assert!(root_repo.log(10).expect("log").is_empty(), "unborn head");
+}
+
+#[test]
+fn drop_head_commit_discards() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    repo.drop_head_commit().expect("drop head");
+    let log = repo.log(10).expect("log after drop");
+    assert_eq!(log.len(), 1);
+    assert!(!temp.path.join("b.txt").exists(), "drop discards the commit");
+    assert!(repo.status().expect("status").changes.is_empty());
+
+    let root = TempRepo::new();
+    root.write("a.txt", "a\n");
+    root.git(&["add", "."]);
+    root.git(&["commit", "-m", "root"]);
+    let root_repo = Repository::open(&root.path).expect("open root repo");
+    assert!(
+        root_repo.drop_head_commit().is_err(),
+        "cannot drop the root commit"
+    );
+}
+
+#[test]
+fn rebase_edit_stops_and_continues() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "first"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "c\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    plan[0].kind = RebaseActionKind::Edit;
+    assert!(repo.rebase_run(&base, &plan).is_err(), "edit stops rebase");
+    assert!(repo.is_rebase_in_progress());
+
+    repo.rebase_stopped_commit()
+        .expect("REBASE_HEAD present at edit stop");
+    let head_count = temp
+        .git(&["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse::<usize>()
+        .expect("rev-list count");
+    assert_eq!(head_count, 2, "HEAD is detached on the replayed second");
+    let head_subject = temp.git(&["log", "-1", "--format=%s", "HEAD"]);
+    assert_eq!(head_subject.trim(), "second", "stopped on the edited commit");
+
+    temp.write("a.txt", "edited\n");
+    repo.add(&["a.txt"]).expect("add edit");
+    repo.commit("second edited", true).expect("amend at stop");
+    repo.rebase_continue().expect("continue rebase");
+    assert!(!repo.is_rebase_in_progress());
+
+    let log = repo.log(10).expect("log after edit rebase");
+    assert_eq!(log.len(), 3);
+    assert_eq!(log[0].subject, "third");
+    assert_eq!(log[1].subject, "second edited");
+    assert_eq!(log[2].subject, "first");
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "edited\n");
+}
+
+#[test]
+fn rename_branch_repoints() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "topic"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "topic work"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let topic_head = repo.log(10).expect("log")[0].id.0.clone();
+
+    repo.rename_branch("topic", "renamed-topic").expect("rename");
+
+    let branches = repo.branches().expect("branches");
+    assert!(
+        !branches.iter().any(|b| b.name == "topic"),
+        "old name is gone"
+    );
+    let renamed = branches
+        .iter()
+        .find(|b| b.name == "renamed-topic")
+        .expect("renamed branch");
+    assert_eq!(renamed.commit_id.0, topic_head, "rename keeps the tip");
+
+    let status = repo.status().expect("status");
+    assert_eq!(
+        status.head_branch, "renamed-topic",
+        "renaming the current branch updates HEAD"
+    );
+}
+
+#[test]
+fn force_push_and_push_tags() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let bare = std::env::temp_dir().join(format!(
+        "rebased-rs-bare-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    temp.git(&["init", "--bare", bare.to_str().expect("utf8 path")]);
+    temp.git(&["remote", "add", "origin", bare.to_str().expect("utf8 path")]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    repo.push("main", true).expect("initial push");
+
+    temp.git(&["commit", "--amend", "-m", "amended history"]);
+    assert!(
+        repo.push("main", false).is_err(),
+        "plain push rejects non-fast-forward"
+    );
+    repo.push_force("main").expect("force push");
+
+    let bare_head = Command::new("git")
+        .arg("--git-dir")
+        .arg(&bare)
+        .args(["log", "-1", "--format=%s", "main"])
+        .output()
+        .expect("inspect bare head");
+    assert!(bare_head.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&bare_head.stdout).trim(),
+        "amended history"
+    );
+
+    repo.create_tag("v1", None, None).expect("create tag");
+    repo.push_tags().expect("push tags");
+    let bare_tags = Command::new("git")
+        .arg("--git-dir")
+        .arg(&bare)
+        .args(["tag"])
+        .output()
+        .expect("inspect bare tags");
+    assert_eq!(String::from_utf8_lossy(&bare_tags.stdout).trim(), "v1");
+
+    let _ = std::fs::remove_dir_all(&bare);
+}

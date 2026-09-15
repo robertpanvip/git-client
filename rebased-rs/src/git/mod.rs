@@ -6,6 +6,7 @@ pub mod diff;
 pub mod error;
 pub mod graph;
 pub mod log;
+pub mod merge;
 pub mod ops;
 pub mod rebase;
 pub mod repo;
