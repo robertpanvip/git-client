@@ -1,40 +1,40 @@
 use gpui::Context;
 
-use super::{AppView, SidebarMode};
+use super::{use_cases, AppView, RebaseFlow, SidebarMode};
 
 impl AppView {
     pub(crate) fn start_rebase(&mut self, base: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match repo.rebase_todos(&base) {
-            Ok(plan) => {
-                self.rebase_base = base;
-                self.rebase_plan = plan;
-                self.sidebar = SidebarMode::Rebase;
-                self.error = None;
-                cx.notify();
-            }
+        match use_cases::load_rebase_plan(repo.as_ref(), &mut self.state, &base) {
+            Ok(()) => cx.notify(),
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }
     }
 
     pub(crate) fn cycle_rebase_action(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(action) = self.rebase_plan.get_mut(index) {
+        let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase else {
+            return;
+        };
+        if let Some(action) = plan.get_mut(index) {
             action.kind = action.kind.next();
             cx.notify();
         }
     }
 
     pub(crate) fn move_rebase_action(&mut self, index: usize, delta: isize, cx: &mut Context<Self>) {
+        let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase else {
+            return;
+        };
         let target = index as isize + delta;
-        if target < 0 || target >= self.rebase_plan.len() as isize {
+        if target < 0 || target >= plan.len() as isize {
             return;
         }
-        self.rebase_plan.swap(index, target as usize);
+        plan.swap(index, target as usize);
         cx.notify();
     }
 
@@ -42,25 +42,35 @@ impl AppView {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        let base = self.rebase_base.clone();
-        let plan = self.rebase_plan.clone();
+        let RebaseFlow::Planning { base, plan } = self.state.rebase.clone() else {
+            return;
+        };
         if plan.is_empty() {
             return;
         }
         match repo.rebase_run(&base, &plan) {
             Ok(()) => {
-                self.error = None;
-                self.status_message =
-                    format!("Rebased onto {}", &base[..base.len().min(7)]).into();
-                self.rebase_plan.clear();
-                self.rebase_base.clear();
+                self.state.error = None;
+                self.state.status_message =
+                    format!("Rebased onto {}", &base[..base.len().min(7)]);
+                self.state.rebase = RebaseFlow::Idle;
                 self.refresh(cx);
             }
             Err(e) => {
-                self.error = Some(e.to_string().into());
-                self.rebase_in_progress = repo.is_rebase_in_progress();
-                if self.rebase_in_progress {
-                    self.sidebar = SidebarMode::Workspace;
+                self.state.error = Some(e.to_string());
+                if repo.is_rebase_in_progress() {
+                    self.state.rebase = RebaseFlow::Stopped {
+                        base,
+                        plan,
+                        stopped_at: repo.rebase_stopped_commit().unwrap_or_default(),
+                    };
+                    self.state.sidebar = SidebarMode::Workspace;
+                } else {
+                    self.state.rebase = RebaseFlow::Failed {
+                        base,
+                        plan,
+                        message: e.to_string(),
+                    };
                 }
                 cx.notify();
             }
@@ -68,9 +78,8 @@ impl AppView {
     }
 
     pub(crate) fn cancel_rebase(&mut self, cx: &mut Context<Self>) {
-        self.rebase_plan.clear();
-        self.rebase_base.clear();
-        self.sidebar = SidebarMode::Workspace;
+        self.state.rebase = RebaseFlow::Idle;
+        self.state.sidebar = SidebarMode::Workspace;
         cx.notify();
     }
 

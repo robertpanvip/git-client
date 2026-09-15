@@ -3,12 +3,11 @@ use std::sync::Arc;
 
 use gpui::{
     div, px, size, AppContext, Bounds, Context, Entity, IntoElement, ParentElement, Render,
-    SharedString, Styled, Subscription, Window, WindowBounds, WindowOptions,
+    Styled, Subscription, Window, WindowBounds, WindowOptions,
 };
 use gpui_kit::component::{input::TextareaState, list::ListState, ActiveTheme, Root};
 use rebased_rs::git::{
-    load_repo_data, BlameGroup, Change, Commit, ConflictFile, ConflictHunk, FileDiff, GitError,
-    HunkChoice, RebaseAction, RepoData, Repository, StashEntry, Tag, DEFAULT_LOG_LIMIT,
+    load_repo_data, open_backend, GitBackend, GitError, RepoData, DEFAULT_LOG_LIMIT,
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
@@ -20,81 +19,31 @@ mod detail_view;
 mod panels;
 mod rebase;
 mod shelves;
+mod state;
 mod toolbar;
+mod use_cases;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SidebarMode {
-    Workspace,
-    Detail,
-    Diff,
-    Blame,
-    Rebase,
-    Conflicts,
-    Shelve,
-}
-
-#[derive(Clone)]
-pub(crate) enum PromptKind {
-    NewBranch { start_point: Option<String> },
-    NewTag { commit_id: String },
-    Stash,
-    Reword { commit_id: String },
-    RenameBranch,
-}
+pub(crate) use state::{AppState, PromptKind, RebaseFlow, SidebarMode};
+use use_cases::sync_repo_state;
 
 struct Loaded {
-    repo: Arc<Repository>,
+    repo: Arc<dyn GitBackend>,
     data: RepoData,
 }
 
 fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
-    let repo = Repository::open(path)?;
-    let data = load_repo_data(&repo, DEFAULT_LOG_LIMIT)?;
-    Ok(Loaded {
-        repo: Arc::new(repo),
-        data,
-    })
+    let repo = open_backend(path)?;
+    let data = load_repo_data(repo.as_ref(), DEFAULT_LOG_LIMIT)?;
+    Ok(Loaded { repo, data })
 }
 
 pub struct AppView {
     repo_path: PathBuf,
-    repo: Option<Arc<Repository>>,
+    repo: Option<Arc<dyn GitBackend>>,
+    state: AppState,
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
-    branches: Arc<Vec<String>>,
-    current_branch: Option<String>,
-    current_upstream: Option<String>,
-    tags: Arc<Vec<Tag>>,
-    changes: Vec<Change>,
-    ahead: u32,
-    behind: u32,
-    amend: bool,
-    selected: Option<Commit>,
-    detail_files: Vec<Change>,
-    detail_branches: Vec<String>,
-    sidebar: SidebarMode,
-    diff_files: Vec<FileDiff>,
-    diff_title: String,
-    diff_path: Option<String>,
-    blame_groups: Vec<BlameGroup>,
-    blame_path: String,
-    prompt: Option<PromptKind>,
-    rebase_plan: Vec<RebaseAction>,
-    rebase_base: String,
-    rebase_in_progress: bool,
-    rebase_stopped: Option<String>,
-    merge_in_progress: bool,
-    head_id: Option<String>,
-    conflict_files: Vec<ConflictFile>,
-    conflict_path: Option<String>,
-    conflict_hunks: Vec<ConflictHunk>,
-    conflict_choices: Vec<Option<HunkChoice>>,
-    conflict_raw: String,
-    shelves: Vec<StashEntry>,
-    status_message: SharedString,
-    error: Option<SharedString>,
-    loading: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -116,42 +65,10 @@ impl AppView {
         let mut this = Self {
             repo_path,
             repo: None,
+            state: AppState::default(),
             list,
             message_input,
             prompt_input,
-            branches: Arc::new(Vec::new()),
-            current_branch: None,
-            current_upstream: None,
-            tags: Arc::new(Vec::new()),
-            changes: Vec::new(),
-            ahead: 0,
-            behind: 0,
-            amend: false,
-            selected: None,
-            detail_files: Vec::new(),
-            detail_branches: Vec::new(),
-            sidebar: SidebarMode::Workspace,
-            diff_files: Vec::new(),
-            diff_title: String::new(),
-            diff_path: None,
-            blame_groups: Vec::new(),
-            blame_path: String::new(),
-            prompt: None,
-            rebase_plan: Vec::new(),
-            rebase_base: String::new(),
-            rebase_in_progress: false,
-            rebase_stopped: None,
-            merge_in_progress: false,
-            head_id: None,
-            conflict_files: Vec::new(),
-            conflict_path: None,
-            conflict_hunks: Vec::new(),
-            conflict_choices: Vec::new(),
-            conflict_raw: String::new(),
-            shelves: Vec::new(),
-            status_message: SharedString::from("Ready"),
-            error: None,
-            loading: true,
             _subscriptions: subscriptions,
         };
 
@@ -159,77 +76,29 @@ impl AppView {
             Ok(loaded) => {
                 this.repo = Some(loaded.repo);
                 this.apply_data(loaded.data, cx);
-                this.loading = false;
+                this.state.loading = false;
             }
             Err(e) => {
-                this.loading = false;
-                this.error = Some(e.to_string().into());
+                this.state.loading = false;
+                this.state.error = Some(e.to_string());
             }
         }
         this
     }
 
     fn apply_data(&mut self, data: RepoData, cx: &mut Context<Self>) {
-        let RepoData {
-            commits,
-            graph,
-            status,
-            branches,
-            tags,
-        } = data;
-        self.head_id = commits.first().map(|commit| commit.id.0.clone());
-        self.changes = status.changes;
-        let current = branches.iter().find(|branch| branch.is_current());
-        self.ahead = current.map_or(0, |branch| branch.ahead);
-        self.behind = current.map_or(0, |branch| branch.behind);
-        let names: Vec<String> = branches
-            .iter()
-            .filter(|branch| !branch.is_remote)
-            .map(|branch| branch.name.clone())
-            .collect();
-        self.branches = Arc::new(names);
-        self.current_branch = current.map(|branch| branch.name.clone());
-        self.current_upstream = current.and_then(|branch| branch.upstream.clone());
-        self.tags = Arc::new(tags);
-        self.selected = None;
-        self.detail_files.clear();
-        self.detail_branches.clear();
-        self.sidebar = SidebarMode::Workspace;
-        self.diff_files.clear();
-        self.diff_title.clear();
-        self.diff_path = None;
-        self.blame_groups.clear();
-        self.blame_path.clear();
-        self.prompt = None;
-        self.rebase_plan.clear();
-        self.rebase_base.clear();
-        self.conflict_files.clear();
-        self.conflict_path = None;
-        self.conflict_hunks.clear();
-        self.conflict_choices.clear();
-        self.conflict_raw.clear();
-        self.rebase_in_progress = self
-            .repo
-            .as_ref()
-            .is_some_and(|repo| repo.is_rebase_in_progress());
-        self.merge_in_progress = self
-            .repo
-            .as_ref()
-            .is_some_and(|repo| repo.is_merge_in_progress());
-        self.rebase_stopped = if self.rebase_in_progress {
-            self.repo
-                .as_ref()
-                .and_then(|repo| repo.rebase_stopped_commit())
-        } else {
-            None
+        let Some(repo) = self.repo.clone() else {
+            return;
         };
-        if self.rebase_in_progress || self.merge_in_progress {
-            self.reload_conflict_state(cx);
+        match sync_repo_state(repo.as_ref(), &mut self.state, data) {
+            Ok((commits, graph)) => {
+                self.list.update(cx, |list, cx| {
+                    list.delegate_mut().set_data(LogData { commits, graph });
+                    cx.notify();
+                });
+            }
+            Err(e) => self.state.error = Some(e.to_string()),
         }
-        self.list.update(cx, |list, cx| {
-            list.delegate_mut().set_data(LogData { commits, graph });
-            cx.notify();
-        });
         cx.notify();
     }
 
@@ -237,10 +106,10 @@ impl AppView {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match load_repo_data(&repo, DEFAULT_LOG_LIMIT) {
+        match load_repo_data(repo.as_ref(), DEFAULT_LOG_LIMIT) {
             Ok(data) => self.apply_data(data, cx),
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }
@@ -249,20 +118,20 @@ impl AppView {
     fn run_op(
         &mut self,
         message: &str,
-        op: impl FnOnce(&Repository) -> Result<(), GitError>,
+        op: impl FnOnce(&dyn GitBackend) -> Result<(), GitError>,
         cx: &mut Context<Self>,
     ) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match op(&repo) {
+        match op(repo.as_ref()) {
             Ok(()) => {
-                self.error = None;
-                self.status_message = message.into();
+                self.state.error = None;
+                self.state.status_message = message.to_string();
                 self.refresh(cx);
             }
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }

@@ -77,11 +77,13 @@ impl AppView {
         let commit_id = commit.id.0.clone();
         let tag_color = lane_color(5);
         let is_head = self
+            .state
             .head_id
             .as_ref()
             .is_some_and(|head| head == &commit_id);
 
         let commit_tags: Vec<Tag> = self
+            .state
             .tags
             .iter()
             .filter(|tag| tag.commit_id == commit_id)
@@ -89,6 +91,7 @@ impl AppView {
             .collect();
 
         let file_rows: Vec<AnyElement> = self
+            .state
             .detail_files
             .iter()
             .enumerate()
@@ -145,13 +148,13 @@ impl AppView {
                         .child(commit.body.clone()),
                 )
             })
-            .when(!self.detail_branches.is_empty(), |detail| {
+            .when(!self.state.detail_branches.is_empty(), |detail| {
                 detail.child(
                     div()
                         .flex_none()
                         .text_xs()
                         .text_color(tag_color)
-                        .child(format!("∟ {}", self.detail_branches.join(", "))),
+                        .child(format!("∟ {}", self.state.detail_branches.join(", "))),
                 )
             })
             .when(!commit_tags.is_empty(), |detail| {
@@ -219,6 +222,7 @@ impl AppView {
                             .label("Rebase from here")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let base = this
+                                    .state
                                     .selected
                                     .as_ref()
                                     .map(|c| c.id.0.clone())
@@ -233,6 +237,7 @@ impl AppView {
                             .label("Reword…")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let commit_id = this
+                                    .state
                                     .selected
                                     .as_ref()
                                     .map(|c| c.id.0.clone())
@@ -247,6 +252,7 @@ impl AppView {
                             .label("Diff")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let id = this
+                                    .state
                                     .selected
                                     .as_ref()
                                     .map(|c| c.id.0.clone())
@@ -260,7 +266,7 @@ impl AppView {
                             .compact()
                             .label("Branch…")
                             .on_click(cx.listener(|this, _, _, cx| {
-                                let start_point = this.selected.as_ref().map(|c| c.id.0.clone());
+                                let start_point = this.state.selected.as_ref().map(|c| c.id.0.clone());
                                 this.open_prompt(PromptKind::NewBranch { start_point }, cx);
                             })),
                     )
@@ -271,6 +277,7 @@ impl AppView {
                             .label("Tag…")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let commit_id = this
+                                    .state
                                     .selected
                                     .as_ref()
                                     .map(|c| c.id.0.clone())
@@ -284,7 +291,7 @@ impl AppView {
                             .compact()
                             .label("Checkout")
                             .on_click(cx.listener(|this, _, _, cx| {
-                                let Some(commit) = this.selected.clone() else {
+                                let Some(commit) = this.state.selected.clone() else {
                                     return;
                                 };
                                 let id = commit.id.0.clone();
@@ -322,7 +329,7 @@ impl AppView {
                     .flex_none()
                     .text_xs()
                     .text_color(muted)
-                    .child(format!("Files ({})", self.detail_files.len())),
+                    .child(format!("Files ({})", self.state.detail_files.len())),
             )
             .child(
                 div()

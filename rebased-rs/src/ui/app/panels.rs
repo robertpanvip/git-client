@@ -16,7 +16,10 @@ impl AppView {
     pub(crate) fn render_rebase_panel(&self, cx: &mut Context<Self>) -> Div {
         let border = cx.theme().border;
         let muted = cx.theme().muted_foreground;
-        let short_base = self.rebase_base[..self.rebase_base.len().min(7)].to_string();
+        let Some((base, plan)) = self.state.rebase.plan_view() else {
+            return div().size_full();
+        };
+        let short_base = base[..base.len().min(7)].to_string();
         let mut panel = div()
             .flex()
             .flex_col()
@@ -47,7 +50,7 @@ impl AppView {
                     .child("Click the action to cycle Pick → Squash → Fixup → Drop. Use ↑ ↓ to reorder."),
             );
 
-        if self.rebase_plan.is_empty() {
+        if plan.is_empty() {
             panel = panel.child(
                 div()
                     .text_xs()
@@ -56,7 +59,7 @@ impl AppView {
             );
         }
 
-        for (index, action) in self.rebase_plan.iter().enumerate() {
+        for (index, action) in plan.iter().enumerate() {
             let kind_label = action.kind.label();
             let summary = format!(
                 "{} {}",
@@ -159,7 +162,7 @@ impl AppView {
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child(if self.merge_in_progress {
+                            .child(if self.state.merge_in_progress {
                                 "Merge is paused. Resolve conflicts, then continue the merge."
                             } else {
                                 "Rebase is paused. Resolve conflicts, then continue the rebase."
@@ -167,8 +170,8 @@ impl AppView {
                     ),
             );
 
-        if self.conflict_files.is_empty() {
-            let message = if let Some(sha) = &self.rebase_stopped {
+        if self.state.conflict_files.is_empty() {
+            let message = if let Some(sha) = self.state.rebase.stopped_commit() {
                 format!(
                     "Rebase stopped for editing at {}… Make changes, amend or commit, then click Continue Rebase.",
                     &sha[..sha.len().min(7)]
@@ -179,8 +182,8 @@ impl AppView {
             panel = panel.child(div().text_xs().text_color(muted).child(message));
         }
 
-        for (index, file) in self.conflict_files.iter().enumerate() {
-            let selected = self.conflict_path.as_deref() == Some(file.path.as_str());
+        for (index, file) in self.state.conflict_files.iter().enumerate() {
+            let selected = self.state.conflict_path.as_deref() == Some(file.path.as_str());
             let label = if selected {
                 format!("● {}", file.path)
             } else {
@@ -229,8 +232,8 @@ impl AppView {
             );
         }
 
-        if let Some(path) = self.conflict_path.clone() {
-            if self.conflict_hunks.is_empty() {
+        if let Some(path) = self.state.conflict_path.clone() {
+            if self.state.conflict_hunks.is_empty() {
                 panel = panel.child(
                     div()
                         .text_xs()
@@ -240,7 +243,7 @@ impl AppView {
                         ),
                 );
             }
-            for (index, hunk) in self.conflict_hunks.iter().enumerate() {
+            for (index, hunk) in self.state.conflict_hunks.iter().enumerate() {
                 let ours_text = if hunk.ours.is_empty() {
                     "(empty)".to_string()
                 } else {
@@ -251,15 +254,15 @@ impl AppView {
                 } else {
                     hunk.theirs.join("\n")
                 };
-                let ours_label = match self.conflict_choices.get(index) {
+                let ours_label = match self.state.conflict_choices.get(index) {
                     Some(Some(HunkChoice::Ours)) => "✓ Use ours".to_string(),
                     _ => "Use ours".to_string(),
                 };
-                let theirs_label = match self.conflict_choices.get(index) {
+                let theirs_label = match self.state.conflict_choices.get(index) {
                     Some(Some(HunkChoice::Theirs)) => "✓ Use theirs".to_string(),
                     _ => "Use theirs".to_string(),
                 };
-                let both_label = match self.conflict_choices.get(index) {
+                let both_label = match self.state.conflict_choices.get(index) {
                     Some(Some(HunkChoice::Both)) => "✓ Use both".to_string(),
                     _ => "Use both".to_string(),
                 };
@@ -325,7 +328,7 @@ impl AppView {
                         ),
                 );
             }
-            if !self.conflict_hunks.is_empty() {
+            if !self.state.conflict_hunks.is_empty() {
                 panel = panel.child(
                     Button::new("conflict-apply")
                         .primary()
@@ -369,7 +372,7 @@ impl AppView {
                     ),
             );
 
-        if self.shelves.is_empty() {
+        if self.state.shelves.is_empty() {
             panel = panel.child(
                 div()
                     .text_xs()
@@ -380,7 +383,7 @@ impl AppView {
             );
         }
 
-        for entry in &self.shelves {
+        for entry in &self.state.shelves {
             let index = entry.index;
             panel = panel.child(
                 div()
@@ -429,7 +432,7 @@ impl AppView {
 
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
-        let width = match self.sidebar {
+        let width = match self.state.sidebar {
             SidebarMode::Workspace => 360.,
             SidebarMode::Detail => 420.,
             SidebarMode::Diff | SidebarMode::Blame => 680.,
@@ -448,7 +451,7 @@ impl AppView {
             .gap_2()
             .overflow_hidden();
 
-        match self.sidebar {
+        match self.state.sidebar {
             SidebarMode::Diff => base.child(self.render_diff_panel(cx)).into_any_element(),
             SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
             SidebarMode::Rebase => base.child(self.render_rebase_panel(cx)).into_any_element(),
@@ -456,7 +459,7 @@ impl AppView {
                 base.child(self.render_conflicts_panel(cx)).into_any_element()
             }
             SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
-            SidebarMode::Detail => match &self.selected {
+            SidebarMode::Detail => match &self.state.selected {
                 Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),
             },
@@ -466,7 +469,7 @@ impl AppView {
 
     pub(crate) fn render_diff_panel(&self, cx: &mut Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
-        let title = self.diff_title.clone();
+        let title = self.state.diff_title.clone();
 
         let mut panel = div()
             .flex()
@@ -490,13 +493,13 @@ impl AppView {
                             .text_color(muted)
                             .child(title),
                     )
-                    .when(self.diff_path.is_some(), |header| {
+                    .when(self.state.diff_path.is_some(), |header| {
                         header.child(
                             Button::new("diff-blame")
                                 .ghost()
                                 .label("Blame")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    let path = this.diff_path.clone().unwrap_or_default();
+                                    let path = this.state.diff_path.clone().unwrap_or_default();
                                     this.open_blame(path, cx);
                                 })),
                         )
@@ -509,7 +512,7 @@ impl AppView {
                     ),
             );
 
-        if self.diff_files.is_empty() {
+        if self.state.diff_files.is_empty() {
             panel = panel.child(
                 div()
                     .flex_1()
@@ -527,7 +530,7 @@ impl AppView {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(render_diff_files(&self.diff_files, cx)),
+                    .child(render_diff_files(&self.state.diff_files, cx)),
             );
         }
         panel
@@ -535,7 +538,7 @@ impl AppView {
 
     pub(crate) fn render_blame_panel(&self, cx: &mut Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
-        let path = self.blame_path.clone();
+        let path = self.state.blame_path.clone();
 
         let mut panel = div()
             .flex()
@@ -567,7 +570,7 @@ impl AppView {
                     ),
             );
 
-        if self.blame_groups.is_empty() {
+        if self.state.blame_groups.is_empty() {
             panel = panel.child(
                 div()
                     .flex_1()
@@ -585,14 +588,14 @@ impl AppView {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(render_blame(&self.blame_groups, cx)),
+                    .child(render_blame(&self.state.blame_groups, cx)),
             );
         }
         panel
     }
 
     pub(crate) fn render_prompt_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let kind = self.prompt.clone()?;
+        let kind = self.state.prompt.clone()?;
         let border = cx.theme().border;
         let muted = cx.theme().muted_foreground;
         let (title, hint, ok_label) = match &kind {
@@ -624,7 +627,7 @@ impl AppView {
             ),
             super::PromptKind::RenameBranch => (
                 "Rename branch",
-                match &self.current_branch {
+                match &self.state.current_branch {
                     Some(name) => format!("Rename current branch {name} to:"),
                     None => "No current branch".to_string(),
                 },

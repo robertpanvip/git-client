@@ -1,10 +1,10 @@
 use gpui::Context;
 
-use super::{AppView, SidebarMode};
+use super::{use_cases, AppView, SidebarMode};
 
 impl AppView {
     pub(crate) fn open_shelves(&mut self, cx: &mut Context<Self>) {
-        self.sidebar = SidebarMode::Shelve;
+        self.state.sidebar = SidebarMode::Shelve;
         self.reload_shelves(cx);
     }
 
@@ -12,13 +12,10 @@ impl AppView {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match repo.stash_list() {
-            Ok(entries) => {
-                self.shelves = entries;
-                cx.notify();
-            }
+        match use_cases::reload_shelves(repo.as_ref(), &mut self.state) {
+            Ok(()) => cx.notify(),
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }
@@ -30,14 +27,14 @@ impl AppView {
         };
         match repo.stash_apply_at(index) {
             Ok(()) => {
-                self.error = None;
-                self.status_message = "Unshelved".into();
+                self.state.error = None;
+                self.state.status_message = "Unshelved".to_string();
                 self.refresh(cx);
-                self.sidebar = SidebarMode::Shelve;
+                self.state.sidebar = SidebarMode::Shelve;
                 self.reload_shelves(cx);
             }
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }
@@ -49,12 +46,12 @@ impl AppView {
         };
         match repo.stash_drop_at(index) {
             Ok(()) => {
-                self.error = None;
-                self.status_message = "Dropped shelve".into();
+                self.state.error = None;
+                self.state.status_message = "Dropped shelve".to_string();
                 self.reload_shelves(cx);
             }
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 cx.notify();
             }
         }

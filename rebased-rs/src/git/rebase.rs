@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::command::GitCommand;
 use super::error::{GitError, Result};
@@ -44,7 +44,7 @@ impl RebaseActionKind {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RebaseAction {
     pub id: String,
     pub subject: String,
@@ -97,6 +97,14 @@ pub fn render_todo(plan: &[RebaseAction]) -> String {
     out
 }
 
+pub fn copy_editor(path: &Path) -> String {
+    let rendered = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"");
+    format!("cp \"{rendered}\"")
+}
+
 pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     if plan.is_empty() {
         return Err(GitError::with_stderr("rebase aborted", "empty rebase plan"));
@@ -105,7 +113,7 @@ pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     let tmp = std::env::temp_dir().join(format!("rebased-rs-todo-{}", unique));
     std::fs::write(&tmp, render_todo(plan))
         .map_err(|e| GitError::with_stderr("failed to write rebase todo", e.to_string()))?;
-    let editor = format!("cp {}", tmp.display());
+    let editor = copy_editor(&tmp);
     let output = cmd.execute_env(
         &["rebase", "-i", base],
         &[
@@ -196,8 +204,8 @@ pub fn reword(cmd: &GitCommand, commit: &str, message: &str) -> Result<()> {
         .map_err(|e| GitError::with_stderr("failed to write reword todo", e.to_string()))?;
     std::fs::write(&tmp_msg, message)
         .map_err(|e| GitError::with_stderr("failed to write reword message", e.to_string()))?;
-    let seq_editor = format!("cp {}", tmp_todo.display());
-    let msg_editor = format!("cp {}", tmp_msg.display());
+    let seq_editor = copy_editor(&tmp_todo);
+    let msg_editor = copy_editor(&tmp_msg);
     let output = cmd.execute_env(
         &["rebase", "-i", &parent],
         &[
@@ -293,5 +301,21 @@ mod tests {
         assert_eq!(RebaseActionKind::Fixup.next(), RebaseActionKind::Drop);
         assert_eq!(RebaseActionKind::Drop.next(), RebaseActionKind::Edit);
         assert_eq!(RebaseActionKind::Edit.keyword(), "edit");
+    }
+
+    #[test]
+    fn copy_editor_normalizes_windows_paths() {
+        assert_eq!(
+            copy_editor(Path::new(r"C:\Users\jo doe\todo-1")),
+            "cp \"C:/Users/jo doe/todo-1\""
+        );
+        assert_eq!(
+            copy_editor(Path::new("/tmp/rebased-rs-todo-1")),
+            "cp \"/tmp/rebased-rs-todo-1\""
+        );
+        assert_eq!(
+            copy_editor(Path::new(r#"C:\we"ird"#)),
+            "cp \"C:/we\\\"ird\""
+        );
     }
 }

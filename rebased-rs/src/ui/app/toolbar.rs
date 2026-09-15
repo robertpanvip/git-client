@@ -20,9 +20,9 @@ use super::{AppView, PromptKind};
 impl AppView {
     pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
-        let branches = self.branches.clone();
-        let tags = self.tags.clone();
-        let current = self.current_branch.clone();
+        let branches = self.state.branches.clone();
+        let tags = self.state.tags.clone();
+        let current = self.state.current_branch.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();
         let tag_weak = weak.clone();
         let branch_label = current
@@ -212,7 +212,7 @@ impl AppView {
                     .label("Shelves")
                     .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
             )
-            .when(self.rebase_in_progress, |bar| {
+            .when(self.state.rebase.in_progress(), |bar| {
                 bar.child(
                     Button::new("rebase-abort")
                         .danger()
@@ -228,7 +228,7 @@ impl AppView {
                         .on_click(cx.listener(|this, _, _, cx| this.continue_rebase(cx))),
                 )
             })
-            .when(self.merge_in_progress, |bar| {
+            .when(self.state.merge_in_progress, |bar| {
                 bar.child(
                     Button::new("merge-abort")
                         .danger()
@@ -247,7 +247,7 @@ impl AppView {
     }
 
     pub(crate) fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.loading {
+        if self.state.loading {
             return div()
                 .flex_1()
                 .min_w_0()
@@ -362,9 +362,10 @@ impl AppView {
 
     pub(crate) fn render_workspace(&self, cx: &mut Context<Self>) -> Div {
         let fg = cx.theme().foreground;
-        let count = self.changes.len();
+        let count = self.state.changes.len();
 
         let rows: Vec<AnyElement> = self
+            .state
             .changes
             .iter()
             .enumerate()
@@ -413,7 +414,7 @@ impl AppView {
 
     pub(crate) fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
-        let amend_label = if self.amend { "✓ Amend" } else { "Amend" };
+        let amend_label = if self.state.amend { "✓ Amend" } else { "Amend" };
         div()
             .flex_none()
             .border_t_1()
@@ -442,7 +443,7 @@ impl AppView {
                             .ghost()
                             .label(amend_label)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.amend = !this.amend;
+                                this.state.amend = !this.state.amend;
                                 cx.notify();
                             })),
                     )
@@ -472,24 +473,24 @@ impl AppView {
             .px_3()
             .text_xs()
             .child(
-                match (&self.error, self.status_message.is_empty()) {
+                match (&self.state.error, self.state.status_message.is_empty()) {
                     (Some(error), _) => div()
                         .text_color(hsla(0.0, 0.75, 0.55, 1.0))
                         .child(error.clone())
                         .into_any_element(),
                     (None, false) => div()
                         .text_color(muted)
-                        .child(self.status_message.clone())
+                        .child(self.state.status_message.clone())
                         .into_any_element(),
                     (None, true) => div().into_any_element(),
                 },
             )
             .child(div().flex_1())
-            .when(self.ahead > 0, |bar| {
-                bar.child(div().text_color(muted).child(format!("↑{}", self.ahead)))
+            .when(self.state.ahead > 0, |bar| {
+                bar.child(div().text_color(muted).child(format!("↑{}", self.state.ahead)))
             })
-            .when(self.behind > 0, |bar| {
-                bar.child(div().text_color(muted).child(format!("↓{}", self.behind)))
+            .when(self.state.behind > 0, |bar| {
+                bar.child(div().text_color(muted).child(format!("↓{}", self.state.behind)))
             })
     }
 }

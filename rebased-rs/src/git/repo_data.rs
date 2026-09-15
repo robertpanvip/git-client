@@ -1,6 +1,6 @@
+use super::backend::GitBackend;
 use super::error::Result;
 use super::graph::{build_graph, Graph};
-use super::repo::Repository;
 use super::types::{Branch, Commit, RepoStatus, Tag};
 
 pub const DEFAULT_LOG_LIMIT: usize = 500;
@@ -13,7 +13,7 @@ pub struct RepoData {
     pub tags: Vec<Tag>,
 }
 
-pub fn load_repo_data(repo: &Repository, log_limit: usize) -> Result<RepoData> {
+pub fn load_repo_data(repo: &dyn GitBackend, log_limit: usize) -> Result<RepoData> {
     let commits = repo.log(log_limit)?;
     let graph = build_graph(&commits);
     let status = repo.status()?;

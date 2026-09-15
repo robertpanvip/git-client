@@ -2,7 +2,7 @@ use gpui::{ClipboardItem, Context, Window};
 
 use rebased_rs::git::Change;
 
-use super::AppView;
+use super::{use_cases::commit_with_autoadd, AppView};
 
 impl AppView {
     pub(crate) fn toggle_stage(&mut self, change: &Change, cx: &mut Context<Self>) {
@@ -17,42 +17,34 @@ impl AppView {
     pub(crate) fn do_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let message = self.message_input.read(cx).value().to_string();
         if message.trim().is_empty() {
-            self.error = Some("Commit message is empty".into());
+            self.state.error = Some("Commit message is empty".to_string());
             cx.notify();
             return;
         }
-        let amend = self.amend;
+        let amend = self.state.amend;
         self.message_input
             .update(cx, |state, cx| state.set_value("", window, cx));
-        self.amend = false;
+        self.state.amend = false;
         self.run_op(
             "Committed",
-            move |repo| {
-                if !amend {
-                    let status = repo.status()?;
-                    if status.changes.iter().all(|change| !change.staged) {
-                        repo.add_all()?;
-                    }
-                }
-                repo.commit(&message, amend)
-            },
+            move |repo| commit_with_autoadd(repo, &message, amend),
             cx,
         );
     }
 
     pub(crate) fn do_push(&mut self, cx: &mut Context<Self>) {
-        let Some(branch) = self.current_branch.clone() else {
-            self.error = Some("No current branch".into());
+        let Some(branch) = self.state.current_branch.clone() else {
+            self.state.error = Some("No current branch".to_string());
             cx.notify();
             return;
         };
-        let set_upstream = self.current_upstream.is_none();
+        let set_upstream = self.state.current_upstream.is_none();
         self.run_op("Pushed", move |repo| repo.push(&branch, set_upstream), cx);
     }
 
     pub(crate) fn do_pull(&mut self, cx: &mut Context<Self>) {
-        let Some(branch) = self.current_branch.clone() else {
-            self.error = Some("No current branch".into());
+        let Some(branch) = self.state.current_branch.clone() else {
+            self.state.error = Some("No current branch".to_string());
             cx.notify();
             return;
         };
@@ -69,14 +61,14 @@ impl AppView {
         match self.list.read(cx).delegate().find_commit(id) {
             Some(commit) => self.load_commit_detail(commit, cx),
             None => {
-                self.error = Some(format!("Commit {id} not in loaded history").into());
+                self.state.error = Some(format!("Commit {id} not in loaded history"));
                 cx.notify();
             }
         }
     }
 
     pub(crate) fn cherry_pick_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.selected.clone() else {
+        let Some(commit) = self.state.selected.clone() else {
             return;
         };
         let id = commit.id.0.clone();
@@ -85,7 +77,7 @@ impl AppView {
     }
 
     pub(crate) fn revert_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.selected.clone() else {
+        let Some(commit) = self.state.selected.clone() else {
             return;
         };
         let id = commit.id.0.clone();
@@ -111,12 +103,12 @@ impl AppView {
         };
         match repo.merge_branch(&name) {
             Ok(()) => {
-                self.error = None;
-                self.status_message = format!("Merged {name}").into();
+                self.state.error = None;
+                self.state.status_message = format!("Merged {name}");
                 self.refresh(cx);
             }
             Err(e) => {
-                self.error = Some(e.to_string().into());
+                self.state.error = Some(e.to_string());
                 self.refresh(cx);
             }
         }
@@ -143,8 +135,8 @@ impl AppView {
     }
 
     pub(crate) fn force_push_current(&mut self, cx: &mut Context<Self>) {
-        let Some(branch) = self.current_branch.clone() else {
-            self.error = Some("No current branch".into());
+        let Some(branch) = self.state.current_branch.clone() else {
+            self.state.error = Some("No current branch".to_string());
             cx.notify();
             return;
         };
@@ -160,12 +152,12 @@ impl AppView {
     }
 
     pub(crate) fn copy_commit_sha(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.selected.clone() else {
+        let Some(commit) = self.state.selected.clone() else {
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(commit.id.0));
-        self.error = None;
-        self.status_message = "Commit SHA copied".into();
+        self.state.error = None;
+        self.state.status_message = "Commit SHA copied".to_string();
         cx.notify();
     }
 }
