@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
-    div, px, size, AppContext, Bounds, Context, Entity, IntoElement, ParentElement, Render,
-    Styled, Subscription, Window, WindowBounds, WindowOptions,
+    div, px, size, AppContext, Bounds, Context, Entity, IntoElement, InteractiveElement,
+    ParentElement, Render, Styled, Subscription, Window, WindowBounds, WindowOptions,
 };
 use gpui_kit::component::{input::TextareaState, list::ListState, ActiveTheme, Root};
 use rebased_rs::git::{
@@ -61,6 +61,7 @@ impl AppView {
                 .soft_wrap(false)
         });
         let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
+        list.update(cx, |list, cx| list.focus(window, cx));
 
         let mut this = Self {
             repo_path,
@@ -147,6 +148,13 @@ impl Render for AppView {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .relative()
+            .on_action(cx.listener(Self::on_commit_selected))
+            .on_action(cx.listener(Self::on_push_branch))
+            .on_action(cx.listener(Self::on_pull_branch))
+            .on_action(cx.listener(Self::on_refresh_repo))
+            .on_action(cx.listener(Self::on_close_overlay))
+            .on_action(cx.listener(Self::on_select_prev_commit))
+            .on_action(cx.listener(Self::on_select_next_commit))
             .child(self.render_toolbar(cx))
             .child(
                 div()
@@ -167,6 +175,7 @@ impl Render for AppView {
 pub fn run(repo_path: PathBuf) {
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
+        actions::register_keybindings(cx);
         let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),

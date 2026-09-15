@@ -64,6 +64,11 @@ impl LogDelegate {
         data.commits.iter().find(|c| c.id.0 == id).cloned()
     }
 
+    /// 当前可见（含过滤后）的提交数量，供键盘导航使用。
+    pub fn visible_count(&self) -> usize {
+        self.visible.as_ref().map_or(0, |data| data.commits.len())
+    }
+
     fn rebuild(&mut self, query: &str) {
         let Some(data) = self.data.clone() else {
             return;

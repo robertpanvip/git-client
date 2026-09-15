@@ -1,8 +1,38 @@
-use gpui::{ClipboardItem, Context, Window};
+use gpui::{actions, App, ClipboardItem, Context, KeyBinding, Window};
+use gpui_kit::base::IndexPath;
 
 use rebased_rs::git::Change;
 
-use super::{use_cases::commit_selected, AppView, ConfirmAction};
+use super::{use_cases::commit_selected, AppView, ConfirmAction, SidebarMode};
+
+actions!(
+    rebased_rs,
+    [
+        CommitSelected,
+        PushBranch,
+        PullBranch,
+        RefreshRepo,
+        CloseOverlay,
+        SelectPrevCommit,
+        SelectNextCommit,
+    ]
+);
+
+/// 全局快捷键。焦点在输入框/列表内时，组件自身的绑定（光标移动、列表上下键、
+/// Esc 取消）更具体、优先生效；未被消费的按键（如输入框内按 Esc）会向上传播
+/// 到这里，因此输入框中按 Esc 也能关闭弹窗。
+pub(crate) fn register_keybindings(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("escape", CloseOverlay, None),
+        KeyBinding::new("ctrl-enter", CommitSelected, None),
+        KeyBinding::new("ctrl-shift-k", PushBranch, None),
+        KeyBinding::new("ctrl-t", PullBranch, None),
+        KeyBinding::new("f5", RefreshRepo, None),
+        KeyBinding::new("ctrl-r", RefreshRepo, None),
+        KeyBinding::new("up", SelectPrevCommit, None),
+        KeyBinding::new("down", SelectNextCommit, None),
+    ]);
+}
 
 impl AppView {
     pub(crate) fn toggle_stage(&mut self, change: &Change, cx: &mut Context<Self>) {
@@ -201,6 +231,126 @@ impl AppView {
             ConfirmAction::DiscardChanges { path } => {
                 let message = format!("Discarded {path}");
                 self.run_op(&message, move |repo| repo.discard_changes(&path), cx);
+            }
+        }
+    }
+
+    pub(crate) fn on_commit_selected(
+        &mut self,
+        _: &CommitSelected,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.prompt.is_some() {
+            self.confirm_prompt(window, cx);
+            return;
+        }
+        self.do_commit(window, cx);
+    }
+
+    pub(crate) fn on_push_branch(
+        &mut self,
+        _: &PushBranch,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.do_push(cx);
+    }
+
+    pub(crate) fn on_pull_branch(
+        &mut self,
+        _: &PullBranch,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.do_pull(cx);
+    }
+
+    pub(crate) fn on_refresh_repo(
+        &mut self,
+        _: &RefreshRepo,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.refresh(cx);
+    }
+
+    pub(crate) fn on_close_overlay(
+        &mut self,
+        _: &CloseOverlay,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.prompt.is_some() {
+            self.cancel_prompt(cx);
+            return;
+        }
+        if matches!(
+            self.state.sidebar,
+            SidebarMode::Diff | SidebarMode::Blame | SidebarMode::History
+        ) {
+            self.sidebar_back(cx);
+        }
+    }
+
+    pub(crate) fn on_select_prev_commit(
+        &mut self,
+        _: &SelectPrevCommit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_commit_selection(-1, window, cx);
+    }
+
+    pub(crate) fn on_select_next_commit(
+        &mut self,
+        _: &SelectNextCommit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_commit_selection(1, window, cx);
+    }
+
+    /// 沿提交历史移动键盘选择（↑↓），并联动 Detail 视图。
+    fn move_commit_selection(
+        &mut self,
+        delta: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let count = self.list.read(cx).delegate().visible_count();
+        if count == 0 {
+            return;
+        }
+        let current = self
+            .list
+            .read(cx)
+            .selected_index()
+            .map_or(-1, |ix| ix.row as isize);
+        let next = (current + delta).clamp(0, count as isize - 1) as usize;
+        if next as isize == current {
+            return;
+        }
+        self.list.update(cx, |list, cx| {
+            list.set_selected_index(
+                Some(IndexPath {
+                    section: 0,
+                    row: next,
+                    column: 0,
+                }),
+                window,
+                cx,
+            );
+            list.scroll_to_selected_item(window, cx);
+        });
+        if let Some(commit) = self.list.read(cx).delegate().commit_at(next) {
+            let is_same = self
+                .state
+                .selected
+                .as_ref()
+                .is_some_and(|current| current.id.0 == commit.id.0);
+            if !is_same {
+                self.load_commit_detail(commit, cx);
             }
         }
     }
