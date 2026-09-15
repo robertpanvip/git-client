@@ -103,6 +103,18 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn reset_branch_to(
+        &mut self,
+        target: String,
+        mode: ResetMode,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.prompt = None;
+        let short = target[..target.len().min(7)].to_string();
+        let message = format!("Reset to {short}");
+        self.run_op(&message, move |repo| repo.reset_to(&target, mode), cx);
+    }
+
     pub(crate) fn confirm_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(kind) = self.state.prompt.clone() else {
             return;
@@ -172,6 +184,7 @@ impl AppView {
                     self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
                 }
             }
+            PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
         }
         cx.notify();
     }

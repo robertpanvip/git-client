@@ -23,7 +23,7 @@ mod state;
 mod toolbar;
 mod use_cases;
 
-pub(crate) use state::{AppState, PromptKind, RebaseFlow, SidebarMode};
+pub(crate) use state::{AppState, ConfirmAction, PromptKind, RebaseFlow, SidebarMode};
 use use_cases::sync_repo_state;
 
 struct Loaded {

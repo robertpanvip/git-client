@@ -15,7 +15,7 @@ use rebased_rs::git::{Change, ChangeStatus};
 
 use crate::ui::graph_view::{lane_color, status_color};
 
-use super::{AppView, PromptKind};
+use super::{AppView, ConfirmAction, PromptKind};
 
 impl AppView {
     pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -84,7 +84,10 @@ impl AppView {
                                 let weak = weak.clone();
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
-                                        this.force_push_current(cx)
+                                        this.open_prompt(
+                                            PromptKind::Confirm(ConfirmAction::ForcePush),
+                                            cx,
+                                        )
                                     });
                                 }
                             }),
@@ -111,7 +114,12 @@ impl AppView {
                             result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
-                                        this.delete_branch(&name, cx)
+                                        this.open_prompt(
+                                            PromptKind::Confirm(ConfirmAction::DeleteBranch {
+                                                name: name.clone(),
+                                            }),
+                                            cx,
+                                        )
                                     });
                                 },
                             ));
@@ -258,13 +266,165 @@ impl AppView {
                 .child("Loading repository...")
                 .into_any_element();
         }
+        let list = self.list.clone();
+        let weak: WeakEntity<Self> = cx.entity().downgrade();
         div()
+            .id("commit-panel")
             .flex_1()
             .min_w_0()
             .min_h_0()
             .border_r_1()
             .border_color(cx.theme().border)
             .child(List::new(&self.list))
+            .context_menu(move |menu, _window, cx| {
+                let row = list.read(cx).right_clicked_index().map(|ix| ix.row);
+                let Some(commit) = row.and_then(|row| list.read(cx).delegate().commit_at(row))
+                else {
+                    return menu;
+                };
+                let id = commit.id.0.clone();
+                let short = id[..id.len().min(7)].to_string();
+                let is_head = weak
+                    .upgrade()
+                    .and_then(|app| app.read(cx).state.head_id.clone())
+                    .as_deref()
+                    == Some(id.as_str());
+                let mut result = menu.item(
+                    PopupMenuItem::new(format!("Checkout {short}")).on_click({
+                        let weak = weak.clone();
+                        let id = id.clone();
+                        move |_, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.checkout_commit(id.clone(), cx)
+                            });
+                        }
+                    }),
+                );
+                result = result.item(PopupMenuItem::new("New Branch…").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            this.open_prompt(
+                                PromptKind::NewBranch {
+                                    start_point: Some(id.clone()),
+                                },
+                                cx,
+                            )
+                        });
+                    }
+                }));
+                result = result.item(PopupMenuItem::new("New Tag…").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            this.open_prompt(
+                                PromptKind::NewTag {
+                                    commit_id: id.clone(),
+                                },
+                                cx,
+                            )
+                        });
+                    }
+                }));
+                result = result.separator();
+                result = result.item(PopupMenuItem::new("Cherry-pick").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            this.cherry_pick_commit(id.clone(), cx)
+                        });
+                    }
+                }));
+                result = result.item(PopupMenuItem::new("Revert Commit").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| this.revert_commit(id.clone(), cx));
+                    }
+                }));
+                result = result.item(
+                    PopupMenuItem::new("Reset Current Branch to Here…").on_click({
+                        let weak = weak.clone();
+                        let id = id.clone();
+                        move |_, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.open_prompt(
+                                    PromptKind::Reset {
+                                        commit_id: id.clone(),
+                                    },
+                                    cx,
+                                )
+                            });
+                        }
+                    }),
+                );
+                result = result.item(PopupMenuItem::new("Rebase from Here").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| this.start_rebase(id.clone(), cx));
+                    }
+                }));
+                result = result.item(PopupMenuItem::new("Reword Message…").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            this.open_prompt(
+                                PromptKind::Reword {
+                                    commit_id: id.clone(),
+                                },
+                                cx,
+                            )
+                        });
+                    }
+                }));
+                result = result.separator();
+                result = result.item(PopupMenuItem::new("Diff").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            this.open_commit_diff(id.clone(), None, cx)
+                        });
+                    }
+                }));
+                result = result.item(PopupMenuItem::new("Copy SHA").on_click({
+                    let weak = weak.clone();
+                    let id = id.clone();
+                    move |_, _, cx| {
+                        let _ = weak.update(cx, |this, cx| this.copy_commit_id(id.clone(), cx));
+                    }
+                }));
+                if is_head {
+                    result = result.item(PopupMenuItem::new("Undo Commit").on_click({
+                        let weak = weak.clone();
+                        move |_, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.open_prompt(
+                                    PromptKind::Confirm(ConfirmAction::UndoHeadCommit),
+                                    cx,
+                                )
+                            });
+                        }
+                    }));
+                    result = result.item(PopupMenuItem::new("Drop Commit").on_click({
+                        let weak = weak.clone();
+                        move |_, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.open_prompt(
+                                    PromptKind::Confirm(ConfirmAction::DropHeadCommit),
+                                    cx,
+                                )
+                            });
+                        }
+                    }));
+                }
+                result
+            })
             .into_any_element()
     }
 
@@ -276,6 +436,8 @@ impl AppView {
         let is_untracked = change.status == ChangeStatus::Untracked;
         let change_for_click = change.clone();
         let diff_path = change.path.clone();
+        let checkbox_path = change.path.clone();
+        let checked = self.state.selected_changes.contains(&change.path);
 
         let mut row = div()
             .id(format!("change-{index}"))
@@ -289,6 +451,16 @@ impl AppView {
             .cursor_pointer()
             .hover(move |style| style.bg(hsla(fg.h, fg.s, fg.l, 0.07)))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_stage(&change_for_click, cx)))
+            .child(
+                Button::new(format!("chg-select-{index}"))
+                    .ghost()
+                    .compact()
+                    .label(if checked { "☑" } else { "☐" })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.toggle_change_selection(&checkbox_path, cx);
+                    })),
+            )
             .child(
                 div()
                     .w(px(14.))
@@ -315,7 +487,11 @@ impl AppView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     let path = diff_path.clone();
-                    this.open_diff_worktree(Some(path), cx);
+                    if staged {
+                        this.open_staged_diff(Some(path), cx);
+                    } else {
+                        this.open_unstaged_diff(Some(path), cx);
+                    }
                 })),
         );
         if !staged && !is_untracked {
@@ -327,9 +503,12 @@ impl AppView {
                     .label("↩")
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        let path = discard_path.clone();
-                        let message = format!("Discarded {path}");
-                        this.run_op(&message, move |repo| repo.discard_changes(&path), cx);
+                        this.open_prompt(
+                            PromptKind::Confirm(ConfirmAction::DiscardChanges {
+                                path: discard_path.clone(),
+                            }),
+                            cx,
+                        );
                     })),
             );
         }
@@ -450,7 +629,7 @@ impl AppView {
                     .child(
                         Button::new("commit")
                             .primary()
-                            .label("Commit")
+                            .label(commit_label)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.do_commit(window, cx)
                             })),
@@ -486,6 +665,26 @@ impl AppView {
                 },
             )
             .child(div().flex_1())
+            .when(!self.state.repo_root.is_empty(), |bar| {
+                bar.child(
+                    div()
+                        .max_w(px(420.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(muted)
+                        .child(self.state.repo_root.clone()),
+                )
+            })
+            .child(
+                div().text_color(muted).child(format!(
+                    "⎇ {}",
+                    self.state
+                        .current_branch
+                        .clone()
+                        .unwrap_or_else(|| "HEAD (detached)".to_string())
+                )),
+            )
             .when(self.state.ahead > 0, |bar| {
                 bar.child(div().text_color(muted).child(format!("↑{}", self.state.ahead)))
             })

@@ -14,6 +14,20 @@ impl AppView {
         }
     }
 
+    pub(crate) fn toggle_change_selection(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Some(pos) = self
+            .state
+            .selected_changes
+            .iter()
+            .position(|selected| selected == path)
+        {
+            self.state.selected_changes.remove(pos);
+        } else {
+            self.state.selected_changes.push(path.to_string());
+        }
+        cx.notify();
+    }
+
     pub(crate) fn do_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let message = self.message_input.read(cx).value().to_string();
         if message.trim().is_empty() {
@@ -22,12 +36,13 @@ impl AppView {
             return;
         }
         let amend = self.state.amend;
+        let selected = self.state.selected_changes.clone();
         self.message_input
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.state.amend = false;
         self.run_op(
             "Committed",
-            move |repo| commit_with_autoadd(repo, &message, amend),
+            move |repo| commit_selected(repo, &message, amend, &selected),
             cx,
         );
     }
@@ -71,7 +86,10 @@ impl AppView {
         let Some(commit) = self.state.selected.clone() else {
             return;
         };
-        let id = commit.id.0.clone();
+        self.cherry_pick_commit(commit.id.0, cx);
+    }
+
+    pub(crate) fn cherry_pick_commit(&mut self, id: String, cx: &mut Context<Self>) {
         let message = format!("Cherry-picked {}", &id[..id.len().min(7)]);
         self.run_op(&message, move |repo| repo.cherry_pick(&id), cx);
     }
@@ -80,9 +98,17 @@ impl AppView {
         let Some(commit) = self.state.selected.clone() else {
             return;
         };
-        let id = commit.id.0.clone();
+        self.revert_commit(commit.id.0, cx);
+    }
+
+    pub(crate) fn revert_commit(&mut self, id: String, cx: &mut Context<Self>) {
         let message = format!("Reverted {}", &id[..id.len().min(7)]);
         self.run_op(&message, move |repo| repo.revert(&id), cx);
+    }
+
+    pub(crate) fn checkout_commit(&mut self, id: String, cx: &mut Context<Self>) {
+        let message = format!("Checked out {}", &id[..id.len().min(7)]);
+        self.run_op(&message, move |repo| repo.checkout(&id), cx);
     }
 
     pub(crate) fn delete_branch(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -151,13 +177,31 @@ impl AppView {
         self.run_op("Pushed all tags", |repo| repo.push_tags(), cx);
     }
 
+    pub(crate) fn copy_commit_id(&mut self, id: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(id));
+        self.state.error = None;
+        self.state.status_message = "Commit SHA copied".to_string();
+        cx.notify();
+    }
+
     pub(crate) fn copy_commit_sha(&mut self, cx: &mut Context<Self>) {
         let Some(commit) = self.state.selected.clone() else {
             return;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(commit.id.0));
-        self.state.error = None;
-        self.state.status_message = "Commit SHA copied".to_string();
-        cx.notify();
+        self.copy_commit_id(commit.id.0, cx);
+    }
+
+    pub(crate) fn confirm_action(&mut self, action: ConfirmAction, cx: &mut Context<Self>) {
+        match action {
+            ConfirmAction::ForcePush => self.force_push_current(cx),
+            ConfirmAction::DeleteBranch { name } => self.delete_branch(&name, cx),
+            ConfirmAction::DeleteTag { name } => self.delete_tag(&name, cx),
+            ConfirmAction::DropHeadCommit => self.drop_head(cx),
+            ConfirmAction::UndoHeadCommit => self.undo_head(cx),
+            ConfirmAction::DiscardChanges { path } => {
+                let message = format!("Discarded {path}");
+                self.run_op(&message, move |repo| repo.discard_changes(&path), cx);
+            }
+        }
     }
 }

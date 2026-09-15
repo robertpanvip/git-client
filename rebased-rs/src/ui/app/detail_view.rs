@@ -10,7 +10,7 @@ use rebased_rs::git::{Change, Commit, Tag};
 use crate::ui::commit_list::format_time;
 use crate::ui::graph_view::{lane_color, status_color};
 
-use super::{AppView, PromptKind};
+use super::{AppView, ConfirmAction, PromptKind};
 
 impl AppView {
     pub(crate) fn render_detail_file_row(
@@ -231,6 +231,21 @@ impl AppView {
                             })),
                     )
                     .child(
+                        Button::new("detail-reset")
+                            .ghost()
+                            .compact()
+                            .label("Reset…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::Reset { commit_id }, cx);
+                            })),
+                    )
+                    .child(
                         Button::new("detail-reword")
                             .ghost()
                             .compact()
@@ -313,14 +328,24 @@ impl AppView {
                                 .ghost()
                                 .compact()
                                 .label("↶ Undo Commit")
-                                .on_click(cx.listener(|this, _, _, cx| this.undo_head(cx))),
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.open_prompt(
+                                        PromptKind::Confirm(ConfirmAction::UndoHeadCommit),
+                                        cx,
+                                    );
+                                })),
                         )
                         .child(
                             Button::new("detail-drop-commit")
                                 .danger()
                                 .compact()
                                 .label("✕ Drop Commit")
-                                .on_click(cx.listener(|this, _, _, cx| this.drop_head(cx))),
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.open_prompt(
+                                        PromptKind::Confirm(ConfirmAction::DropHeadCommit),
+                                        cx,
+                                    );
+                                })),
                         )
                     }),
             )

@@ -23,6 +23,58 @@ pub(crate) enum PromptKind {
     Stash,
     Reword { commit_id: String },
     RenameBranch,
+    Reset { commit_id: String },
+    Confirm(ConfirmAction),
+}
+
+#[derive(Clone)]
+pub(crate) enum ConfirmAction {
+    ForcePush,
+    DeleteBranch { name: String },
+    DeleteTag { name: String },
+    DropHeadCommit,
+    UndoHeadCommit,
+    DiscardChanges { path: String },
+}
+
+impl ConfirmAction {
+    pub(crate) fn title(&self) -> &'static str {
+        match self {
+            Self::ForcePush => "Force push",
+            Self::DeleteBranch { .. } => "Delete branch",
+            Self::DeleteTag { .. } => "Delete tag",
+            Self::DropHeadCommit => "Drop HEAD commit",
+            Self::UndoHeadCommit => "Undo HEAD commit",
+            Self::DiscardChanges { .. } => "Discard changes",
+        }
+    }
+
+    pub(crate) fn hint(&self) -> String {
+        match self {
+            Self::ForcePush => "This rewrites the remote branch history. Commits that only exist on the remote may be lost.".to_string(),
+            Self::DeleteBranch { name } => {
+                format!("Branch {name} will be deleted permanently.")
+            }
+            Self::DeleteTag { name } => format!("Tag {name} will be deleted permanently."),
+            Self::DropHeadCommit => "The HEAD commit will be removed from history. Its changes are lost.".to_string(),
+            Self::UndoHeadCommit => {
+                "The HEAD commit will be undone. Its changes stay staged in the working tree.".to_string()
+            }
+            Self::DiscardChanges { path } => {
+                format!("All uncommitted changes in {path} will be lost.")
+            }
+        }
+    }
+
+    pub(crate) fn confirm_label(&self) -> &'static str {
+        match self {
+            Self::ForcePush => "Force push",
+            Self::DeleteBranch { .. } | Self::DeleteTag { .. } => "Delete",
+            Self::DropHeadCommit => "Drop",
+            Self::UndoHeadCommit => "Undo",
+            Self::DiscardChanges { .. } => "Discard",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -77,6 +129,8 @@ pub(crate) struct AppState {
     pub(crate) current_upstream: Option<String>,
     pub(crate) tags: Arc<Vec<Tag>>,
     pub(crate) changes: Vec<Change>,
+    pub(crate) selected_changes: Vec<String>,
+    pub(crate) repo_root: String,
     pub(crate) ahead: u32,
     pub(crate) behind: u32,
     pub(crate) amend: bool,
@@ -112,6 +166,8 @@ impl Default for AppState {
             current_upstream: None,
             tags: Arc::new(Vec::new()),
             changes: Vec::new(),
+            selected_changes: Vec::new(),
+            repo_root: String::new(),
             ahead: 0,
             behind: 0,
             amend: false,

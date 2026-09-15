@@ -22,6 +22,20 @@ pub(crate) fn commit_with_autoadd(
     repo.commit(message, amend)
 }
 
+pub(crate) fn commit_selected(
+    repo: &dyn GitBackend,
+    message: &str,
+    amend: bool,
+    paths: &[String],
+) -> Result<(), GitError> {
+    if paths.is_empty() {
+        commit_with_autoadd(repo, message, amend)
+    } else {
+        let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+        repo.commit_paths(message, &refs, amend)
+    }
+}
+
 pub(crate) fn sync_repo_state(
     repo: &dyn GitBackend,
     state: &mut AppState,
@@ -34,6 +48,7 @@ pub(crate) fn sync_repo_state(
         branches,
         tags,
     } = data;
+    state.repo_root = repo.root().to_string_lossy().to_string();
     state.head_id = commits.first().map(|commit| commit.id.0.clone());
     state.changes = status.changes;
     let current = branches.iter().find(|branch| branch.is_current());
@@ -45,10 +60,11 @@ pub(crate) fn sync_repo_state(
         .map(|branch| branch.name.clone())
         .collect();
     state.branches = Arc::new(names);
-    state.current_branch = current.map(|branch| branch.name.clone());
+    state.current_branch = current
+        .map(|branch| branch.name.clone())
+        .or_else(|| repo.current_branch_name().ok());
     state.current_upstream = current.and_then(|branch| branch.upstream.clone());
     state.tags = Arc::new(tags);
-    reset_views(state);
     state.merge_in_progress = repo.is_merge_in_progress();
     sync_rebase_flow(repo, state);
     let rebase_in_progress = state.rebase.in_progress();
@@ -57,6 +73,7 @@ pub(crate) fn sync_repo_state(
     {
         state.error = Some(e.to_string());
     }
+    sync_views_on_refresh(state, &commits, rebase_in_progress);
     Ok((commits, graph))
 }
 
@@ -95,22 +112,30 @@ fn sync_rebase_flow(repo: &dyn GitBackend, state: &mut AppState) {
     };
 }
 
-fn reset_views(state: &mut AppState) {
-    state.selected = None;
-    state.detail_files.clear();
-    state.detail_branches.clear();
-    state.sidebar = SidebarMode::Workspace;
-    state.diff_files.clear();
-    state.diff_title.clear();
-    state.diff_path = None;
-    state.blame_groups.clear();
-    state.blame_path.clear();
+fn sync_views_on_refresh(state: &mut AppState, commits: &[Commit], rebase_in_progress: bool) {
+    let selection_alive = state
+        .selected
+        .as_ref()
+        .is_some_and(|selected| commits.iter().any(|commit| commit.id.0 == selected.id.0));
+    if !selection_alive {
+        state.selected = None;
+        state.detail_files.clear();
+        state.detail_branches.clear();
+    }
+    if state.selected.is_none() && state.sidebar == SidebarMode::Detail {
+        state.sidebar = SidebarMode::Workspace;
+    }
+    if !(rebase_in_progress || state.merge_in_progress) {
+        state.conflict_files.clear();
+        state.conflict_path = None;
+        state.conflict_hunks.clear();
+        state.conflict_choices.clear();
+        state.conflict_raw.clear();
+    }
+    state
+        .selected_changes
+        .retain(|path| state.changes.iter().any(|change| &change.path == path));
     state.prompt = None;
-    state.conflict_files.clear();
-    state.conflict_path = None;
-    state.conflict_hunks.clear();
-    state.conflict_choices.clear();
-    state.conflict_raw.clear();
 }
 
 pub(crate) fn load_commit_detail(
@@ -146,6 +171,40 @@ pub(crate) fn open_worktree_diff(
     state.diff_title = match &path {
         Some(p) => format!("Diff · {p}"),
         None => "Diff · working tree".to_string(),
+    };
+    state.diff_path = path;
+    state.sidebar = SidebarMode::Diff;
+    state.error = None;
+    Ok(())
+}
+
+pub(crate) fn open_staged_diff(
+    repo: &dyn GitBackend,
+    state: &mut AppState,
+    path: Option<String>,
+) -> Result<(), GitError> {
+    let stdout = repo.diff_staged(path.as_deref())?;
+    state.diff_files = parse_unified_diff(&stdout);
+    state.diff_title = match &path {
+        Some(p) => format!("Diff · staged · {p}"),
+        None => "Diff · staged".to_string(),
+    };
+    state.diff_path = path;
+    state.sidebar = SidebarMode::Diff;
+    state.error = None;
+    Ok(())
+}
+
+pub(crate) fn open_unstaged_diff(
+    repo: &dyn GitBackend,
+    state: &mut AppState,
+    path: Option<String>,
+) -> Result<(), GitError> {
+    let stdout = repo.diff_unstaged(path.as_deref())?;
+    state.diff_files = parse_unified_diff(&stdout);
+    state.diff_title = match &path {
+        Some(p) => format!("Diff · unstaged · {p}"),
+        None => "Diff · unstaged".to_string(),
     };
     state.diff_path = path;
     state.sidebar = SidebarMode::Diff;
@@ -241,6 +300,7 @@ pub(crate) fn take_conflict_side(
     ours: bool,
 ) -> Result<(), GitError> {
     repo.checkout_side(path, ours)?;
+    repo.stage_file(path)?;
     if state.conflict_path.as_deref() == Some(path) {
         clear_conflict_selection(state);
     }
@@ -348,8 +408,77 @@ mod tests {
             commits.first().map(|commit| commit.id.0.as_str())
         );
         assert_eq!(state.current_branch.as_deref(), Some("main"));
-        assert_eq!(state.sidebar, SidebarMode::Workspace);
+        assert_eq!(state.sidebar, SidebarMode::Diff);
         assert_eq!(state.rebase, RebaseFlow::Idle);
         assert!(!state.merge_in_progress);
+        assert_eq!(state.repo_root, repo_dir.path.to_string_lossy());
+    }
+
+    #[test]
+    fn commit_selected_commits_only_chosen_paths() {
+        let repo_dir = TempRepo::new();
+        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        let repo = open_backend(&repo_dir.path).unwrap();
+        std::fs::write(repo_dir.path.join("a.txt"), "a").unwrap();
+        std::fs::write(repo_dir.path.join("b.txt"), "b").unwrap();
+        commit_selected(
+            repo.as_ref(),
+            "partial commit",
+            false,
+            &["a.txt".to_string()],
+        )
+        .unwrap();
+        let status = repo.status().unwrap();
+        assert!(!status.changes.iter().any(|change| change.path == "a.txt"));
+        assert!(status.changes.iter().any(|change| change.path == "b.txt"));
+        let log = repo.log(5).unwrap();
+        assert_eq!(log[0].subject, "partial commit");
+    }
+
+    #[test]
+    fn conflict_side_resolution_stages_file() {
+        let repo_dir = TempRepo::new();
+        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "base"]);
+        git(&repo_dir.path, &["checkout", "-b", "feature"]);
+        std::fs::write(repo_dir.path.join("conflict.txt"), "feature\n").unwrap();
+        git(&repo_dir.path, &["add", "conflict.txt"]);
+        git(&repo_dir.path, &["commit", "-m", "feature change"]);
+        git(&repo_dir.path, &["checkout", "main"]);
+        std::fs::write(repo_dir.path.join("conflict.txt"), "main\n").unwrap();
+        git(&repo_dir.path, &["add", "conflict.txt"]);
+        git(&repo_dir.path, &["commit", "-m", "main change"]);
+        let repo = open_backend(&repo_dir.path).unwrap();
+        assert!(repo.merge_branch("feature").is_err());
+        let mut state = AppState::default();
+        reload_conflict_state(repo.as_ref(), &mut state).unwrap();
+        assert_eq!(state.conflict_files.len(), 1);
+        let path = state.conflict_files[0].path.clone();
+        take_conflict_side(repo.as_ref(), &mut state, &path, false).unwrap();
+        let status = repo.status().unwrap();
+        let change = status
+            .changes
+            .iter()
+            .find(|change| change.path == path)
+            .expect("theirs-resolved file must appear as staged");
+        assert!(change.staged);
+        assert!(repo.conflicted_files().unwrap().is_empty());
+    }
+
+    #[test]
+    fn staged_and_unstaged_diffs_open() {
+        let repo_dir = TempRepo::new();
+        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        let repo = open_backend(&repo_dir.path).unwrap();
+        std::fs::write(repo_dir.path.join("a.txt"), "hello").unwrap();
+        let mut state = AppState::default();
+        open_unstaged_diff(repo.as_ref(), &mut state, Some("a.txt".to_string())).unwrap();
+        assert_eq!(state.sidebar, SidebarMode::Diff);
+        assert!(state.diff_title.contains("unstaged"));
+        assert!(!state.diff_files.is_empty());
+        repo.add(&["a.txt"]).unwrap();
+        open_staged_diff(repo.as_ref(), &mut state, Some("a.txt".to_string())).unwrap();
+        assert_eq!(state.sidebar, SidebarMode::Diff);
+        assert!(state.diff_title.contains("staged"));
+        assert!(!state.diff_files.is_empty());
     }
 }

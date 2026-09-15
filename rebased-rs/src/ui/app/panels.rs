@@ -5,7 +5,7 @@ use gpui::{
 };
 use gpui_kit::component::{button::{Button, ButtonVariants}, input::Textarea, ActiveTheme};
 
-use rebased_rs::git::HunkChoice;
+use rebased_rs::git::{HunkChoice, ResetMode};
 
 use crate::ui::blame_view::render_blame;
 use crate::ui::diff_view::render_diff_files;
@@ -598,42 +598,144 @@ impl AppView {
         let kind = self.state.prompt.clone()?;
         let border = cx.theme().border;
         let muted = cx.theme().muted_foreground;
-        let (title, hint, ok_label) = match &kind {
+        let (title, hint): (String, String) = match &kind {
             super::PromptKind::NewBranch { start_point } => (
-                "New branch",
+                "New branch".to_string(),
                 match start_point {
                     Some(point) => format!("From commit {}", &point[..point.len().min(7)]),
                     None => "From current HEAD".to_string(),
                 },
-                "Create",
             ),
             super::PromptKind::NewTag { commit_id } => (
-                "New tag",
+                "New tag".to_string(),
                 format!("On commit {}", &commit_id[..commit_id.len().min(7)]),
-                "Tag",
             ),
             super::PromptKind::Stash => (
-                "Stash changes",
+                "Stash changes".to_string(),
                 "Optional message; untracked files are included".to_string(),
-                "Stash",
             ),
             super::PromptKind::Reword { commit_id } => (
-                "Reword commit",
-                format!(
-                    "New message for {}",
-                    &commit_id[..commit_id.len().min(7)]
-                ),
-                "Reword",
+                "Reword commit".to_string(),
+                format!("New message for {}", &commit_id[..commit_id.len().min(7)]),
             ),
             super::PromptKind::RenameBranch => (
-                "Rename branch",
+                "Rename branch".to_string(),
                 match &self.state.current_branch {
                     Some(name) => format!("Rename current branch {name} to:"),
                     None => "No current branch".to_string(),
                 },
-                "Rename",
             ),
+            super::PromptKind::Reset { commit_id } => (
+                "Reset current branch to here".to_string(),
+                format!(
+                    "Move the current branch to {}. Pick a mode: Soft keeps everything staged, Mixed keeps changes unstaged, Hard discards all changes.",
+                    &commit_id[..commit_id.len().min(7)]
+                ),
+            ),
+            super::PromptKind::Confirm(action) => {
+                (action.title().to_string(), action.hint())
+            }
         };
+
+        let body: Div = match &kind {
+            super::PromptKind::Reset { commit_id } => {
+                let target = commit_id.clone();
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        Button::new("reset-soft")
+                            .primary()
+                            .label("Soft — keep all changes staged")
+                            .on_click(cx.listener({
+                                let target = target.clone();
+                                move |this, _, _, cx| {
+                                    this.reset_branch_to(target.clone(), ResetMode::Soft, cx)
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("reset-mixed")
+                            .label("Mixed — keep changes unstaged")
+                            .on_click(cx.listener({
+                                let target = target.clone();
+                                move |this, _, _, cx| {
+                                    this.reset_branch_to(target.clone(), ResetMode::Mixed, cx)
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("reset-hard")
+                            .danger()
+                            .label("Hard — discard all changes")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.reset_branch_to(target.clone(), ResetMode::Hard, cx)
+                            })),
+                    ),
+            }
+            super::PromptKind::Confirm(action) => {
+                let label = action.confirm_label();
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        Button::new("prompt-cancel")
+                            .ghost()
+                            .label("Cancel")
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
+                    )
+                    .child(
+                        Button::new("prompt-confirm")
+                            .danger()
+                            .label(label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.confirm_action(action.clone(), cx)
+                            })),
+                    ),
+            }
+            _ => {
+                let ok_label = match &kind {
+                    super::PromptKind::NewBranch { .. } => "Create",
+                    super::PromptKind::NewTag { .. } => "Tag",
+                    super::PromptKind::Stash => "Stash",
+                    super::PromptKind::Reword { .. } => "Reword",
+                    super::PromptKind::RenameBranch => "Rename",
+                    _ => "OK",
+                };
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(Textarea::new(&self.prompt_input).h(px(64.)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                Button::new("prompt-cancel")
+                                    .ghost()
+                                    .label("Cancel")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.cancel_prompt(cx)
+                                    })),
+                            )
+                            .child(
+                                Button::new("prompt-ok")
+                                    .primary()
+                                    .label(ok_label)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.confirm_prompt(window, cx)
+                                    })),
+                            ),
+                    )
+            }
+        };
+
         Some(
             div()
                 .absolute()
@@ -654,37 +756,14 @@ impl AppView {
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(div().text_sm().child(title))
+                        .child(div().text_sm().child(SharedString::from(title)))
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(muted)
                                 .child(SharedString::from(hint)),
                         )
-                        .child(Textarea::new(&self.prompt_input).h(px(64.)))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .justify_end()
-                                .gap_2()
-                                .child(
-                                    Button::new("prompt-cancel")
-                                        .ghost()
-                                        .label("Cancel")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.cancel_prompt(cx)
-                                        })),
-                                )
-                                .child(
-                                    Button::new("prompt-ok")
-                                        .primary()
-                                        .label(ok_label)
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.confirm_prompt(window, cx)
-                                        })),
-                                ),
-                        ),
+                        .child(body),
                 )
                 .into_any_element(),
         )
