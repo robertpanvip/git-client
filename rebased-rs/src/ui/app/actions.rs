@@ -15,6 +15,7 @@ actions!(
         CloseOverlay,
         SelectPrevCommit,
         SelectNextCommit,
+        FocusComposer,
     ]
 );
 
@@ -25,6 +26,7 @@ pub(crate) fn register_keybindings(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseOverlay, None),
         KeyBinding::new("ctrl-enter", CommitSelected, None),
+        KeyBinding::new("ctrl-k", FocusComposer, None),
         KeyBinding::new("ctrl-shift-k", PushBranch, None),
         KeyBinding::new("ctrl-t", PullBranch, None),
         KeyBinding::new("f5", RefreshRepo, None),
@@ -85,6 +87,21 @@ impl AppView {
         };
         let set_upstream = self.state.current_upstream.is_none();
         self.run_op("Pushed", move |repo| repo.push(&branch, set_upstream), cx);
+    }
+
+    /// 推送任意本地分支；无 upstream 时附带 --set-upstream。
+    pub(crate) fn push_branch(
+        &mut self,
+        name: String,
+        set_upstream: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let message = if set_upstream {
+            format!("Pushed {name} (set upstream)")
+        } else {
+            format!("Pushed {name}")
+        };
+        self.run_op(&message, move |repo| repo.push(&name, set_upstream), cx);
     }
 
     pub(crate) fn do_pull(&mut self, cx: &mut Context<Self>) {
@@ -408,6 +425,19 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         self.move_commit_selection(1, window, cx);
+    }
+
+    /// Ctrl+K：聚焦提交信息输入框（IntelliJ 惯例，直接进入提交流）。
+    pub(crate) fn on_focus_composer(
+        &mut self,
+        _: &FocusComposer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.message_input.update(cx, |state, cx| {
+            state.focus(window, cx);
+        });
+        cx.notify();
     }
 
     /// 沿提交历史移动键盘选择（↑↓），并联动 Detail 视图。

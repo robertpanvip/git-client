@@ -42,7 +42,7 @@ pub struct AppView {
     repo: Option<Arc<dyn GitBackend>>,
     /// 上次自动刷新检测到的仓库指纹，变化时才触发 refresh。
     repo_digest: String,
-    state: AppState,
+    pub(crate) state: AppState,
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
@@ -147,7 +147,10 @@ impl AppView {
         };
         match sync_repo_state(repo.as_ref(), &mut self.state, data) {
             Ok((commits, graph)) => {
+                // 注入自身弱引用，供 delegate 内（ref 徽章菜单 / 双击）回调应用动作。
+                let weak = cx.entity().downgrade();
                 self.list.update(cx, |list, cx| {
+                    list.delegate_mut().set_app(weak);
                     list.delegate_mut().set_data(LogData { commits, graph });
                     cx.notify();
                 });
@@ -244,6 +247,7 @@ impl Render for AppView {
             .on_action(cx.listener(Self::on_close_overlay))
             .on_action(cx.listener(Self::on_select_prev_commit))
             .on_action(cx.listener(Self::on_select_next_commit))
+            .on_action(cx.listener(Self::on_focus_composer))
             .child(self.render_toolbar(cx))
             .child(
                 div()

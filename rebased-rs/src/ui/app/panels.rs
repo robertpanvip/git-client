@@ -47,7 +47,7 @@ impl AppView {
                 div()
                     .text_xs()
                     .text_color(muted)
-                    .child("Click the action to cycle Pick → Squash → Fixup → Drop. Use ↑ ↓ to reorder."),
+                    .child("Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Use ↑ ↓ to reorder."),
             );
 
         if plan.is_empty() {

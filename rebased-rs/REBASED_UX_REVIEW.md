@@ -14,8 +14,8 @@
 |---|---|---|
 | Git Backend | ~90% | `src/git/`：log+graph / status / stage / commit / amend / branch（创建·删除·rename·checkout·本地与远程）/ tag / merge（3 模式 + `-m` 自定义消息）/ rebase（interactive todo + continue + abort）/ cherry-pick / revert / reset（3 模式）/ push（含 force）/ pull / fetch / stash / blame / file-history / worktree 文件读写 / conflict hunk 解析。缺口：远端管理（add/remove remote）、set-upstream、worktree / submodule / bisect 等低频 porcelain。 |
 | Use Case 层（业务编排） | ~85% | `use_cases.rs` + `actions.rs`：统一 `run_op` 异步执行 → busy 文案 → 完成后自动刷新 → 刷新后保持当前选中；branch / author / date 三维过滤管线；compare / conflict / blame / file-history 编排完整。缺口：网络操作无进度事件、不可取消。 |
-| Desktop UI | ~72% | 三栏主结构 + 工具栏 + 状态栏；commit 右键菜单 12 项；branch / tag / remote 下拉全操作；Changes 双分组 + 勾选 stage；Composer（Amend 预填 / Shelve）；Diff 面板（含 Edit / Save / Cancel 编辑模式）；Conflict 面板 hunk 级 Ours / Theirs / Both + 实时 Result 预览；Rebase todo 面板；8 个快捷键；6 类危险操作确认框。缺口见 P0 / P1。 |
-| **Rebased UX（对标综合）** | **~60%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。差距主要在**交互密度**而非方向：graph 徽章不可交互、无并排 diff、无 3 窗格合并编辑器、进度反馈弱、快捷键覆盖面窄。 |
+| Desktop UI | ~76% | 三栏主结构 + 工具栏 + 状态栏；commit 右键菜单 12 项；**ref 徽章右键菜单**；branch / tag / remote 下拉全操作；Changes 双分组 + 勾选 stage；Composer（Amend 预填 / Shelve）；Diff 面板（含 Edit / Save / Cancel 编辑模式）；Conflict 面板 hunk 级 Ours / Theirs / Both + 实时 Result 预览；Rebase todo 面板；9 个快捷键；6 类危险操作确认框。缺口见 P0 / P1。 |
+| **Rebased UX（对标综合）** | **~65%** | 操作路径与 Rebased 同构（graph 为核心入口、右键即 Git 操作中心、branch 下拉 ≈ IntelliJ Git Branches 弹层）。差距主要在**交互密度**而非方向：~~graph 徽章不可交互~~（已补）、无并排 diff、无 3 窗格合并编辑器、进度反馈弱、快捷键覆盖面窄。 |
 
 判断口径：Backend / Use Case 已超过"日常可用"线；与 Rebased 的真实距离在 UX 层。
 
@@ -39,12 +39,12 @@
 | 功能 | Rebased | rebased-rs | 状态 | 差距 |
 |---|---|---|---|---|
 | Commit 选择 / 联动 | 选中刷新 Detail | 单击选中 → Detail/Diff 联动；↑↓ 键盘导航 | ✅ | — |
-| 双击 = Checkout | IntelliJ 惯例 | 无双击行为 | 🔴 | 高频肌肉记忆缺失（P0-2） |
+| 双击 = Checkout | IntelliJ 惯例 | 双击 commit 行 → `checkout_commit`（`on_click` + `click_count() >= 2`，与单击选中互不干扰） | ✅ | — |
 | 右键菜单 | 12 项级 | 12 项（见 §3） | ✅ | — |
-| Branch/Tag/HEAD 展示 | 行内徽章且可交互 | `ref_badge()` 三色徽章（HEAD / HEAD->branch / tag / branch） | 🟡 | 展示完整，**纯展示 div，不可点击/右键**（P0-1） |
+| Branch/Tag/HEAD 展示 | 行内徽章且可交互 | `ref_badge()` 三色徽章 + **右键菜单**（tag → 删除确认；本地 → Checkout(✓当前) / Push / Rename / Delete；远程 → Checkout tracking / Pull into / Compare） | ✅ | — |
 | Commit 搜索 | 列表搜索 | `ListState::searchable(true)` + `filter_commits` | ✅ | — |
 | Commit 过滤 | branch 过滤 | branch + author + date 三维过滤（`set_branch_filter` / `set_author_filter` / `set_date_filter`） | ✅ | 超出 Rebased 基线 |
-| Graph 是操作中心？ | 是 | 是（右键 12 项 + 全部过滤入口） | ✅ | 唯一残留：徽章交互 |
+| Graph 是操作中心？ | 是 | 是（右键 12 项 + 徽章右键 + 全部过滤入口） | ✅ | — |
 
 ### 3. Commit Context Menu（对照 Rebased 清单）
 
@@ -109,9 +109,9 @@
 
 | 功能 | 状态 | 差距 |
 |---|---|---|
-| Interactive todo 编辑 | ✅ | `panels.rs` rebase 面板：点击动作循环 Pick → Squash → Fixup → Drop |
-| Reword | ✅ | detail 内编辑，todo 行显示 `✎ {自定义消息}` |
-| Edit 动作 | 🟠 | backend `RebaseActionKind::Edit` 存在，UI 循环未包含 |
+| Interactive todo 编辑 | ✅ | `panels.rs` rebase 面板：点击动作循环 Pick → Squash → Fixup → Drop → Edit → Reword（与 backend `RebaseActionKind::next()` 6 变体一致） |
+| Reword | ✅ | detail 内编辑，todo 行显示 `✎ {自定义消息}`；亦为循环动作之一 |
+| Edit 动作 | ✅ | 循环内含 Edit（backend + UI 循环均已覆盖） |
 | 排序 | 🟡 | ↑↓ 键盘排序可用；无拖拽 |
 | Rebase onto | ✅ | branch / remote / commit 右键三入口 |
 | Continue / Abort | ✅ | rebase 暂停态 banner + 操作项 |
@@ -146,16 +146,16 @@
 
 | 功能 | 状态 | 差距 |
 |---|---|---|
-| 键位绑定 | 🟡 | 8 个：esc / ctrl-enter 提交 / **ctrl-shift-k push** / **ctrl-t pull**（与 IntelliJ 一致）/ f5+ctrl-r 刷新 / ↑↓ 导航。缺 **ctrl-k 提交**、Alt+` VCS 弹层等第一梯队 |
+| 键位绑定 | 🟡 | 9 个：esc / ctrl-enter 提交 / **ctrl-k 聚焦 Composer**（IntelliJ 提交第一入口）/ **ctrl-shift-k push** / **ctrl-t pull**（与 IntelliJ 一致）/ f5+ctrl-r 刷新 / ↑↓ 导航。缺 Alt+` VCS 弹层等第二梯队 |
 | Context menu / Toolbar / Dialog | ✅ | — |
 | Confirmation | ✅ | 6 类确认框全覆盖危险操作 |
 
 ---
 
-## C. P0（最影响 Rebased 使用体验）
+## C. P0（最影响 Rebased 使用体验）——✅ 本轮全部完成
 
-1. **Graph 行内 ref 徽章可交互**：branch / HEAD 徽章目前是纯展示 `div`（[commit_list.rs](src/ui/commit_list.rs) `ref_badge`）。Rebased 用户习惯右键徽章做 Checkout / Rename / Delete / Push。这是"graph 作为唯一操作中心"的最后缺口。
-2. **两个最高频肌肉记忆**：`Ctrl+K` = 提交（聚焦 Composer）；双击 commit = Checkout（IntelliJ 惯例）。
+1. ~~**Graph 行内 ref 徽章可交互**~~ ✅ 已完成：`ref_badge()` 挂 `context_menu`（commit_list.rs），按 ref 类型区分——tag → 删除确认；本地分支 → Checkout（当前分支打 ✓）/ Push（无 upstream 自动 --set-upstream）/ Rename… / Delete…（确认框）；远程分支 → Checkout tracking / Pull into current / Compare。本地/远程判定经 `state.branch_entries` 查询，无匹配按远程降级。徽章均带唯一 element id（避免 CodeLocation 菜单 id 冲突）。
+2. ~~**两个最高频肌肉记忆**~~ ✅ 已完成：Ctrl+K 聚焦 Composer（FocusComposer action + ctrl-k 绑定 + TextareaState::focus，actions.rs）；双击 commit = Checkout（行级 on_click + click_count() >= 2 → checkout_commit，与单击选中互不干扰）。
 
 ## D. P1（应继续补齐的 UX）
 
@@ -164,7 +164,7 @@
 3. hunk / 行级 staging（diff 面板内选块入暂存）。
 4. set upstream + remote 管理 UI（add / remove / prune）。
 5. 分支下拉树形分组（origin/* 折叠）。
-6. Rebase todo：拖拽排序、Edit 动作进循环、autosquash。
+6. Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）。
 7. 快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键。
 8. tag 消息编辑 / push tags。
 9. 操作历史（reflog）轻量视图。
@@ -182,7 +182,7 @@
 
 1. **信息架构同构**：graph 中心列表（真 lane graph + 行内徽章）+ 右侧 Detail / Changes / Diff 面板 + 状态栏，对应 IntelliJ Git tool window 的骨架。
 2. **"Graph 即操作中心"成立**：commit 右键 12 项覆盖 Rebased 全部清单，含 HEAD 限定的 Undo / Drop 及确认框；branch 下拉 = Git Branches 弹层（本地 / 远程分组、Checkout / Merge 3 模式 / Rebase onto / Rename / Compare / Push / Pull / Force Push / Delete）。
-3. **IntelliJ 交互语法已被采纳**：Ctrl+Shift+K push、Ctrl+T pull、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤。
-4. **本轮补齐后，"零重学习完成常见操作"已成立**：commit / stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash，全部能在与 Rebased 相同的位置找到相同语义的入口。
+3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单。
+4. **P0 清零后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout，全部能在与 Rebased 相同的位置找到相同语义的入口。
 
-剩余差距（徽章交互、并排 diff、3 窗格合并器、进度、快捷键广度）属于**同方向上的纵深推进**，不改变路线正确性。下一步按 P0 → P1 顺序推进即可。
+剩余差距（并排 diff、3 窗格合并器、进度、快捷键广度）属于**同方向上的纵深推进**，不改变路线正确性。下一步按 P1 顺序推进即可。
