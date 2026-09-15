@@ -61,11 +61,12 @@ impl AppView {
 
         for (index, action) in plan.iter().enumerate() {
             let kind_label = action.kind.label();
-            let summary = format!(
-                "{} {}",
-                &action.id[..action.id.len().min(7)],
-                action.subject
-            );
+            let short = &action.id[..action.id.len().min(7)];
+            // 已自定义消息时给出提示，并展示自定义内容而非原标题。
+            let summary = match action.message.as_deref() {
+                Some(m) if !m.trim().is_empty() => format!("{short} ✎ {m}"),
+                _ => format!("{short} {}", action.subject),
+            };
             panel = panel.child(
                 div()
                     .flex()
@@ -92,6 +93,15 @@ impl AppView {
                             .text_ellipsis()
                             .overflow_hidden()
                             .child(summary),
+                    )
+                    .child(
+                        Button::new(("rebase-edit", index))
+                            .ghost()
+                            .compact()
+                            .label("✎ Edit")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_rebase_edit(index, window, cx)
+                            })),
                     )
                     .child(
                         Button::new(("rebase-up", index))
@@ -266,6 +276,37 @@ impl AppView {
                     Some(Some(HunkChoice::Both)) => "✓ Use both".to_string(),
                     _ => "Use both".to_string(),
                 };
+                let chose_ours = self
+                    .state
+                    .conflict_choices
+                    .get(index)
+                    .is_some_and(|c| c == &Some(HunkChoice::Ours));
+                let chose_theirs = self
+                    .state
+                    .conflict_choices
+                    .get(index)
+                    .is_some_and(|c| c == &Some(HunkChoice::Theirs));
+                let last_choice = self.state.conflict_choices.get(index).copied().flatten();
+                // Result 栏实时反映当前所选取舍（Ours / Theirs / Both）。
+                let result_text = if chose_ours {
+                    ours_text.clone()
+                } else if chose_theirs {
+                    theirs_text.clone()
+                } else if last_choice == Some(HunkChoice::Both) {
+                    if theirs_text.is_empty() {
+                        ours_text.clone()
+                    } else {
+                        format!("{}\n{}", ours_text, theirs_text)
+                    }
+                } else {
+                    "— unresolved —".to_string()
+                };
+                let result_label = match self.state.conflict_choices.get(index) {
+                    Some(Some(HunkChoice::Ours)) => "Result · ours".to_string(),
+                    Some(Some(HunkChoice::Theirs)) => "Result · theirs".to_string(),
+                    Some(Some(HunkChoice::Both)) => "Result · both".to_string(),
+                    _ => "Result".to_string(),
+                };
                 panel = panel.child(
                     div()
                         .flex()
@@ -314,17 +355,74 @@ impl AppView {
                                         })),
                                 ),
                         )
+                        // 三栏合并视图：左侧 Yours（当前分支）、中间 Result（合并结果）、
+                        // 右侧 Theirs（合入分支的变更）。
                         .child(
                             div()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("Ours:\n{}", ours_text)),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("Theirs:\n{}", theirs_text)),
+                                .flex()
+                                .flex_row()
+                                .items_stretch()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .border_1()
+                                        .border_color(border)
+                                        .rounded(px(4.))
+                                        .p_1()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(muted)
+                                                .child("Yours"),
+                                        )
+                                        .child(div().text_xs().child(ours_text)),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .border_1()
+                                        .border_color(border)
+                                        .rounded(px(4.))
+                                        .p_1()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(muted)
+                                                .child(result_label),
+                                        )
+                                        .child(div().text_xs().child(result_text)),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .border_1()
+                                        .border_color(border)
+                                        .rounded(px(4.))
+                                        .p_1()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(muted)
+                                                .child("Theirs"),
+                                        )
+                                        .child(div().text_xs().child(theirs_text)),
+                                ),
                         ),
                 );
             }
@@ -725,6 +823,10 @@ impl AppView {
                     None => "No current branch".to_string(),
                 },
             ),
+            super::PromptKind::RebaseEdit { .. } => (
+                "Edit commit message".to_string(),
+                "Set the message used when this commit is reworded (or merged by squash).".to_string(),
+            ),
             super::PromptKind::Reset { commit_id } => (
                 "Reset current branch to here".to_string(),
                 format!(
@@ -802,7 +904,7 @@ impl AppView {
                     super::PromptKind::NewBranch { .. } => "Create",
                     super::PromptKind::NewTag { .. } => "Tag",
                     super::PromptKind::Stash => "Stash",
-                    super::PromptKind::Reword { .. } => "Reword",
+                    super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => "Reword",
                     super::PromptKind::RenameBranch => "Rename",
                     _ => "OK",
                 };

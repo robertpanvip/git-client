@@ -1079,6 +1079,69 @@ fn merge_creates_two_parent_commit() {
 }
 
 #[test]
+fn rebase_reword_injects_custom_message() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "first"]);
+    temp.write("b.txt", "two\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "three\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    // 规划阶段为中间提交注入自定义消息（Reword + message），验证能真实改写提交消息。
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    assert_eq!(plan.len(), 2);
+    plan[0].kind = RebaseActionKind::Reword;
+    plan[0].message = Some("rewritten second".to_string());
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 3);
+    assert_eq!(log[0].subject, "third");
+    assert_eq!(log[1].subject, "rewritten second", "custom message applied");
+    assert_eq!(log[2].subject, "first");
+    assert!(temp.path.join("b.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn rebase_squash_injects_custom_message() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "two\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "three\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    // 把后一个提交 squash 进前一个，并覆盖合并后的消息。
+    plan[1].kind = RebaseActionKind::Squash;
+    plan[1].message = Some("squashed into one\n\ncombined body".to_string());
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].subject, "squashed into one", "squash custom message applied");
+    assert!(log[0].body.contains("combined body"));
+    assert!(temp.path.join("b.txt").exists());
+    assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
 fn fetch_updates_remote_refs() {
     let temp = TempRepo::new();
     temp.write("a.txt", "a\n");

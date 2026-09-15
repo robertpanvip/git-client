@@ -1,6 +1,6 @@
-use gpui::Context;
+use gpui::{Context, Window};
 
-use super::{use_cases, AppView, RebaseFlow, SidebarMode};
+use super::{use_cases, AppView, PromptKind, RebaseFlow, SidebarMode};
 
 impl AppView {
     pub(crate) fn start_rebase(&mut self, base: String, cx: &mut Context<Self>) {
@@ -35,6 +35,28 @@ impl AppView {
             return;
         }
         plan.swap(index, target as usize);
+        cx.notify();
+    }
+
+    /// 打开为计划项编辑消息的输入框，预填当前主题；确认后该提交会按 Reword 应用。
+    pub(crate) fn open_rebase_edit(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((subject, existing)) = (match &self.state.rebase {
+            RebaseFlow::Planning { plan, .. } => plan
+                .get(index)
+                .map(|a| (a.subject.clone(), a.message.clone().unwrap_or_default())),
+            _ => None,
+        }) else {
+            return;
+        };
+        let prefill = if existing.is_empty() { subject } else { existing };
+        self.prompt_input
+            .update(cx, |state, cx| state.set_value(&prefill, window, cx));
+        self.state.prompt = Some(PromptKind::RebaseEdit { index });
         cx.notify();
     }
 

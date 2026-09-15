@@ -1,7 +1,7 @@
 use gpui::{Context, Entity, Window};
 use gpui_kit::component::list::{ListEvent, ListState};
 
-use rebased_rs::git::{Commit, ResetMode};
+use rebased_rs::git::{Commit, RebaseActionKind, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
 
@@ -224,6 +224,16 @@ impl AppView {
                 }
             }
             PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
+            PromptKind::RebaseEdit { index } => {
+                if input.is_empty() {
+                    self.state.error = Some("Commit message is empty".to_string());
+                } else if let super::RebaseFlow::Planning { plan, .. } = &mut self.state.rebase
+                    && let Some(action) = plan.get_mut(index)
+                {
+                    action.kind = RebaseActionKind::Reword;
+                    action.message = Some(input);
+                }
+            }
         }
         cx.notify();
     }

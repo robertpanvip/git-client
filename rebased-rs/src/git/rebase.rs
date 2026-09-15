@@ -10,6 +10,7 @@ pub enum RebaseActionKind {
     Fixup,
     Drop,
     Edit,
+    Reword,
 }
 
 impl RebaseActionKind {
@@ -20,6 +21,7 @@ impl RebaseActionKind {
             RebaseActionKind::Fixup => "fixup",
             RebaseActionKind::Drop => "drop",
             RebaseActionKind::Edit => "edit",
+            RebaseActionKind::Reword => "reword",
         }
     }
 
@@ -30,6 +32,7 @@ impl RebaseActionKind {
             RebaseActionKind::Fixup => "Fixup",
             RebaseActionKind::Drop => "Drop",
             RebaseActionKind::Edit => "Edit",
+            RebaseActionKind::Reword => "Reword",
         }
     }
 
@@ -39,7 +42,8 @@ impl RebaseActionKind {
             RebaseActionKind::Squash => RebaseActionKind::Fixup,
             RebaseActionKind::Fixup => RebaseActionKind::Drop,
             RebaseActionKind::Drop => RebaseActionKind::Edit,
-            RebaseActionKind::Edit => RebaseActionKind::Pick,
+            RebaseActionKind::Edit => RebaseActionKind::Reword,
+            RebaseActionKind::Reword => RebaseActionKind::Pick,
         }
     }
 }
@@ -49,6 +53,8 @@ pub struct RebaseAction {
     pub id: String,
     pub subject: String,
     pub kind: RebaseActionKind,
+    /// 计划编辑器里为该提交自定义的消息。非空时用于 Reword / Squash 的消息改写。
+    pub message: Option<String>,
 }
 
 pub fn todos(cmd: &GitCommand, base: &str) -> Result<Vec<RebaseAction>> {
@@ -78,6 +84,7 @@ pub fn parse_todos(stdout: &str) -> Vec<RebaseAction> {
                 id,
                 subject,
                 kind: RebaseActionKind::Pick,
+                message: None,
             })
         })
         .collect()
@@ -105,6 +112,50 @@ pub fn copy_editor(path: &Path) -> String {
     format!("cp \"{rendered}\"")
 }
 
+/// 生成一份 POSIX `sh` 脚本，用作 `GIT_EDITOR`。git 每次调用编辑器时都会把待改写的
+/// 提交消息文件作为 `$1` 传入；脚本读取其中第一个「非注释、非空」行（即真正的提交
+/// 主题；squash 时 git 会在文件头插入 `#` 注释），若与某个自定义消息对应的目标主题
+/// 一致，就用自定义消息覆盖整个文件。这样可以在一次 `rebase -i` 里为多个 reword /
+/// squash 逐个注入不同的消息，而不依赖 git 交互式编辑器。
+pub fn editor_script(entries: &[(String, String)]) -> String {
+    // 先剔除以 `#` 开头的注释行和空行，再取第一行作为要匹配的主题。
+    let mut out = String::from(
+        "#!/bin/sh\nsubj=\"$(grep -v '^#' \"$1\" | grep -v '^[[:space:]]*$' | head -n 1)\"\n",
+    );
+    for (subject, message) in entries {
+        out.push_str(&format!(
+            "if [ \"$subj\" = {} ]; then printf '%s\\n' {} > \"$1\"; fi\n",
+            shell_single_quoted(subject),
+            shell_single_quoted(message)
+        ));
+    }
+    out
+}
+
+/// 用合法的 shell 单引号字面量包装字符串，内嵌单引号按 `'\"'\"'` 拼接转义。
+fn shell_single_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// 把路径转成可放进 shell 命令的带引号字符串（借鉴 copy_editor 的归一化）。
+pub fn quote_path(path: &Path) -> String {
+    let rendered = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"");
+    format!("\"{rendered}\"")
+}
+
 pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     if plan.is_empty() {
         return Err(GitError::with_stderr("rebase aborted", "empty rebase plan"));
@@ -114,14 +165,50 @@ pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     std::fs::write(&tmp, render_todo(plan))
         .map_err(|e| GitError::with_stderr("failed to write rebase todo", e.to_string()))?;
     let editor = copy_editor(&tmp);
+
+    // 收集计划中自定义的消息：非空时生成一份 GIT_EDITOR 脚本，让 git 在 reword /
+    // squash 时按消息文件首行匹配并替换成自定义消息；为空则沿用默认的 no-op 编辑器。
+    // 注意 git 在 squash 时打开编辑器收到的是「合并后的消息」，其首行等于所属合并组
+    // 的第一个目标提交主题，因此 squash/fixup 的自定义消息要按目标提交来匹配。
+    let mut dest_subject: Option<&str> = None;
+    let mut custom: Vec<(String, String)> = Vec::new();
+    for action in plan {
+        if let Some(message) = action.message.as_deref().filter(|m| !m.trim().is_empty()) {
+            let key = match action.kind {
+                RebaseActionKind::Squash | RebaseActionKind::Fixup => {
+                    dest_subject.unwrap_or(action.subject.as_str())
+                }
+                _ => action.subject.as_str(),
+            };
+            custom.push((key.to_string(), message.to_string()));
+        }
+        if matches!(
+            action.kind,
+            RebaseActionKind::Pick | RebaseActionKind::Edit | RebaseActionKind::Reword
+        ) {
+            dest_subject = Some(action.subject.as_str());
+        }
+    }
+    let (message_editor, script_path) = if custom.is_empty() {
+        ("true".to_string(), None)
+    } else {
+        let sp = std::env::temp_dir().join(format!("rebased-rs-editor-{}", unique));
+        std::fs::write(&sp, editor_script(&custom)).map_err(|e| {
+            GitError::with_stderr("failed to write rebase message editor", e.to_string())
+        })?;
+        (format!("sh {}", quote_path(&sp)), Some(sp))
+    };
     let output = cmd.execute_env(
         &["rebase", "-i", base],
         &[
             ("GIT_SEQUENCE_EDITOR", editor.as_str()),
-            ("GIT_EDITOR", "true"),
+            ("GIT_EDITOR", message_editor.as_str()),
         ],
     );
     let _ = std::fs::remove_file(&tmp);
+    if let Some(sp) = &script_path {
+        let _ = std::fs::remove_file(sp);
+    }
     let output = output?;
     if !output.success {
         return Err(GitError::with_stderr(
@@ -262,11 +349,13 @@ mod tests {
                 id: "1234567890abcdef".into(),
                 subject: "first".into(),
                 kind: RebaseActionKind::Pick,
+                message: None,
             },
             RebaseAction {
                 id: "fedcba0987".into(),
                 subject: "second".into(),
                 kind: RebaseActionKind::Squash,
+                message: None,
             },
         ];
         let todo = render_todo(&plan);
@@ -294,13 +383,28 @@ mod tests {
     #[test]
     fn kind_cycles() {
         let mut kind = RebaseActionKind::Pick;
-        for _ in 0..5 {
+        for _ in 0..6 {
             kind = kind.next();
         }
         assert_eq!(kind, RebaseActionKind::Pick);
         assert_eq!(RebaseActionKind::Fixup.next(), RebaseActionKind::Drop);
-        assert_eq!(RebaseActionKind::Drop.next(), RebaseActionKind::Edit);
-        assert_eq!(RebaseActionKind::Edit.keyword(), "edit");
+        assert_eq!(RebaseActionKind::Edit.next(), RebaseActionKind::Reword);
+        assert_eq!(RebaseActionKind::Reword.next(), RebaseActionKind::Pick);
+        assert_eq!(RebaseActionKind::Reword.keyword(), "reword");
+    }
+
+    #[test]
+    fn editor_script_escapes_and_matches_subjects() {
+        let script = editor_script(&[
+            ("add api".to_string(), "Add the API module".to_string()),
+            ("it's here".to_string(), "replacement\nline two".to_string()),
+        ]);
+        assert!(script.starts_with("#!/bin/sh\nsubj="));
+        assert!(script.contains("if [ \"$subj\" = 'add api' ]"));
+        assert!(script.contains("printf '%s\\n' 'Add the API module'"));
+        // 单引号被转义，整体仍是合法单引号字面量
+        assert!(script.contains("it'\\''s here"));
+        assert!(script.contains("replacement\nline two"));
     }
 
     #[test]

@@ -25,6 +25,7 @@ pub(crate) enum PromptKind {
     Reword { commit_id: String },
     RenameBranch,
     Reset { commit_id: String },
+    RebaseEdit { index: usize },
     Confirm(ConfirmAction),
 }
 
@@ -236,6 +237,7 @@ mod tests {
                 id: "aaa1111".to_string(),
                 subject: "add file".to_string(),
                 kind: RebaseActionKind::Pick,
+                message: None,
             }],
         };
         assert_eq!(
