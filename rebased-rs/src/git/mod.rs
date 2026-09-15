@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod blame;
 pub mod branches;
 pub mod command;
@@ -14,6 +15,7 @@ pub mod repo_data;
 pub mod status;
 pub mod types;
 
+pub use backend::{GitBackend, open_backend};
 pub use blame::parse_blame;
 pub use command::GitCommand;
 pub use conflict::{
