@@ -1,7 +1,7 @@
-use gpui::{actions, App, ClipboardItem, Context, KeyBinding, Window};
+use gpui::{actions, App, AppContext, ClipboardItem, Context, KeyBinding, Window};
 use gpui_kit::base::IndexPath;
 
-use rebased_rs::git::Change;
+use rebased_rs::git::{Change, MergeMode, DEFAULT_LOG_LIMIT};
 
 use super::{use_cases::commit_selected, AppView, ConfirmAction, SidebarMode};
 
@@ -161,6 +161,46 @@ impl AppView {
         }
     }
 
+    /// 打开分支对比面板：ahead 为 mine（当前分支）独有，behind 为 theirs 独有。
+    pub(crate) fn open_branch_compare(&mut self, theirs: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if self.state.busy.is_some() {
+            return;
+        }
+        let mine = self
+            .state
+            .current_branch
+            .clone()
+            .unwrap_or_else(|| "HEAD".to_string());
+        self.state.busy = Some(format!("Comparing {mine} with {theirs}"));
+        cx.notify();
+        let task = cx.background_spawn(async move {
+            let compare = repo.compare_branches(&mine, &theirs, DEFAULT_LOG_LIMIT);
+            (mine, theirs, compare)
+        });
+        cx.spawn(async move |this, cx| {
+            let (mine, theirs, compare) = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.state.busy = None;
+                match compare {
+                    Ok((ahead, behind)) => {
+                        this.state.compare_mine = mine;
+                        this.state.compare_theirs = theirs;
+                        this.state.compare_ahead = ahead;
+                        this.state.compare_behind = behind;
+                        this.state.sidebar = SidebarMode::Compare;
+                        this.state.error = None;
+                    }
+                    Err(e) => this.state.error = Some(e.to_string()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn cherry_pick_selected(&mut self, cx: &mut Context<Self>) {
         let Some(commit) = self.state.selected.clone() else {
             return;
@@ -202,21 +242,18 @@ impl AppView {
         self.run_op(&message, move |repo| repo.delete_tag(&name), cx);
     }
 
-    pub(crate) fn merge_branch_into_current(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some(repo) = self.repo.clone() else {
-            return;
+    pub(crate) fn merge_branch_into_current(
+        &mut self,
+        name: String,
+        mode: MergeMode,
+        cx: &mut Context<Self>,
+    ) {
+        let message = match mode {
+            MergeMode::Default => format!("Merged {name}"),
+            MergeMode::NoFastForward => format!("Merged {name} (no ff)"),
+            MergeMode::FastForwardOnly => format!("Fast-forwarded {name}"),
         };
-        match repo.merge_branch(&name) {
-            Ok(()) => {
-                self.state.error = None;
-                self.state.status_message = format!("Merged {name}");
-                self.refresh(cx);
-            }
-            Err(e) => {
-                self.state.error = Some(e.to_string());
-                self.refresh(cx);
-            }
-        }
+        self.run_op(&message, move |repo| repo.merge_branch_with(&name, mode), cx);
     }
 
     pub(crate) fn abort_merge(&mut self, cx: &mut Context<Self>) {

@@ -528,12 +528,121 @@ impl AppView {
         )
     }
 
+    pub(crate) fn render_compare_panel(&self, cx: &mut Context<Self>) -> Div {
+        let muted = cx.theme().muted_foreground;
+        let mine = self.state.compare_mine.clone();
+        let theirs = self.state.compare_theirs.clone();
+
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .flex_none()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("Compare · {mine} ←→ {theirs}")),
+                    )
+                    .child(
+                        Button::new("compare-close")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                    ),
+            );
+
+        let sections = [
+            (
+                format!("{mine} only ({})", self.state.compare_ahead.len()),
+                &self.state.compare_ahead,
+            ),
+            (
+                format!("{theirs} only ({})", self.state.compare_behind.len()),
+                &self.state.compare_behind,
+            ),
+        ];
+        for (label, commits) in sections {
+            panel = panel.child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child(label),
+            );
+            if commits.is_empty() {
+                panel = panel.child(
+                    div()
+                        .flex_none()
+                        .px_2()
+                        .text_xs()
+                        .text_color(muted)
+                        .child("None"),
+                );
+            }
+            for commit in commits.iter() {
+                let id = commit.id.0.clone();
+                let short = id[..id.len().min(7)].to_string();
+                let subject = commit.subject.clone();
+                let muted_fg = muted;
+                let time = crate::ui::commit_list::format_time(commit.time);
+                panel = panel.child(
+                    div()
+                        .id(format!("compare-{id}"))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.select_commit_by_id(&id, cx)
+                        }))
+                        .child(div().flex_none().text_xs().text_color(muted_fg).child(short))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_sm()
+                                .child(subject),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted_fg)
+                                .child(time),
+                        ),
+                );
+            }
+        }
+
+        panel
+    }
+
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
         let width = match self.state.sidebar {
             SidebarMode::Workspace => 360.,
             SidebarMode::Detail => 420.,
-            SidebarMode::Diff | SidebarMode::Blame => 680.,
+            SidebarMode::Diff | SidebarMode::Blame | SidebarMode::Compare => 680.,
             SidebarMode::Rebase => 480.,
             SidebarMode::Conflicts => 680.,
             SidebarMode::Shelve => 420.,
@@ -553,6 +662,7 @@ impl AppView {
         match self.state.sidebar {
             SidebarMode::Diff => base.child(self.render_diff_panel(cx)).into_any_element(),
             SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
+            SidebarMode::Compare => base.child(self.render_compare_panel(cx)).into_any_element(),
             SidebarMode::Rebase => base.child(self.render_rebase_panel(cx)).into_any_element(),
             SidebarMode::Conflicts => {
                 base.child(self.render_conflicts_panel(cx)).into_any_element()

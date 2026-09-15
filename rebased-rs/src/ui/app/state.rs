@@ -11,6 +11,7 @@ pub(crate) enum SidebarMode {
     Detail,
     Diff,
     Blame,
+    Compare,
     Rebase,
     Conflicts,
     Shelve,
@@ -170,6 +171,11 @@ pub(crate) struct AppState {
     pub(crate) loading: bool,
     /// 正在后台执行的 git 操作描述（Some = 忙碌，同时防止并发写操作）。
     pub(crate) busy: Option<String>,
+    /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
+    pub(crate) compare_mine: String,
+    pub(crate) compare_theirs: String,
+    pub(crate) compare_ahead: Vec<Commit>,
+    pub(crate) compare_behind: Vec<Commit>,
 }
 
 impl Default for AppState {
@@ -213,6 +219,10 @@ impl Default for AppState {
             error: None,
             loading: true,
             busy: None,
+            compare_mine: String::new(),
+            compare_theirs: String::new(),
+            compare_ahead: Vec::new(),
+            compare_behind: Vec::new(),
         }
     }
 }

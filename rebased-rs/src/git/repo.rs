@@ -71,12 +71,35 @@ impl Repository {
         Ok(output.stdout.trim().to_string())
     }
 
+    /// 分支对比：`mine` 独有的提交（ahead）与 `theirs` 独有的提交（behind）。
+    pub fn compare_branches(
+        &self,
+        mine: &str,
+        theirs: &str,
+        limit: usize,
+    ) -> Result<(Vec<Commit>, Vec<Commit>)> {
+        let ahead = self.log_filtered(limit, Some(&format!("{theirs}..{mine}")), None)?;
+        let behind = self.log_filtered(limit, Some(&format!("{mine}..{theirs}")), None)?;
+        Ok((ahead, behind))
+    }
+
     pub fn status(&self) -> Result<RepoStatus> {
         let output = self.cmd.execute(&STATUS_ARGS)?;
         if !output.success {
             return Err(GitError::with_stderr("git status failed", output.stderr));
         }
         Ok(super::status::parse_status(&output.stdout))
+    }
+
+    /// 轻量仓库指纹：HEAD hash + 工作区变更行数，用于低频自动刷新检测。
+    pub fn repo_digest(&self) -> Result<String> {
+        let head = self.rev_parse("HEAD").unwrap_or_default();
+        let dirty = self
+            .cmd
+            .execute(&["status", "--porcelain"])
+            .map(|o| if o.success { o.stdout.lines().count() } else { 0 })
+            .unwrap_or(0);
+        Ok(format!("{head}:{dirty}"))
     }
 
     pub fn branches(&self) -> Result<Vec<Branch>> {
@@ -282,7 +305,11 @@ impl Repository {
     }
 
     pub fn merge_branch(&self, branch: &str) -> Result<()> {
-        merge::merge_branch(&self.cmd, branch)
+        self.merge_branch_with(branch, merge::MergeMode::Default)
+    }
+
+    pub fn merge_branch_with(&self, branch: &str, mode: merge::MergeMode) -> Result<()> {
+        merge::merge_branch(&self.cmd, branch, mode)
     }
 
     pub fn merge_continue(&self) -> Result<()> {
@@ -362,5 +389,130 @@ impl Repository {
 
     pub fn head_message(&self) -> Result<String> {
         super::log::full_message(&self.cmd, "HEAD")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use super::*;
+
+    struct TempRepo {
+        path: PathBuf,
+    }
+
+    impl TempRepo {
+        fn new() -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default();
+            let path =
+                std::env::temp_dir().join(format!("rebased-rs-repo-{}-{nanos}", std::process::id()));
+            std::fs::create_dir_all(&path).unwrap();
+            git(&path, &["init", "-b", "main"]);
+            git(&path, &["config", "user.name", "Test"]);
+            git(&path, &["config", "user.email", "test@example.com"]);
+            Self { path }
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn commit_file(dir: &Path, name: &str, message: &str) {
+        std::fs::write(dir.join(name), message).unwrap();
+        git(dir, &["add", name]);
+        git(dir, &["commit", "-m", message]);
+    }
+
+    fn subjects(commits: &[Commit]) -> Vec<&str> {
+        commits.iter().map(|c| c.subject.as_str()).collect()
+    }
+
+    #[test]
+    fn compare_branches_reports_ahead_and_behind() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+        git(&dir.path, &["checkout", "-b", "feature"]);
+        commit_file(&dir.path, "feature.txt", "feature work");
+        git(&dir.path, &["checkout", "main"]);
+        commit_file(&dir.path, "main.txt", "main work");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        let (ahead, behind) = repo.compare_branches("main", "feature", 50).unwrap();
+        assert_eq!(subjects(&ahead), ["main work"]);
+        assert_eq!(subjects(&behind), ["feature work"]);
+    }
+
+    #[test]
+    fn merge_branch_with_ff_only_fast_forwards_without_merge_commit() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+        git(&dir.path, &["checkout", "-b", "feature"]);
+        commit_file(&dir.path, "feature.txt", "feature work");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        repo.merge_branch_with("feature", merge::MergeMode::FastForwardOnly)
+            .unwrap();
+        let log = repo.log(5).unwrap();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].subject, "feature work");
+        assert_eq!(log[0].parents.len(), 1);
+    }
+
+    #[test]
+    fn merge_branch_with_no_ff_creates_merge_commit() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+        git(&dir.path, &["checkout", "-b", "feature"]);
+        commit_file(&dir.path, "feature.txt", "feature work");
+        git(&dir.path, &["checkout", "main"]);
+        commit_file(&dir.path, "main.txt", "main work");
+
+        let repo = Repository::open(&dir.path).unwrap();
+        repo.merge_branch_with("feature", merge::MergeMode::NoFastForward)
+            .unwrap();
+        let log = repo.log(10).unwrap();
+        // no-ff 产生合并提交，且是最新的提交：两个 parent，两侧工作都在历史里。
+        assert_eq!(log[0].parents.len(), 2);
+        assert_eq!(log[0].subject, "Merge branch 'feature'");
+        assert!(subjects(&log).contains(&"main work"));
+        assert!(subjects(&log).contains(&"feature work"));
+    }
+
+    #[test]
+    fn repo_digest_reflects_head_and_worktree() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "base.txt", "base");
+        let repo = Repository::open(&dir.path).unwrap();
+        let clean = repo.repo_digest().unwrap();
+        assert!(clean.ends_with(":0"));
+        std::fs::write(dir.path.join("base.txt"), "dirty").unwrap();
+        let dirty = repo.repo_digest().unwrap();
+        assert_ne!(clean, dirty);
+        assert!(dirty.ends_with(":1"));
     }
 }

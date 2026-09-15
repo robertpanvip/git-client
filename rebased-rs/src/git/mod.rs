@@ -25,6 +25,7 @@ pub use conflict::{
 pub use diff::parse_unified_diff;
 pub use error::{GitError, Result};
 pub use graph::{build_graph, Graph, GraphRow, RowEdge, MAX_COLORS};
+pub use merge::MergeMode;
 pub use ops::ResetMode;
 pub use rebase::{RebaseAction, RebaseActionKind};
 pub use repo::Repository;

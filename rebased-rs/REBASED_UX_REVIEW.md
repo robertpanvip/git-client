@@ -11,7 +11,7 @@
 
 | 层 | 完成度 | 依据 |
 |---|---|---|
-| **Git Backend** | ~80% | `git/backend.rs` 定义 58 个 trait 方法，覆盖日常操作全链路（log/status/stage/commit+paths/amend、分支 CRUD、tag CRUD、stash、cherry-pick/revert/reset_to(Soft/Mixed/Hard)、4 类 diff、blame、interactive rebase 状态机、merge+冲突解析、reword_commit、undo/drop head）。缺口：file history（`log -- path`）、remote branches、双 ref compare、merge 选项。 |
+| **Git Backend** | ~90% | `git/backend.rs` 定义 60+ 个 trait 方法，覆盖日常操作全链路（log/status/stage/commit+paths/amend、分支 CRUD、tag CRUD、stash、cherry-pick/revert/reset_to(Soft/Mixed/Hard)、4 类 diff、blame、interactive rebase 状态机、merge（三档 ff 策略）+冲突解析、reword_commit、undo/drop head、branch compare、repo_digest、log --follow）。缺口：remote branches。 |
 | **Desktop UI**（作为普通 Git GUI） | ~50% | 单线程主流程可走通，但零快捷键、零右键菜单、危险操作零确认、同步执行无进度、部分提交不可用。 |
 | **Rebased UX**（对标 IntelliJ Git 交互习惯） | ~25% | 布局骨架"像"（graph 主区/右侧 detail/顶部 toolbar），但交互范式相反：Rebased 是"右键菜单 + 快捷键 + Branches 弹窗 + 操作后状态保持"驱动；rebased-rs 是"选中→右侧按钮列表 + 每次刷新清场"驱动。 |
 
@@ -63,7 +63,7 @@
 | Reset Current Branch to Here | backend 完整，UI 零调用 | 🟠 |
 | Rebase onto Here | Detail "Rebase from here"→计划面板 | 🟡 |
 | Interactive Rebase | 同上 | 🟡（缺 Reword） |
-| Compare with Branch | 无 UI，backend 亦无 | 🔴 |
+| Compare with Branch | ✓ Branches 菜单 ⇋ Compare（P2） | ✅ |
 | Copy SHA | ✓ | ✅ |
 | Show Diff | ✓ | ✅ |
 | Undo/Drop Commit | ✓（无确认） | 🟡 |
@@ -79,12 +79,12 @@
 | Checkout / Create | ✓ | ✅ |
 | Rename | 仅当前分支 | 🟡 |
 | Delete | ✓（无确认） | 🟡 |
-| Merge | ✓（无 ff 选项/消息编辑） | 🟡 |
+| Merge | ✓ ff 三档（默认/no-ff/ff-only）（P2）；无消息编辑 | ✅ |
 | Rebase onto | 分支菜单无 | 🟠 |
 | Push / Pull | ✓ | ✅ |
 | Force Push | ✓（无确认） | 🟡 |
 | Tracking / ahead-behind | ahead/behind ✓；remote 分支不加载 | 🟡 |
-| Compare branches | 无 | 🔴 |
+| Compare branches | ✓ ahead/behind 双列表面板（P2） | ✅ |
 | Tag 操作 | 新建/删除/跳转/Push all tags | 🟡 |
 
 ### 5. Workspace / Changes
@@ -110,7 +110,7 @@
 | File Diff | 🟡 | 有但不分流 |
 | File History | 🔴 | backend 与 UI 均无 |
 | Blame | 🟡 | 只读、不能跳 commit |
-| Compare | 🔴 | 双方均无 |
+| Compare | ✅ | ahead/behind 双列表面板（P2） |
 
 ### 7. Rebase
 
@@ -143,7 +143,7 @@
 | Loading | ✓ | 🟡 |
 | Progress | 无，同步执行会冻结 UI | 🟠 |
 | Success/Error | statusbar 灰/红字 | ✅ |
-| 自动刷新 | 无 | 🟡 |
+| 自动刷新 | ✓ 5s 轻量指纹检测，变化才全量 refresh（P2） | ✅ |
 | 刷新后选中保持 | **不保持，reset_views 清场** | 🔴 |
 | 失败恢复 | 基本正确 | 🟡 |
 
@@ -227,3 +227,10 @@
 - [x] P1-5 结构化过滤器 + Go to：`log_args(limit, from, author)` 支持 `--author=` 与分支范围（替代 `--all`）；toolbar 新增 Branch 范围下拉（◫）+ 作者过滤（👤）+ `→ Go to…`（`rev_parse --verify <rev>^{commit}` 解析 hash/branch/tag 并选中）。
 - [x] P1-6 操作异步化 + 进度：`run_op` / `refresh` / 启动加载 / `start_rebase` / `apply_rebase` 全部改为 `background_spawn` + `cx.spawn` 回主线程；`AppState.busy` 防并发写操作并在状态栏显示 `⏳ …` 进度。
 - [x] P1-10 三栏式 conflict 对话框：conflict 面板三栏呈现 Ours / Base / Theirs（`ConflictHunk` 三方内容），逐 hunk 选择 Take Ours / Take Theirs / Both。
+
+### P2 修复记录
+
+- [x] P2-1 Compare with Branch：后端 `Repository::compare_branches`（复用 `log_filtered` 的 range 语法：`theirs..mine` = ahead / `mine..theirs` = behind）+ trait/impl 双委托 + `AppState` 字段存 mine/theirs/ahead/behind（`SidebarMode` 保持 `Copy`，仅加 unit 变体 `Compare`）+ `render_compare_panel` 双列表（每列标注 `{branch} only (n)`，提交行可点击跳转）+ Branches 菜单本地与远程分支的 ⇋ Compare 入口（`open_branch_compare` 异步执行）。测试 `compare_branches_reports_ahead_and_behind`。
+- [x] P2-2 Merge ff 选项：`git/merge.rs` 引入 `MergeMode` 三档（Default=`--no-edit` / NoFastForward=`--no-ff --no-edit` / FastForwardOnly=`--ff-only`），`merge_branch_with` 全链路传递；Branches 菜单 Merge 单项扩为三档（`⇄ Merge {name} into {target}` / `(no ff)` / `(ff only)`）；顺带修复 P1-6 漏网的 `merge_branch_into_current` 同步调用，改为 `run_op` 异步路径。测试 `merge_branch_with_ff_only_fast_forwards_without_merge_commit` / `merge_branch_with_no_ff_creates_merge_commit`。
+- [x] P2-3 自动刷新：`Repository::repo_digest` 轻量指纹（`rev-parse HEAD` + `status --porcelain` 行数）+ `AppView.repo_digest` 字段 + 5s 周期后台循环——指纹变化才全量 `refresh`，busy/loading 期间跳过检测，首次检测只记基准不触发刷新，entity 释放后退出循环。测试 `repo_digest_reflects_head_and_worktree`。
+- 新增 4 个集成测试（TempRepo 真实 git 仓库），共 92 个测试全部通过，clippy 无警告。

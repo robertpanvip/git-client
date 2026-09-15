@@ -40,6 +40,8 @@ fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
 pub struct AppView {
     repo_path: PathBuf,
     repo: Option<Arc<dyn GitBackend>>,
+    /// 上次自动刷新检测到的仓库指纹，变化时才触发 refresh。
+    repo_digest: String,
     state: AppState,
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
@@ -66,6 +68,7 @@ impl AppView {
         let this = Self {
             repo_path,
             repo: None,
+            repo_digest: String::new(),
             state: AppState::default(),
             list,
             message_input,
@@ -90,6 +93,42 @@ impl AppView {
                     Err(e) => this.state.error = Some(e.to_string()),
                 }
             });
+        })
+        .detach();
+
+        // 自动刷新：周期性计算轻量仓库指纹（HEAD + 工作区状态），变化时才全量
+        // refresh；busy/loading 期间跳过检测；首次只记录基准不刷新，entity 释放后退出。
+        cx.spawn(async move |this, cx| {
+            let executor = cx.background_executor().clone();
+            loop {
+                executor.timer(std::time::Duration::from_secs(5)).await;
+                let Ok((repo, last)) = this.update(cx, |this, _| {
+                    let runnable = this
+                        .repo
+                        .clone()
+                        .filter(|_| !this.state.loading && this.state.busy.is_none());
+                    (runnable, this.repo_digest.clone())
+                }) else {
+                    break;
+                };
+                let Some(repo) = repo else {
+                    continue;
+                };
+                let task = executor.spawn(async move { repo.repo_digest() });
+                let Ok(digest) = task.await else {
+                    continue;
+                };
+                if digest == last {
+                    continue;
+                }
+                let first_check = last.is_empty();
+                let _ = this.update(cx, |this, cx| {
+                    this.repo_digest = digest;
+                    if !first_check {
+                        this.refresh(cx);
+                    }
+                });
+            }
         })
         .detach();
         this

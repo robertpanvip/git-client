@@ -1,8 +1,26 @@
 use super::command::GitCommand;
 use super::error::{GitError, Result};
 
-pub fn merge_branch(cmd: &GitCommand, branch: &str) -> Result<()> {
-    cmd.run_ok(&["merge", "--no-edit", branch])
+/// Merge 的快进策略：默认（允许快进）、强制产生合并提交、仅允许快进。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MergeMode {
+    Default,
+    NoFastForward,
+    FastForwardOnly,
+}
+
+pub fn merge_branch(cmd: &GitCommand, branch: &str, mode: MergeMode) -> Result<()> {
+    let mut args: Vec<&str> = vec!["merge"];
+    match mode {
+        MergeMode::Default => args.push("--no-edit"),
+        MergeMode::NoFastForward => {
+            args.push("--no-ff");
+            args.push("--no-edit");
+        }
+        MergeMode::FastForwardOnly => args.push("--ff-only"),
+    }
+    args.push(branch);
+    cmd.run_ok(&args)
 }
 
 pub fn continue_merge(cmd: &GitCommand) -> Result<()> {

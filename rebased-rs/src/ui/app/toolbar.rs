@@ -11,7 +11,7 @@ use gpui_kit::component::{
     ActiveTheme,
 };
 
-use rebased_rs::git::{Branch, Change, ChangeStatus};
+use rebased_rs::git::{Branch, Change, ChangeStatus, MergeMode};
 
 use crate::ui::graph_view::{lane_color, status_color};
 
@@ -122,19 +122,31 @@ impl AppView {
                                 continue;
                             }
                             let name = branch.name.clone();
-                            let merge_label = format!(
-                                "⇄ Merge {name} into {}",
-                                current.clone().unwrap_or_else(|| "HEAD".to_string())
-                            );
-                            result = result.item(PopupMenuItem::new(merge_label).on_click({
-                                let weak = weak.clone();
-                                let name = name.clone();
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.merge_branch_into_current(name.clone(), cx)
-                                    });
-                                }
-                            }));
+                            let target = current.clone().unwrap_or_else(|| "HEAD".to_string());
+                            let merge_specs = [
+                                (format!("⇄ Merge {name} into {target}"), MergeMode::Default),
+                                (
+                                    format!("⇄ Merge {name} into {target} (no ff)"),
+                                    MergeMode::NoFastForward,
+                                ),
+                                (
+                                    format!("⇄ Merge {name} into {target} (ff only)"),
+                                    MergeMode::FastForwardOnly,
+                                ),
+                            ];
+                            for (merge_label, mode) in merge_specs {
+                                result = result.item(PopupMenuItem::new(merge_label).on_click({
+                                    let weak = weak.clone();
+                                    let name = name.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.merge_branch_into_current(
+                                                name.clone(), mode, cx,
+                                            )
+                                        });
+                                    }
+                                }));
+                            }
                             result = result.item(
                                 PopupMenuItem::new(format!(
                                     "⇅ Rebase onto {name}…"
@@ -149,6 +161,19 @@ impl AppView {
                                     }
                                 }),
                             );
+                            let compare_label = format!(
+                                "⇋ Compare {name} with {}",
+                                current.clone().unwrap_or_else(|| "HEAD".to_string())
+                            );
+                            result = result.item(PopupMenuItem::new(compare_label).on_click({
+                                let weak = weak.clone();
+                                let name = name.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_branch_compare(name.clone(), cx)
+                                    });
+                                }
+                            }));
                             result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
                                 {
                                     let weak = weak.clone();
@@ -209,6 +234,19 @@ impl AppView {
                                             }
                                         }),
                                 );
+                                let compare_label = format!(
+                                    "⇋ Compare {name} with {}",
+                                    current.clone().unwrap_or_else(|| "HEAD".to_string())
+                                );
+                                result = result.item(PopupMenuItem::new(compare_label).on_click({
+                                    let weak = weak.clone();
+                                    let name = name.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_branch_compare(name.clone(), cx)
+                                        });
+                                    }
+                                }));
                             }
                         }
                         result

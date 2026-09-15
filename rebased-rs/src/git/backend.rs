@@ -2,6 +2,7 @@ use std::path::Path;
 
 use super::conflict::{ConflictFile, HunkChoice};
 use super::error::Result;
+use super::merge::MergeMode;
 use super::ops::ResetMode;
 use super::rebase::RebaseAction;
 use super::repo::Repository;
@@ -25,7 +26,19 @@ pub trait GitBackend: Send + Sync {
     ) -> Result<Vec<Commit>>;
     /// 解析任意 hash / 分支 / 标签为完整提交 id，用于 Go to 功能。
     fn rev_parse(&self, rev: &str) -> Result<String>;
+
+    fn compare_branches(
+        &self,
+        mine: &str,
+        theirs: &str,
+        limit: usize,
+    ) -> Result<(Vec<Commit>, Vec<Commit>)>;
+
     fn status(&self) -> Result<RepoStatus>;
+
+    /// 轻量仓库指纹（HEAD + 工作区状态行数），用于自动刷新检测。
+    fn repo_digest(&self) -> Result<String>;
+
     fn branches(&self) -> Result<Vec<Branch>>;
     fn current_branch_name(&self) -> Result<String>;
     fn branches_containing(&self, commit: &str) -> Result<Vec<String>>;
@@ -68,6 +81,7 @@ pub trait GitBackend: Send + Sync {
     fn is_rebase_in_progress(&self) -> bool;
     fn rebase_stopped_commit(&self) -> Option<String>;
     fn merge_branch(&self, branch: &str) -> Result<()>;
+    fn merge_branch_with(&self, branch: &str, mode: MergeMode) -> Result<()>;
     fn merge_continue(&self) -> Result<()>;
     fn merge_abort(&self) -> Result<()>;
     fn is_merge_in_progress(&self) -> bool;
@@ -113,8 +127,21 @@ impl GitBackend for Repository {
         Repository::rev_parse(self, rev)
     }
 
+    fn compare_branches(
+        &self,
+        mine: &str,
+        theirs: &str,
+        limit: usize,
+    ) -> Result<(Vec<Commit>, Vec<Commit>)> {
+        Repository::compare_branches(self, mine, theirs, limit)
+    }
+
     fn status(&self) -> Result<RepoStatus> {
         Repository::status(self)
+    }
+
+    fn repo_digest(&self) -> Result<String> {
+        Repository::repo_digest(self)
     }
 
     fn branches(&self) -> Result<Vec<Branch>> {
@@ -283,6 +310,10 @@ impl GitBackend for Repository {
 
     fn merge_branch(&self, branch: &str) -> Result<()> {
         Repository::merge_branch(self, branch)
+    }
+
+    fn merge_branch_with(&self, branch: &str, mode: MergeMode) -> Result<()> {
+        Repository::merge_branch_with(self, branch, mode)
     }
 
     fn merge_continue(&self) -> Result<()> {
