@@ -941,3 +941,230 @@ fn force_push_and_push_tags() {
 
     let _ = std::fs::remove_dir_all(&bare);
 }
+
+#[test]
+fn interactive_rebase_squash_merges_messages() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "c\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    plan[1].kind = RebaseActionKind::Squash;
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].subject, "second", "squash keeps first message as subject");
+    assert!(
+        log[0].body.contains("third"),
+        "squash keeps second message in body, got {:?}",
+        log[0].body
+    );
+    assert!(temp.path.join("b.txt").exists());
+    assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn interactive_rebase_fixup_discards_message() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "c\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    plan[1].kind = RebaseActionKind::Fixup;
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[0].subject, "second", "fixup keeps first message");
+    assert!(
+        !log[0].body.contains("third"),
+        "fixup discards second message, got {:?}",
+        log[0].body
+    );
+    assert!(temp.path.join("b.txt").exists());
+    assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn commit_rejects_empty_staging() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    assert!(
+        repo.commit("empty commit", false).is_err(),
+        "commit with nothing staged must fail"
+    );
+
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 1, "no commit must be created");
+    assert_eq!(log[0].subject, "initial");
+}
+
+#[test]
+fn ignored_files_excluded_from_status() {
+    let temp = TempRepo::new();
+    temp.write(".gitignore", "ignored.log\nbuild/\n");
+    temp.write("tracked.txt", "tracked\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("ignored.log", "noise\n");
+    std::fs::create_dir_all(temp.path.join("build")).expect("mkdir build");
+    temp.write("build/artifact.o", "blob\n");
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let status = repo.status().expect("status");
+    assert!(status.changes.is_empty(), "ignored entries must not appear");
+
+    let data = load_repo_data(&repo, DEFAULT_LOG_LIMIT).expect("load");
+    assert!(data.status.changes.is_empty(), "snapshot must hide ignored files");
+}
+
+#[test]
+fn merge_creates_two_parent_commit() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "feature"]);
+    temp.write("feature.txt", "feature\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature work"]);
+    temp.git(&["checkout", "main"]);
+    temp.write("main.txt", "main\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "main work"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    repo.merge_branch("feature").expect("merge");
+
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 4, "log --all counts both parent branches");
+    let head = &log[0];
+    assert_eq!(head.parents.len(), 2, "diverged merge yields two parents");
+    assert_ne!(log[1].id, log[2].id);
+    assert!(head.parents.contains(&log[1].id));
+    assert!(head.parents.contains(&log[2].id));
+
+    let subjects: Vec<&str> = [log[1].subject.as_str(), log[2].subject.as_str()].to_vec();
+    assert!(subjects.contains(&"feature work"));
+    assert!(subjects.contains(&"main work"));
+    assert!(temp.path.join("feature.txt").exists());
+    assert!(temp.path.join("main.txt").exists());
+}
+
+#[test]
+fn fetch_updates_remote_refs() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let suffix = format!(
+        "{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+    let bare = std::env::temp_dir().join(format!("rebased-rs-fetch-bare-{suffix}"));
+    let clone = std::env::temp_dir().join(format!("rebased-rs-fetch-clone-{suffix}"));
+
+    temp.git(&["init", "--bare", "--initial-branch=main", bare.to_str().expect("utf8 path")]);
+    temp.git(&["remote", "add", "origin", bare.to_str().expect("utf8 path")]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    repo.push("main", true).expect("initial push");
+
+    let clone_out = Command::new("git")
+        .arg("clone")
+        .arg("--quiet")
+        .arg(bare.to_str().expect("utf8 path"))
+        .arg(&clone)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .output()
+        .expect("clone");
+    assert!(
+        clone_out.status.success(),
+        "clone failed: {}",
+        String::from_utf8_lossy(&clone_out.stderr)
+    );
+
+    std::fs::write(clone.join("remote.txt"), "remote work\n").expect("write");
+    let steps: [&[&str]; 3] = [
+        &["add", "."],
+        &["commit", "-m", "remote work"],
+        &["push", "origin", "main"],
+    ];
+    for args in steps {
+        let out = Command::new("git")
+            .current_dir(&clone)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "Test User")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "Test User")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .output()
+            .expect("run git in clone");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let clone_head = Command::new("git")
+        .arg("-C")
+        .arg(&clone)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("clone head");
+    let clone_head = String::from_utf8_lossy(&clone_head.stdout).trim().to_string();
+
+    repo.fetch().expect("fetch");
+
+    let origin_main = Command::new("git")
+        .arg("-C")
+        .arg(&temp.path)
+        .args(["rev-parse", "origin/main"])
+        .output()
+        .expect("origin ref");
+    assert!(origin_main.status.success(), "origin/main must exist");
+    assert_eq!(
+        String::from_utf8_lossy(&origin_main.stdout).trim(),
+        clone_head,
+        "fetch advanced origin/main"
+    );
+
+    let status = repo.status().expect("status");
+    assert_eq!(status.head_branch, "main");
+
+    let _ = std::fs::remove_dir_all(&bare);
+    let _ = std::fs::remove_dir_all(&clone);
+}
