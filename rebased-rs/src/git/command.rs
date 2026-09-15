@@ -25,6 +25,17 @@ pub struct GitCommand {
     git_path: String,
 }
 
+/// 把子进程启动阶段的 io 错误映射为可读错误：git 二进制缺失时给出安装提示。
+fn map_io_error(err: std::io::Error) -> GitError {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        GitError::new(
+            "git executable not found: install git (e.g. `apt install git` / `brew install git`) and ensure it is on PATH",
+        )
+    } else {
+        GitError::from(err)
+    }
+}
+
 impl GitCommand {
     pub fn new(workdir: impl Into<PathBuf>) -> Self {
         Self {
@@ -50,7 +61,7 @@ impl GitCommand {
         for (key, value) in envs {
             cmd.env(key, value);
         }
-        let output = cmd.output()?;
+        let output = cmd.output().map_err(map_io_error)?;
         Ok(CommandOutput {
             stdout: String::from_utf8(output.stdout)?,
             stderr: String::from_utf8(output.stderr)?,
@@ -84,7 +95,7 @@ impl GitCommand {
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(map_io_error)?;
         {
             let mut stdin = child
                 .stdin
@@ -92,7 +103,7 @@ impl GitCommand {
                 .ok_or_else(|| GitError::new("failed to open git stdin"))?;
             stdin.write_all(input.as_bytes())?;
         }
-        let output = child.wait_with_output()?;
+        let output = child.wait_with_output().map_err(map_io_error)?;
         if output.status.success() {
             Ok(())
         } else {
@@ -118,7 +129,7 @@ impl GitCommand {
             .env("LC_ALL", "C")
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(map_io_error)?;
         let stderr = child.stderr.take();
         let stderr_tail = thread::spawn(move || {
             let mut tail: VecDeque<String> = VecDeque::new();

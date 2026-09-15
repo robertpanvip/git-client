@@ -17,6 +17,21 @@ pub struct Repository {
 impl Repository {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
+        match std::fs::metadata(&path) {
+            Err(_) => {
+                return Err(GitError::new(format!(
+                    "{} does not exist or is not accessible",
+                    path.display()
+                )));
+            }
+            Ok(meta) if !meta.is_dir() => {
+                return Err(GitError::new(format!(
+                    "{} is not a directory",
+                    path.display()
+                )));
+            }
+            Ok(_) => {}
+        }
         let cmd = GitCommand::new(&path);
         let output = cmd.execute(&["rev-parse", "--is-inside-work-tree"])?;
         if !output.success || output.stdout.trim() != "true" {
