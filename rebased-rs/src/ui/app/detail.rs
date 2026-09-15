@@ -1,7 +1,7 @@
 use gpui::{Context, Entity, Window};
 use gpui_kit::component::list::{ListEvent, ListState};
 
-use rebased_rs::git::Commit;
+use rebased_rs::git::{Commit, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
 
@@ -48,11 +48,21 @@ impl AppView {
         }
     }
 
-    pub(crate) fn open_diff_worktree(&mut self, path: Option<String>, cx: &mut Context<Self>) {
+    pub(crate) fn open_staged_diff(&mut self, path: Option<String>, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        if let Err(e) = use_cases::open_worktree_diff(repo.as_ref(), &mut self.state, path) {
+        if let Err(e) = use_cases::open_staged_diff(repo.as_ref(), &mut self.state, path) {
+            self.state.error = Some(e.to_string());
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_unstaged_diff(&mut self, path: Option<String>, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = use_cases::open_unstaged_diff(repo.as_ref(), &mut self.state, path) {
             self.state.error = Some(e.to_string());
         }
         cx.notify();

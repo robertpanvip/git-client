@@ -2,7 +2,7 @@ use gpui::{ClipboardItem, Context, Window};
 
 use rebased_rs::git::Change;
 
-use super::{use_cases::commit_with_autoadd, AppView};
+use super::{use_cases::commit_selected, AppView, ConfirmAction};
 
 impl AppView {
     pub(crate) fn toggle_stage(&mut self, change: &Change, cx: &mut Context<Self>) {

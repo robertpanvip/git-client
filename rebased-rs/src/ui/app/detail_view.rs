@@ -188,7 +188,12 @@ impl AppView {
                                         .label("✕")
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
-                                            this.delete_tag(&name, cx);
+                                            this.open_prompt(
+                                                PromptKind::Confirm(ConfirmAction::DeleteTag {
+                                                    name: name.clone(),
+                                                }),
+                                                cx,
+                                            );
                                         })),
                                 )
                         })),

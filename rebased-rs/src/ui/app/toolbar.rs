@@ -7,7 +7,7 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants, DropdownButton},
     input::Textarea,
     list::List,
-    menu::PopupMenuItem,
+    menu::{ContextMenuExt, PopupMenuItem},
     ActiveTheme,
 };
 
@@ -594,6 +594,12 @@ impl AppView {
     pub(crate) fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
         let amend_label = if self.state.amend { "✓ Amend" } else { "Amend" };
+        let selected_count = self.state.selected_changes.len();
+        let commit_label = if selected_count > 0 {
+            format!("Commit ({selected_count})")
+        } else {
+            "Commit".to_string()
+        };
         div()
             .flex_none()
             .border_t_1()

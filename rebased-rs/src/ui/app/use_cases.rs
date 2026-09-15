@@ -161,23 +161,6 @@ pub(crate) fn clear_detail(state: &mut AppState) {
     state.sidebar = SidebarMode::Workspace;
 }
 
-pub(crate) fn open_worktree_diff(
-    repo: &dyn GitBackend,
-    state: &mut AppState,
-    path: Option<String>,
-) -> Result<(), GitError> {
-    let stdout = repo.diff_head(path.as_deref())?;
-    state.diff_files = parse_unified_diff(&stdout);
-    state.diff_title = match &path {
-        Some(p) => format!("Diff · {p}"),
-        None => "Diff · working tree".to_string(),
-    };
-    state.diff_path = path;
-    state.sidebar = SidebarMode::Diff;
-    state.error = None;
-    Ok(())
-}
-
 pub(crate) fn open_staged_diff(
     repo: &dyn GitBackend,
     state: &mut AppState,

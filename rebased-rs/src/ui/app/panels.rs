@@ -672,9 +672,10 @@ impl AppView {
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.reset_branch_to(target.clone(), ResetMode::Hard, cx)
                             })),
-                    ),
+                    )
             }
             super::PromptKind::Confirm(action) => {
+                let action = action.clone();
                 let label = action.confirm_label();
                 div()
                     .flex()
@@ -694,7 +695,7 @@ impl AppView {
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.confirm_action(action.clone(), cx)
                             })),
-                    ),
+                    )
             }
             _ => {
                 let ok_label = match &kind {

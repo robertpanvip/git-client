@@ -205,7 +205,7 @@
 
 ## 修复记录（评审后跟进）
 
-- [x] P0-5 冲突解决后 `stage_file`（`use_cases::apply_conflict_resolutions` / `take_conflict_side`）
+- [x] P0-5 冲突解决后 `stage_file`（`use_cases::apply_conflict_resolutions` / `take_conflict_side`）。**如实修正**：评审称"resolve 后不 stage_file、Continue 失败"，但代码审计发现底层 `conflict::checkout_side` 与 `repo::resolve_conflict_markers` 均已含 `git add -- <path>`，工作流并未断裂。为把"解决冲突后必须 stage"的业务不变量从底层实现细节提升到应用层，仍在 use_cases 层显式调用 `stage_file`（幂等、防御式），并新增回归测试 `conflict_side_resolution_stages_file` 锁定。
 - [x] P0-4 部分文件提交：变更行勾选 + `commit_paths`（`selected_changes`）
 - [x] P0-7 Δ 按 staged/unstaged 分流（`open_staged_diff` / `open_unstaged_diff`）
 - [x] P0-6 Reset Current Branch to Here：`PromptKind::Reset` + Soft/Mixed/Hard 对话框
