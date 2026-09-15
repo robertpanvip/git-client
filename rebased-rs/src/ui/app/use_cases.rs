@@ -51,6 +51,7 @@ pub(crate) fn sync_repo_state(
     state.repo_root = repo.root().to_string_lossy().to_string();
     state.head_id = commits.first().map(|commit| commit.id.0.clone());
     state.changes = status.changes;
+    state.branch_entries = Arc::new(branches.clone());
     let current = branches.iter().find(|branch| branch.is_current());
     state.ahead = current.map_or(0, |branch| branch.ahead);
     state.behind = current.map_or(0, |branch| branch.behind);
@@ -307,21 +308,6 @@ pub(crate) fn reload_shelves(
     state: &mut AppState,
 ) -> Result<(), GitError> {
     state.shelves = repo.stash_list()?;
-    Ok(())
-}
-
-pub(crate) fn load_rebase_plan(
-    repo: &dyn GitBackend,
-    state: &mut AppState,
-    base: &str,
-) -> Result<(), GitError> {
-    let plan = repo.rebase_todos(base)?;
-    state.rebase = RebaseFlow::Planning {
-        base: base.to_string(),
-        plan,
-    };
-    state.sidebar = SidebarMode::Rebase;
-    state.error = None;
     Ok(())
 }
 

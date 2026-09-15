@@ -11,23 +11,47 @@ use gpui_kit::component::{
     ActiveTheme,
 };
 
-use rebased_rs::git::{Change, ChangeStatus};
+use rebased_rs::git::{Branch, Change, ChangeStatus};
 
 use crate::ui::graph_view::{lane_color, status_color};
 
 use super::{AppView, ConfirmAction, PromptKind};
 
 impl AppView {
+    /// 分支菜单条目的展示文案：`name → upstream ↑ahead ↓behind`。
+    fn tracking_label(branch: &Branch) -> String {
+        let mut label = branch.name.clone();
+        if let Some(upstream) = branch.upstream.as_deref() {
+            label.push_str(&format!(" → {upstream}"));
+        }
+        if branch.ahead > 0 {
+            label.push_str(&format!(" ↑{}", branch.ahead));
+        }
+        if branch.behind > 0 {
+            label.push_str(&format!(" ↓{}", branch.behind));
+        }
+        label
+    }
+
     pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
-        let branches = self.state.branches.clone();
+        let branch_entries = self.state.branch_entries.clone();
         let tags = self.state.tags.clone();
         let current = self.state.current_branch.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();
         let tag_weak = weak.clone();
-        let branch_label = current
+        let filter_weak = weak.clone();
+        let branch_names: Vec<String> = branch_entries.iter().map(|b| b.name.clone()).collect();
+        let filter_branch = self.state.filter_branch.clone();
+        let mut branch_label = current
             .clone()
             .unwrap_or_else(|| "main".to_string());
+        if self.state.ahead > 0 {
+            branch_label.push_str(&format!(" ↑{}", self.state.ahead));
+        }
+        if self.state.behind > 0 {
+            branch_label.push_str(&format!(" ↓{}", self.state.behind));
+        }
 
         div()
             .h(px(44.))
@@ -44,21 +68,21 @@ impl AppView {
                     .button(Button::new("branch-button").ghost().label(branch_label))
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu;
-                        for name in branches.iter() {
-                            let label = if Some(name.as_str()) == current.as_deref() {
-                                format!("● {name}")
-                            } else {
-                                name.clone()
-                            };
+                        // 本地分支：点击切换，当前分支打勾并展示 tracking 状态。
+                        for branch in branch_entries.iter().filter(|b| !b.is_remote) {
+                            let label = Self::tracking_label(branch);
+                            let is_current = branch.is_current();
                             let weak = weak.clone();
-                            let name = name.clone();
-                            result = result.item(PopupMenuItem::new(label).on_click(
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.checkout_branch(&name, cx)
-                                    });
-                                },
-                            ));
+                            let name = branch.name.clone();
+                            result = result.item(
+                                PopupMenuItem::new(label)
+                                    .checked(is_current)
+                                    .on_click(move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.checkout_branch(&name, cx)
+                                        });
+                                    }),
+                            );
                         }
                         result = result.separator();
                         result = result.item(PopupMenuItem::new("＋ New branch…").on_click({
@@ -92,12 +116,12 @@ impl AppView {
                                 }
                             }),
                         );
-                        for name in branches.iter() {
-                            if Some(name.as_str()) == current.as_deref() {
+                        // 本地分支操作：Merge into / Rebase onto / Delete。
+                        for branch in branch_entries.iter().filter(|b| !b.is_remote) {
+                            if branch.is_current() {
                                 continue;
                             }
-                            let weak = weak.clone();
-                            let name = name.clone();
+                            let name = branch.name.clone();
                             let merge_label = format!(
                                 "⇄ Merge {name} into {}",
                                 current.clone().unwrap_or_else(|| "HEAD".to_string())
@@ -111,18 +135,81 @@ impl AppView {
                                     });
                                 }
                             }));
+                            result = result.item(
+                                PopupMenuItem::new(format!(
+                                    "⇅ Rebase onto {name}…"
+                                ))
+                                .on_click({
+                                    let weak = weak.clone();
+                                    let name = name.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.rebase_current_onto(name.clone(), cx)
+                                        });
+                                    }
+                                }),
+                            );
                             result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.open_prompt(
-                                            PromptKind::Confirm(ConfirmAction::DeleteBranch {
-                                                name: name.clone(),
-                                            }),
-                                            cx,
-                                        )
-                                    });
+                                {
+                                    let weak = weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_prompt(
+                                                PromptKind::Confirm(ConfirmAction::DeleteBranch {
+                                                    name: name.clone(),
+                                                }),
+                                                cx,
+                                            )
+                                        });
+                                    }
                                 },
                             ));
+                        }
+                        // 远程分支：checkout / Pull into / Rebase onto。
+                        let remotes: Vec<&Branch> =
+                            branch_entries.iter().filter(|b| b.is_remote).collect();
+                        if !remotes.is_empty() {
+                            result = result.separator();
+                            result = result.item(PopupMenuItem::label("Remote"));
+                            for branch in remotes {
+                                let name = branch.name.clone();
+                                result = result.item(
+                                    PopupMenuItem::new(format!("⇥ Checkout {name}")).on_click({
+                                        let weak = weak.clone();
+                                        let name = name.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.checkout_branch(&name, cx)
+                                            });
+                                        }
+                                    }),
+                                );
+                                let pull_label = format!(
+                                    "⇄ Pull {name} into {}",
+                                    current.clone().unwrap_or_else(|| "HEAD".to_string())
+                                );
+                                result = result.item(PopupMenuItem::new(pull_label).on_click({
+                                    let weak = weak.clone();
+                                    let name = name.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.pull_branch_into_current(name.clone(), cx)
+                                        });
+                                    }
+                                }));
+                                result = result.item(
+                                    PopupMenuItem::new(format!("⇅ Rebase onto {name}…"))
+                                        .on_click({
+                                            let weak = weak.clone();
+                                            let name = name.clone();
+                                            move |_, _, cx| {
+                                                let _ = weak.update(cx, |this, cx| {
+                                                    this.rebase_current_onto(name.clone(), cx)
+                                                });
+                                            }
+                                        }),
+                                );
+                            }
                         }
                         result
                     }),
@@ -167,6 +254,67 @@ impl AppView {
                         }
                         result
                     }),
+            )
+            .child(
+                DropdownButton::new("branch-filter-menu")
+                    .button(
+                        Button::new("branch-filter-button").ghost().label(format!(
+                            "◫ {}",
+                            filter_branch
+                                .clone()
+                                .unwrap_or_else(|| "All branches".to_string())
+                        )),
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(
+                            PopupMenuItem::new("All branches")
+                                .checked(filter_branch.is_none())
+                                .on_click({
+                                    let weak = filter_weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_branch_filter(None, cx)
+                                        });
+                                    }
+                                }),
+                        );
+                        for name in branch_names.iter() {
+                            let checked = filter_branch.as_deref() == Some(name.as_str());
+                            let weak = filter_weak.clone();
+                            let name = name.clone();
+                            result = result.item(
+                                PopupMenuItem::new(name.clone())
+                                    .checked(checked)
+                                    .on_click(move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_branch_filter(Some(name.clone()), cx)
+                                        });
+                                    }),
+                            );
+                        }
+                        result
+                    }),
+            )
+            .child(
+                Button::new("author-filter")
+                    .ghost()
+                    .label(format!(
+                        "👤 {}",
+                        if self.state.filter_author.is_empty() {
+                            "All authors".to_string()
+                        } else {
+                            self.state.filter_author.clone()
+                        }
+                    ))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.open_prompt(PromptKind::FilterAuthor, cx)
+                    })),
+            )
+            .child(
+                Button::new("goto")
+                    .ghost()
+                    .label("→ Go to…")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::GoTo, cx))),
             )
             .child(
                 Button::new("fetch")
@@ -690,16 +838,24 @@ impl AppView {
             .px_3()
             .text_xs()
             .child(
-                match (&self.state.error, self.state.status_message.is_empty()) {
-                    (Some(error), _) => div()
+                match (
+                    &self.state.error,
+                    self.state.busy.clone(),
+                    self.state.status_message.is_empty(),
+                ) {
+                    (Some(error), _, _) => div()
                         .text_color(hsla(0.0, 0.75, 0.55, 1.0))
                         .child(error.clone())
                         .into_any_element(),
-                    (None, false) => div()
+                    (None, Some(busy), _) => div()
+                        .text_color(muted)
+                        .child(format!("⏳ {busy}…"))
+                        .into_any_element(),
+                    (None, None, false) => div()
                         .text_color(muted)
                         .child(self.state.status_message.clone())
                         .into_any_element(),
-                    (None, true) => div().into_any_element(),
+                    (None, None, true) => div().into_any_element(),
                 },
             )
             .child(div().flex_1())

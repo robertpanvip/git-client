@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_kit::component::{input::TextareaState, list::ListState, ActiveTheme, Root};
 use rebased_rs::git::{
-    load_repo_data, open_backend, GitBackend, GitError, RepoData, DEFAULT_LOG_LIMIT,
+    load_repo_data_filtered, open_backend, GitBackend, GitError, RepoData, DEFAULT_LOG_LIMIT,
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
@@ -33,7 +33,7 @@ struct Loaded {
 
 fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
     let repo = open_backend(path)?;
-    let data = load_repo_data(repo.as_ref(), DEFAULT_LOG_LIMIT)?;
+    let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None)?;
     Ok(Loaded { repo, data })
 }
 
@@ -63,7 +63,7 @@ impl AppView {
         let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
         list.update(cx, |list, cx| list.focus(window, cx));
 
-        let mut this = Self {
+        let this = Self {
             repo_path,
             repo: None,
             state: AppState::default(),
@@ -73,17 +73,25 @@ impl AppView {
             _subscriptions: subscriptions,
         };
 
-        match open_and_load(&this.repo_path) {
-            Ok(loaded) => {
-                this.repo = Some(loaded.repo);
-                this.apply_data(loaded.data, cx);
+        // 仓库加载放到后台线程执行，避免大仓库阻塞首帧绘制。
+        let task = cx.background_spawn({
+            let repo_path = this.repo_path.clone();
+            async move { open_and_load(&repo_path) }
+        });
+        cx.spawn(async move |this, cx| {
+            let loaded = task.await;
+            let _ = this.update(cx, |this, cx| {
                 this.state.loading = false;
-            }
-            Err(e) => {
-                this.state.loading = false;
-                this.state.error = Some(e.to_string());
-            }
-        }
+                match loaded {
+                    Ok(loaded) => {
+                        this.repo = Some(loaded.repo);
+                        this.apply_data(loaded.data, cx);
+                    }
+                    Err(e) => this.state.error = Some(e.to_string()),
+                }
+            });
+        })
+        .detach();
         this
     }
 
@@ -107,35 +115,68 @@ impl AppView {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match load_repo_data(repo.as_ref(), DEFAULT_LOG_LIMIT) {
-            Ok(data) => self.apply_data(data, cx),
-            Err(e) => {
-                self.state.error = Some(e.to_string());
-                cx.notify();
+        let author = self.state.filter_author.trim().to_string();
+        let author = if author.is_empty() { None } else { Some(author) };
+        let branch = self.state.filter_branch.clone();
+        let task = cx.background_spawn(async move {
+            load_repo_data_filtered(
+                repo.as_ref(),
+                DEFAULT_LOG_LIMIT,
+                branch.as_deref(),
+                author.as_deref(),
+            )
+        });
+        cx.spawn(async move |this, cx| {
+            match task.await {
+                Ok(data) => {
+                    let _ = this.update(cx, |this, cx| this.apply_data(data, cx));
+                }
+                Err(e) => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.state.error = Some(e.to_string());
+                        cx.notify();
+                    });
+                }
             }
-        }
+        })
+        .detach();
     }
 
     fn run_op(
         &mut self,
         message: &str,
-        op: impl FnOnce(&dyn GitBackend) -> Result<(), GitError>,
+        op: impl FnOnce(&dyn GitBackend) -> Result<(), GitError> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match op(repo.as_ref()) {
-            Ok(()) => {
-                self.state.error = None;
-                self.state.status_message = message.to_string();
-                self.refresh(cx);
-            }
-            Err(e) => {
-                self.state.error = Some(e.to_string());
-                cx.notify();
-            }
+        // 已有操作在后台执行时忽略新请求，避免并发写操作互相踩踏。
+        if self.state.busy.is_some() {
+            return;
         }
+        let message = message.to_string();
+        self.state.busy = Some(message.clone());
+        cx.notify();
+        let task = cx.background_spawn(async move { op(repo.as_ref()) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.state.busy = None;
+                match result {
+                    Ok(()) => {
+                        this.state.error = None;
+                        this.state.status_message = message;
+                        this.refresh(cx);
+                    }
+                    Err(e) => {
+                        this.state.error = Some(e.to_string());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
     }
 }
 

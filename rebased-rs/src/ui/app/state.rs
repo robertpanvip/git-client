@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    BlameGroup, Change, Commit, ConflictFile, ConflictHunk, FileDiff, HunkChoice, RebaseAction,
-    StashEntry, Tag,
+    BlameGroup, Branch, Change, Commit, ConflictFile, ConflictHunk, FileDiff, HunkChoice,
+    RebaseAction, StashEntry, Tag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +26,8 @@ pub(crate) enum PromptKind {
     RenameBranch,
     Reset { commit_id: String },
     RebaseEdit { index: usize },
+    GoTo,
+    FilterAuthor,
     Confirm(ConfirmAction),
 }
 
@@ -127,8 +129,14 @@ impl RebaseFlow {
 
 pub(crate) struct AppState {
     pub(crate) branches: Arc<Vec<String>>,
+    /// 本地 + 远程分支的完整信息（tracking/ahead/behind），供 Branches 菜单展示。
+    pub(crate) branch_entries: Arc<Vec<Branch>>,
     pub(crate) current_branch: Option<String>,
     pub(crate) current_upstream: Option<String>,
+    /// 作者过滤器（空串 = 不过滤），配合 Branches 范围过滤器使用。
+    pub(crate) filter_author: String,
+    /// 分支范围过滤器（None = 所有分支）。
+    pub(crate) filter_branch: Option<String>,
     pub(crate) tags: Arc<Vec<Tag>>,
     pub(crate) changes: Vec<Change>,
     pub(crate) selected_changes: Vec<String>,
@@ -160,14 +168,19 @@ pub(crate) struct AppState {
     pub(crate) status_message: String,
     pub(crate) error: Option<String>,
     pub(crate) loading: bool,
+    /// 正在后台执行的 git 操作描述（Some = 忙碌，同时防止并发写操作）。
+    pub(crate) busy: Option<String>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             branches: Arc::new(Vec::new()),
+            branch_entries: Arc::new(Vec::new()),
             current_branch: None,
             current_upstream: None,
+            filter_author: String::new(),
+            filter_branch: None,
             tags: Arc::new(Vec::new()),
             changes: Vec::new(),
             selected_changes: Vec::new(),
@@ -199,6 +212,7 @@ impl Default for AppState {
             status_message: "Ready".to_string(),
             error: None,
             loading: true,
+            busy: None,
         }
     }
 }

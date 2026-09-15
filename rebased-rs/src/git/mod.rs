@@ -28,7 +28,9 @@ pub use graph::{build_graph, Graph, GraphRow, RowEdge, MAX_COLORS};
 pub use ops::ResetMode;
 pub use rebase::{RebaseAction, RebaseActionKind};
 pub use repo::Repository;
-pub use repo_data::{filter_commits, load_repo_data, RepoData, DEFAULT_LOG_LIMIT};
+pub use repo_data::{
+    filter_commits, load_repo_data, load_repo_data_filtered, RepoData, DEFAULT_LOG_LIMIT,
+};
 pub use types::{
     Author, BlameGroup, BlameLine, Branch, Change, ChangeStatus, Commit, CommitId, DiffLine,
     DiffLineKind, FileDiff, Hunk, RepoStatus, StashEntry, Tag,

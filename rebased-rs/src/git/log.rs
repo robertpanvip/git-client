@@ -6,16 +6,20 @@ pub const RECORD_SEP: char = '\u{1e}';
 
 pub const LOG_FORMAT: &str = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1f%D%x1e";
 
-pub fn log_args(limit: usize, from: Option<&str>) -> Vec<String> {
+/// `from` 为 Some 时只列出该 rev 可达的提交，否则 `--all`；`author` 为 Some 时按作者过滤。
+pub fn log_args(limit: usize, from: Option<&str>, author: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "log".to_string(),
         format!("--max-count={limit}"),
         "--format=".to_string() + LOG_FORMAT,
         "--date-order".to_string(),
-        "--all".to_string(),
     ];
-    if let Some(rev) = from {
-        args.push(rev.to_string());
+    match from {
+        Some(rev) => args.push(rev.to_string()),
+        None => args.push("--all".to_string()),
+    }
+    if let Some(author) = author {
+        args.push(format!("--author={author}"));
     }
     args
 }

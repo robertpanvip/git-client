@@ -834,6 +834,14 @@ impl AppView {
                     &commit_id[..commit_id.len().min(7)]
                 ),
             ),
+            super::PromptKind::GoTo => (
+                "Go to commit".to_string(),
+                "Enter a hash, branch or tag name to select it in the log.".to_string(),
+            ),
+            super::PromptKind::FilterAuthor => (
+                "Filter by author".to_string(),
+                "Show only commits whose author matches this text. Leave empty to clear the filter.".to_string(),
+            ),
             super::PromptKind::Confirm(action) => {
                 (action.title().to_string(), action.hint())
             }
@@ -906,6 +914,8 @@ impl AppView {
                     super::PromptKind::Stash => "Stash",
                     super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => "Reword",
                     super::PromptKind::RenameBranch => "Rename",
+                    super::PromptKind::GoTo => "Go",
+                    super::PromptKind::FilterAuthor => "Filter",
                     _ => "OK",
                 };
                 div()

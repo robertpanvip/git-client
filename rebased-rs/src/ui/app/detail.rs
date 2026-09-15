@@ -234,6 +234,16 @@ impl AppView {
                     action.message = Some(input);
                 }
             }
+            PromptKind::GoTo => {
+                if input.is_empty() {
+                    self.state.error = Some("Revision is empty".to_string());
+                } else {
+                    self.goto_revision(input, cx);
+                }
+            }
+            PromptKind::FilterAuthor => {
+                self.set_author_filter(input, cx);
+            }
         }
         cx.notify();
     }

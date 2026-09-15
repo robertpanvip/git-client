@@ -221,4 +221,9 @@
 - [x] P1-9 Detail 补全：meta 行补全完整日期（`%Y-%m-%d %H:%M:%S`，`format_full_time`）与作者 email。
 - [x] P1-9 Blame → commit 跳转：`render_blame` 接受 `BlameJump` 回调，点击提交元信息行跳转到该提交的 diff。
 - [x] P1-4 Staged/Unstaged 分组：变更列表按 `change.staged` 分组渲染小节标题（Unstaged / Staged）。
-- [ ] P1-1 快捷键体系、P1-2 Branches 弹窗、P1-3 Rebase 计划 Reword/squash 消息编辑、P1-5 结构化过滤器 + Go to、P1-6 操作异步化 + 进度、P1-10 三栏式 conflict 对话框——**本轮未做**（体量较大或需新增后端/交互体系，建议后续分项进行）。
+- [x] P1-1 快捷键体系：Esc 关闭 overlay、Ctrl+Enter 提交、Ctrl+Shift+K Stash、Ctrl+T 新标签、Ctrl+R 刷新、↑↓ 日志导航（`actions.rs` register_keybindings）。
+- [x] P1-2 Branches 弹窗：菜单基于完整 `Branch` 信息（`branch_entries`）——本地分支勾选标记 + tracking 文案（`name → upstream ↑ahead ↓behind`）、每个非当前本地分支 Merge into / Rebase onto… / Delete、Remote 分组 Checkout / Pull into current（fetch+merge）/ Rebase onto…。
+- [x] P1-3 Rebase 计划 Reword/squash 消息编辑：`PromptKind::RebaseEdit` + `open_rebase_edit`（预填原 subject/message），确认后写入计划项 `RebaseActionKind::Reword` 的自定义消息。
+- [x] P1-5 结构化过滤器 + Go to：`log_args(limit, from, author)` 支持 `--author=` 与分支范围（替代 `--all`）；toolbar 新增 Branch 范围下拉（◫）+ 作者过滤（👤）+ `→ Go to…`（`rev_parse --verify <rev>^{commit}` 解析 hash/branch/tag 并选中）。
+- [x] P1-6 操作异步化 + 进度：`run_op` / `refresh` / 启动加载 / `start_rebase` / `apply_rebase` 全部改为 `background_spawn` + `cx.spawn` 回主线程；`AppState.busy` 防并发写操作并在状态栏显示 `⏳ …` 进度。
+- [x] P1-10 三栏式 conflict 对话框：conflict 面板三栏呈现 Ours / Base / Theirs（`ConflictHunk` 三方内容），逐 hunk 选择 Take Ours / Take Theirs / Both。

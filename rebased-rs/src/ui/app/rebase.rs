@@ -1,19 +1,37 @@
-use gpui::{Context, Window};
+use gpui::{AppContext, Context, Window};
 
-use super::{use_cases, AppView, PromptKind, RebaseFlow, SidebarMode};
+use super::{AppView, PromptKind, RebaseFlow, SidebarMode};
 
 impl AppView {
     pub(crate) fn start_rebase(&mut self, base: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
-        match use_cases::load_rebase_plan(repo.as_ref(), &mut self.state, &base) {
-            Ok(()) => cx.notify(),
-            Err(e) => {
-                self.state.error = Some(e.to_string());
-                cx.notify();
-            }
+        if self.state.busy.is_some() {
+            return;
         }
+        self.state.busy = Some("Loading rebase plan".to_string());
+        cx.notify();
+        let task = cx.background_spawn(async move {
+            let plan = repo.rebase_todos(&base);
+            (base, plan)
+        });
+        cx.spawn(async move |this, cx| {
+            let (base, plan) = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.state.busy = None;
+                match plan {
+                    Ok(plan) => {
+                        this.state.rebase = RebaseFlow::Planning { base, plan };
+                        this.state.sidebar = SidebarMode::Rebase;
+                        this.state.error = None;
+                    }
+                    Err(e) => this.state.error = Some(e.to_string()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn cycle_rebase_action(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -67,36 +85,55 @@ impl AppView {
         let RebaseFlow::Planning { base, plan } = self.state.rebase.clone() else {
             return;
         };
-        if plan.is_empty() {
+        if plan.is_empty() || self.state.busy.is_some() {
             return;
         }
-        match repo.rebase_run(&base, &plan) {
-            Ok(()) => {
-                self.state.error = None;
-                self.state.status_message =
-                    format!("Rebased onto {}", &base[..base.len().min(7)]);
-                self.state.rebase = RebaseFlow::Idle;
-                self.refresh(cx);
-            }
-            Err(e) => {
-                self.state.error = Some(e.to_string());
-                if repo.is_rebase_in_progress() {
-                    self.state.rebase = RebaseFlow::Stopped {
-                        base,
-                        plan,
-                        stopped_at: repo.rebase_stopped_commit().unwrap_or_default(),
-                    };
-                    self.state.sidebar = SidebarMode::Workspace;
-                } else {
-                    self.state.rebase = RebaseFlow::Failed {
-                        base,
-                        plan,
-                        message: e.to_string(),
-                    };
+        self.state.busy = Some("Rebasing commits".to_string());
+        cx.notify();
+        let task = cx.background_spawn(async move {
+            let result = repo.rebase_run(&base, &plan);
+            let stopped = result.is_err() && repo.is_rebase_in_progress();
+            let stopped_at = if stopped {
+                repo.rebase_stopped_commit().unwrap_or_default()
+            } else {
+                String::new()
+            };
+            (result, stopped, stopped_at, base, plan)
+        });
+        cx.spawn(async move |this, cx| {
+            let (result, stopped, stopped_at, base, plan) = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.state.busy = None;
+                match result {
+                    Ok(()) => {
+                        this.state.error = None;
+                        this.state.status_message =
+                            format!("Rebased onto {}", &base[..base.len().min(7)]);
+                        this.state.rebase = RebaseFlow::Idle;
+                        this.refresh(cx);
+                    }
+                    Err(e) => {
+                        this.state.error = Some(e.to_string());
+                        if stopped {
+                            this.state.rebase = RebaseFlow::Stopped {
+                                base,
+                                plan,
+                                stopped_at,
+                            };
+                            this.state.sidebar = SidebarMode::Workspace;
+                        } else {
+                            this.state.rebase = RebaseFlow::Failed {
+                                base,
+                                plan,
+                                message: e.to_string(),
+                            };
+                        }
+                        cx.notify();
+                    }
                 }
-                cx.notify();
-            }
-        }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn cancel_rebase(&mut self, cx: &mut Context<Self>) {

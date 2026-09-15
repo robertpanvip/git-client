@@ -102,6 +102,55 @@ impl AppView {
         self.run_op(&message, move |repo| repo.checkout(&name), cx);
     }
 
+    /// 把指定分支（通常是远程分支）的最新提交合入当前分支：先 fetch 再 merge。
+    pub(crate) fn pull_branch_into_current(&mut self, name: String, cx: &mut Context<Self>) {
+        let target = self
+            .state
+            .current_branch
+            .clone()
+            .unwrap_or_else(|| "HEAD".to_string());
+        let message = format!("Pulled {name} into {target}");
+        self.run_op(
+            &message,
+            move |repo| {
+                repo.fetch()?;
+                repo.merge_branch(&name)
+            },
+            cx,
+        );
+    }
+
+    /// 以指定分支为基打开交互式 rebase 计划（Rebase current onto …）。
+    pub(crate) fn rebase_current_onto(&mut self, base: String, cx: &mut Context<Self>) {
+        self.start_rebase(base, cx);
+    }
+
+    /// 设置分支范围过滤器并重新加载日志（None = 所有分支）。
+    pub(crate) fn set_branch_filter(&mut self, branch: Option<String>, cx: &mut Context<Self>) {
+        self.state.filter_branch = branch;
+        self.refresh(cx);
+    }
+
+    /// 设置作者过滤器并重新加载日志（空串 = 不过滤）。
+    pub(crate) fn set_author_filter(&mut self, author: String, cx: &mut Context<Self>) {
+        self.state.filter_author = author;
+        self.refresh(cx);
+    }
+
+    /// Go to Hash/Branch/Tag：把输入解析为提交 id 并在日志中选中。
+    pub(crate) fn goto_revision(&mut self, input: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.rev_parse(&input) {
+            Ok(id) => self.select_commit_by_id(&id, cx),
+            Err(e) => {
+                self.state.error = Some(e.to_string());
+                cx.notify();
+            }
+        }
+    }
+
     pub(crate) fn select_commit_by_id(&mut self, id: &str, cx: &mut Context<Self>) {
         match self.list.read(cx).delegate().find_commit(id) {
             Some(commit) => self.load_commit_detail(commit, cx),

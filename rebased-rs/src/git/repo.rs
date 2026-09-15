@@ -33,7 +33,17 @@ impl Repository {
     }
 
     pub fn log(&self, limit: usize) -> Result<Vec<Commit>> {
-        let args = super::log::log_args(limit, None);
+        self.log_filtered(limit, None, None)
+    }
+
+    /// 结构化过滤器版 log：`from` 限定分支（None = `--all`），`author` 按作者子串过滤。
+    pub fn log_filtered(
+        &self,
+        limit: usize,
+        from: Option<&str>,
+        author: Option<&str>,
+    ) -> Result<Vec<Commit>> {
+        let args = super::log::log_args(limit, from, author);
         let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = self.cmd.execute(&args)?;
         if !output.success {
@@ -45,6 +55,20 @@ impl Repository {
             return Err(GitError::with_stderr("git log failed", output.stderr));
         }
         Ok(super::log::parse_log(&output.stdout))
+    }
+
+    /// 解析任意 hash / 分支 / 标签为完整提交 id（`rev-parse --verify <rev>^{commit}`）。
+    pub fn rev_parse(&self, rev: &str) -> Result<String> {
+        let output = self
+            .cmd
+            .execute(&["rev-parse", "--verify", &format!("{rev}^{{commit}}")])?;
+        if !output.success {
+            return Err(GitError::with_stderr(
+                format!("Unknown revision {rev}"),
+                output.stderr,
+            ));
+        }
+        Ok(output.stdout.trim().to_string())
     }
 
     pub fn status(&self) -> Result<RepoStatus> {
