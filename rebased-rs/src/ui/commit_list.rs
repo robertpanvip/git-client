@@ -59,6 +59,11 @@ impl LogDelegate {
             .cloned()
     }
 
+    pub fn find_commit(&self, id: &str) -> Option<Commit> {
+        let data = self.data.as_ref()?;
+        data.commits.iter().find(|c| c.id.0 == id).cloned()
+    }
+
     fn rebuild(&mut self, query: &str) {
         let Some(data) = self.data.clone() else {
             return;

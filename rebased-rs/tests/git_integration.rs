@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    filter_commits, load_repo_data, ChangeStatus, Repository, DEFAULT_LOG_LIMIT,
+    filter_commits, load_repo_data, parse_unified_diff, ChangeStatus, DiffLineKind, Repository,
+    DEFAULT_LOG_LIMIT,
 };
 
 struct TempRepo {
@@ -243,4 +244,212 @@ fn open_rejects_non_repo() {
     let result = Repository::open(&dir);
     let _ = std::fs::remove_dir_all(&dir);
     assert!(result.is_err());
+}
+
+#[test]
+fn tag_workflow() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let head = repo.log(5).expect("log")[0].id.clone();
+    let head_id = head.as_str().to_string();
+
+    repo.create_tag("v1.0", None, None).expect("lightweight tag");
+    repo.create_tag("v2.0", Some("HEAD"), Some("release two"))
+        .expect("annotated tag");
+
+    let tags = repo.tags().expect("tags");
+    assert_eq!(tags.len(), 2);
+    let v1 = tags.iter().find(|t| t.name == "v1.0").expect("v1");
+    assert_eq!(v1.commit_id, head_id);
+    let v2 = tags.iter().find(|t| t.name == "v2.0").expect("v2");
+    assert_eq!(v2.commit_id, head_id, "annotated tag peels to commit");
+
+    repo.delete_tag("v1.0").expect("delete tag");
+    let tags = repo.tags().expect("tags after delete");
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0].name, "v2.0");
+}
+
+#[test]
+fn cherry_pick_and_revert() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["branch", "feature"]);
+    temp.git(&["checkout", "feature"]);
+    temp.write("feature.txt", "feature work\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature work"]);
+    temp.git(&["checkout", "main"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let feature_commit = {
+        let log = repo.log(10).expect("log");
+        log.iter()
+            .find(|c| c.subject == "feature work")
+            .expect("feature commit")
+            .id
+            .clone()
+    };
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    repo.cherry_pick(feature_commit.as_str()).expect("cherry-pick");
+    let log = repo.log(10).expect("log after cherry-pick");
+    let picked = log.iter().find(|c| c.subject == "feature work").expect("picked");
+    assert_ne!(picked.id, feature_commit, "new sha after cherry-pick");
+    assert!(temp.path.join("feature.txt").exists());
+
+    repo.revert(picked.id.as_str()).expect("revert");
+    let log = repo.log(10).expect("log after revert");
+    assert_eq!(log[0].subject, "Revert \"feature work\"");
+    assert!(!temp.path.join("feature.txt").exists(), "revert removed the file");
+}
+
+#[test]
+fn reset_modes() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let initial = repo.log(10).expect("log")[1].id.clone();
+
+    repo.reset_to(initial.as_str(), rebased_rs::git::ResetMode::Soft)
+        .expect("soft reset");
+    let status = repo.status().expect("status");
+    assert!(
+        status.changes.iter().any(|c| c.path == "b.txt" && c.staged),
+        "soft reset keeps changes staged"
+    );
+
+    repo.reset_to(initial.as_str(), rebased_rs::git::ResetMode::Hard)
+        .expect("hard reset");
+    let status = repo.status().expect("status");
+    assert!(status.changes.is_empty());
+    assert!(!temp.path.join("b.txt").exists());
+    assert_eq!(repo.log(10).expect("log").len(), 1);
+}
+
+#[test]
+fn diff_parsing() {
+    let temp = TempRepo::new();
+    temp.write("file.txt", "one\ntwo\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+
+    let empty = repo.diff_head(None).expect("diff head clean");
+    assert!(parse_unified_diff(&empty).is_empty());
+
+    temp.write("file.txt", "one\nTWO\nthree\n");
+    let unstaged = repo.diff_unstaged(None).expect("diff unstaged");
+    let files = parse_unified_diff(&unstaged);
+    assert_eq!(files.len(), 1);
+    let file = &files[0];
+    assert_eq!(file.path, "file.txt");
+    assert!(!file.is_new && !file.is_deleted && !file.is_binary);
+    assert_eq!(file.hunks.len(), 1);
+    let lines = &file.hunks[0].lines;
+    assert_eq!(lines.len(), 4);
+    assert_eq!(lines[0].kind, DiffLineKind::Context);
+    assert_eq!(lines[0].content, "one");
+    assert_eq!(lines[0].old_no, Some(1));
+    assert_eq!(lines[0].new_no, Some(1));
+    assert_eq!(lines[1].kind, DiffLineKind::Deleted);
+    assert_eq!(lines[1].content, "two");
+    assert_eq!(lines[1].old_no, Some(2));
+    assert_eq!(lines[1].new_no, None);
+    assert_eq!(lines[2].kind, DiffLineKind::Added);
+    assert_eq!(lines[2].content, "TWO");
+    assert_eq!(lines[2].old_no, None);
+    assert_eq!(lines[2].new_no, Some(2));
+    assert_eq!(lines[3].kind, DiffLineKind::Added);
+    assert_eq!(lines[3].content, "three");
+    assert_eq!(lines[3].old_no, None);
+    assert_eq!(lines[3].new_no, Some(3));
+
+    repo.add(&["file.txt"]).expect("add");
+    let staged = repo.diff_staged(None).expect("diff staged");
+    let files = parse_unified_diff(&staged);
+    assert_eq!(files.len(), 1);
+    assert!(files[0]
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO"));
+
+    repo.commit("update file", false).expect("commit");
+    let after = repo.diff_head(None).expect("diff head after commit");
+    assert!(parse_unified_diff(&after).is_empty());
+
+    let shown = repo.show_diff("HEAD", None).expect("show diff");
+    let files = parse_unified_diff(&shown);
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "file.txt");
+    assert!(files[0]
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|l| l.kind == DiffLineKind::Context && l.content == "one"));
+    assert!(files[0]
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO"));
+}
+
+#[test]
+fn new_file_diff_marks_added() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("brand_new.txt", "brand\nnew\n");
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let out = repo.diff_unstaged(Some("brand_new.txt")).expect("diff");
+    let files = parse_unified_diff(&out);
+    assert_eq!(files.len(), 1);
+    assert!(files[0].is_new);
+    assert_eq!(files[0].path, "brand_new.txt");
+    let added: Vec<_> = files[0]
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .filter(|l| l.kind == DiffLineKind::Added)
+        .collect();
+    assert_eq!(added.len(), 2);
+}
+
+#[test]
+fn blame_parsing() {
+    let temp = TempRepo::new();
+    temp.write("file.txt", "line1\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "first"]);
+    temp.write("file.txt", "line1\nline2\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let groups = repo.blame("HEAD", "file.txt").expect("blame");
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].author, "Test User");
+    assert_eq!(groups[0].filename, "file.txt");
+    assert_eq!(groups[0].lines.len(), 1);
+    assert_eq!(groups[0].lines[0].number, 1);
+    assert_eq!(groups[0].lines[0].content, "line1");
+    assert_ne!(groups[0].commit_id, groups[1].commit_id);
+    assert_eq!(groups[1].lines[0].number, 2);
+    assert_eq!(groups[1].lines[0].content, "line2");
 }

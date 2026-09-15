@@ -4,8 +4,8 @@ use std::sync::Arc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, hsla, px, size, AnyElement, Bounds, AppContext, Context, Div, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window, WindowBounds, WindowOptions,
+    IntoElement, MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, WeakEntity, Window, WindowBounds, WindowOptions,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants, DropdownButton},
@@ -15,11 +15,29 @@ use gpui_kit::component::{
     ActiveTheme, Root,
 };
 use rebased_rs::git::{
-    load_repo_data, Change, Commit, GitError, RepoData, Repository, DEFAULT_LOG_LIMIT,
+    load_repo_data, parse_unified_diff, BlameGroup, Change, ChangeStatus, Commit, FileDiff,
+    GitError, RepoData, Repository, Tag, DEFAULT_LOG_LIMIT,
 };
 
+use crate::ui::blame_view::render_blame;
 use crate::ui::commit_list::{format_time, LogData, LogDelegate};
+use crate::ui::diff_view::render_diff_files;
 use crate::ui::graph_view::{lane_color, status_color};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidebarMode {
+    Workspace,
+    Detail,
+    Diff,
+    Blame,
+}
+
+#[derive(Clone)]
+enum PromptKind {
+    NewBranch { start_point: Option<String> },
+    NewTag { commit_id: String },
+    Stash,
+}
 
 struct Loaded {
     repo: Arc<Repository>,
@@ -40,9 +58,11 @@ pub struct AppView {
     repo: Option<Arc<Repository>>,
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
+    prompt_input: Entity<TextareaState>,
     branches: Arc<Vec<String>>,
     current_branch: Option<String>,
     current_upstream: Option<String>,
+    tags: Arc<Vec<Tag>>,
     changes: Vec<Change>,
     ahead: u32,
     behind: u32,
@@ -50,6 +70,13 @@ pub struct AppView {
     selected: Option<Commit>,
     detail_files: Vec<Change>,
     detail_branches: Vec<String>,
+    sidebar: SidebarMode,
+    diff_files: Vec<FileDiff>,
+    diff_title: String,
+    diff_path: Option<String>,
+    blame_groups: Vec<BlameGroup>,
+    blame_path: String,
+    prompt: Option<PromptKind>,
     status_message: SharedString,
     error: Option<SharedString>,
     loading: bool,
@@ -64,6 +91,11 @@ impl AppView {
                 .placeholder("Commit message")
                 .soft_wrap(true)
         });
+        let prompt_input = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder("Name / message")
+                .soft_wrap(false)
+        });
         let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
 
         let mut this = Self {
@@ -71,9 +103,11 @@ impl AppView {
             repo: None,
             list,
             message_input,
+            prompt_input,
             branches: Arc::new(Vec::new()),
             current_branch: None,
             current_upstream: None,
+            tags: Arc::new(Vec::new()),
             changes: Vec::new(),
             ahead: 0,
             behind: 0,
@@ -81,6 +115,13 @@ impl AppView {
             selected: None,
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
+            sidebar: SidebarMode::Workspace,
+            diff_files: Vec::new(),
+            diff_title: String::new(),
+            diff_path: None,
+            blame_groups: Vec::new(),
+            blame_path: String::new(),
+            prompt: None,
             status_message: SharedString::from("Ready"),
             error: None,
             loading: true,
@@ -107,6 +148,7 @@ impl AppView {
             graph,
             status,
             branches,
+            tags,
         } = data;
         self.changes = status.changes;
         let current = branches.iter().find(|branch| branch.is_current());
@@ -120,9 +162,17 @@ impl AppView {
         self.branches = Arc::new(names);
         self.current_branch = current.map(|branch| branch.name.clone());
         self.current_upstream = current.and_then(|branch| branch.upstream.clone());
+        self.tags = Arc::new(tags);
         self.selected = None;
         self.detail_files.clear();
         self.detail_branches.clear();
+        self.sidebar = SidebarMode::Workspace;
+        self.diff_files.clear();
+        self.diff_title.clear();
+        self.diff_path = None;
+        self.blame_groups.clear();
+        self.blame_path.clear();
+        self.prompt = None;
         self.list.update(cx, |list, cx| {
             list.delegate_mut().set_data(LogData { commits, graph });
             cx.notify();
@@ -237,6 +287,7 @@ impl AppView {
                 self.selected = Some(commit);
                 self.detail_files = files;
                 self.detail_branches = branches;
+                self.sidebar = SidebarMode::Detail;
                 self.error = None;
             }
             (Err(e), _) | (_, Err(e)) => {
@@ -250,6 +301,7 @@ impl AppView {
         self.selected = None;
         self.detail_files.clear();
         self.detail_branches.clear();
+        self.sidebar = SidebarMode::Workspace;
         cx.notify();
     }
 
@@ -277,11 +329,182 @@ impl AppView {
         }
     }
 
+    fn open_diff_worktree(&mut self, path: Option<String>, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.diff_head(path.as_deref()) {
+            Ok(stdout) => {
+                self.diff_files = parse_unified_diff(&stdout);
+                self.diff_title = match &path {
+                    Some(p) => format!("Diff · {p}"),
+                    None => "Diff · working tree".to_string(),
+                };
+                self.diff_path = path;
+                self.sidebar = SidebarMode::Diff;
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.to_string().into()),
+        }
+        cx.notify();
+    }
+
+    fn open_commit_diff(
+        &mut self,
+        commit_id: String,
+        path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let short = &commit_id[..commit_id.len().min(7)];
+        match repo.show_diff(&commit_id, path.as_deref()) {
+            Ok(stdout) => {
+                self.diff_files = parse_unified_diff(&stdout);
+                self.diff_title = match &path {
+                    Some(p) => format!("{short} · {p}"),
+                    None => format!("Commit {short}"),
+                };
+                self.diff_path = None;
+                self.sidebar = SidebarMode::Diff;
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.to_string().into()),
+        }
+        cx.notify();
+    }
+
+    fn open_blame(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.blame("HEAD", &path) {
+            Ok(groups) => {
+                self.blame_groups = groups;
+                self.blame_path = path;
+                self.sidebar = SidebarMode::Blame;
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.to_string().into()),
+        }
+        cx.notify();
+    }
+
+    fn sidebar_back(&mut self, cx: &mut Context<Self>) {
+        self.sidebar = if self.selected.is_some() {
+            SidebarMode::Detail
+        } else {
+            SidebarMode::Workspace
+        };
+        cx.notify();
+    }
+
+    fn open_prompt(&mut self, kind: PromptKind, cx: &mut Context<Self>) {
+        self.prompt = Some(kind);
+        cx.notify();
+    }
+
+    fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
+        self.prompt = None;
+        cx.notify();
+    }
+
+    fn confirm_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(kind) = self.prompt.clone() else {
+            return;
+        };
+        let input = self.prompt_input.read(cx).value().trim().to_string();
+        self.prompt_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.prompt = None;
+        match kind {
+            PromptKind::NewBranch { start_point } => {
+                if input.is_empty() {
+                    self.error = Some("Branch name is empty".into());
+                } else {
+                    let message = format!("Created branch {input}");
+                    self.run_op(
+                        &message,
+                        move |repo| {
+                            repo.create_branch(&input, start_point.as_deref())?;
+                            repo.checkout(&input)
+                        },
+                        cx,
+                    );
+                }
+            }
+            PromptKind::NewTag { commit_id } => {
+                if input.is_empty() {
+                    self.error = Some("Tag name is empty".into());
+                } else {
+                    let message = format!("Created tag {input}");
+                    self.run_op(
+                        &message,
+                        move |repo| repo.create_tag(&input, Some(&commit_id), None),
+                        cx,
+                    );
+                }
+            }
+            PromptKind::Stash => {
+                let message = if input.is_empty() { None } else { Some(input) };
+                self.run_op(
+                    "Stashed",
+                    move |repo| repo.stash_push(message.as_deref(), true),
+                    cx,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    fn select_commit_by_id(&mut self, id: &str, cx: &mut Context<Self>) {
+        match self.list.read(cx).delegate().find_commit(id) {
+            Some(commit) => self.load_commit_detail(commit, cx),
+            None => {
+                self.error = Some(format!("Commit {id} not in loaded history").into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn cherry_pick_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(commit) = self.selected.clone() else {
+            return;
+        };
+        let id = commit.id.0.clone();
+        let message = format!("Cherry-picked {}", &id[..id.len().min(7)]);
+        self.run_op(&message, move |repo| repo.cherry_pick(&id), cx);
+    }
+
+    fn revert_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(commit) = self.selected.clone() else {
+            return;
+        };
+        let id = commit.id.0.clone();
+        let message = format!("Reverted {}", &id[..id.len().min(7)]);
+        self.run_op(&message, move |repo| repo.revert(&id), cx);
+    }
+
+    fn delete_branch(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.to_string();
+        let message = format!("Deleted branch {name}");
+        self.run_op(&message, move |repo| repo.delete_branch(&name, false), cx);
+    }
+
+    fn delete_tag(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.to_string();
+        let message = format!("Deleted tag {name}");
+        self.run_op(&message, move |repo| repo.delete_tag(&name), cx);
+    }
+
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
         let branches = self.branches.clone();
+        let tags = self.tags.clone();
         let current = self.current_branch.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();
+        let tag_weak = weak.clone();
         let branch_label = current
             .clone()
             .unwrap_or_else(|| "main".to_string());
@@ -317,6 +540,62 @@ impl AppView {
                                 },
                             ));
                         }
+                        result = result.separator();
+                        result = result.item(PopupMenuItem::new("＋ New branch…").on_click({
+                            let weak = weak.clone();
+                            move |_, _, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    this.open_prompt(PromptKind::NewBranch { start_point: None }, cx)
+                                });
+                            }
+                        }));
+                        for name in branches.iter() {
+                            if Some(name.as_str()) == current.as_deref() {
+                                continue;
+                            }
+                            let weak = weak.clone();
+                            let name = name.clone();
+                            result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.delete_branch(&name, cx)
+                                    });
+                                },
+                            ));
+                        }
+                        result
+                    }),
+            )
+            .child(
+                DropdownButton::new("tag-menu")
+                    .button(Button::new("tag-button").ghost().label("Tags"))
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(PopupMenuItem::new("＋ New tag on HEAD…").on_click({
+                            let weak = tag_weak.clone();
+                            move |_, _, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    this.open_prompt(
+                                        PromptKind::NewTag { commit_id: "HEAD".to_string() },
+                                        cx,
+                                    )
+                                });
+                            }
+                        }));
+                        if !tags.is_empty() {
+                            result = result.separator();
+                            for tag in tags.iter() {
+                                let weak = tag_weak.clone();
+                                let commit_id = tag.commit_id.clone();
+                                let label = tag.name.clone();
+                                result = result.item(PopupMenuItem::new(label).on_click(
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.select_commit_by_id(&commit_id, cx)
+                                        });
+                                    },
+                                ));
+                            }
+                        }
                         result
                     }),
             )
@@ -337,6 +616,22 @@ impl AppView {
                     .ghost()
                     .label("Push")
                     .on_click(cx.listener(|this, _, _, cx| this.do_push(cx))),
+            )
+            .child(
+                Button::new("stash")
+                    .ghost()
+                    .label("Stash")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.open_prompt(PromptKind::Stash, cx)
+                    })),
+            )
+            .child(
+                Button::new("unstash")
+                    .ghost()
+                    .label("Unstash")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.run_op("Unstashed", |repo| repo.stash_pop(), cx)
+                    })),
             )
             .child(
                 Button::new("refresh")
@@ -370,14 +665,14 @@ impl AppView {
 
     fn render_change_row(&self, index: usize, change: &Change, cx: &mut Context<Self>) -> AnyElement {
         let fg = cx.theme().foreground;
-        let muted = cx.theme().muted_foreground;
         let color = status_color(&change.status);
         let path = change.display_path();
         let staged = change.staged;
-        let change = change.clone();
+        let is_untracked = change.status == ChangeStatus::Untracked;
         let change_for_click = change.clone();
+        let diff_path = change.path.clone();
 
-        div()
+        let mut row = div()
             .id(format!("change-{index}"))
             .flex()
             .flex_row()
@@ -405,15 +700,59 @@ impl AppView {
                     .whitespace_nowrap()
                     .text_sm()
                     .child(path),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .text_sm()
-                    .text_color(if staged { muted } else { lane_color(2) })
-                    .child(if staged { "−" } else { "+" }),
-            )
-            .into_any_element()
+            );
+
+        row = row.child(
+            Button::new(format!("chg-diff-{index}"))
+                .ghost()
+                .compact()
+                .label("Δ")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    let path = diff_path.clone();
+                    this.open_diff_worktree(Some(path), cx);
+                })),
+        );
+        if !staged && !is_untracked {
+            let discard_path = change.path.clone();
+            row = row.child(
+                Button::new(format!("chg-discard-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("↩")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        let path = discard_path.clone();
+                        let message = format!("Discarded {path}");
+                        this.run_op(&message, move |repo| repo.discard_changes(&path), cx);
+                    })),
+            );
+        }
+        if is_untracked {
+            let remove_path = change.path.clone();
+            row = row.child(
+                Button::new(format!("chg-remove-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("✕")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        let path = remove_path.clone();
+                        let message = format!("Removed {path}");
+                        this.run_op(&message, move |repo| repo.remove_untracked(&path), cx);
+                    })),
+            );
+        }
+
+        row.child(
+            div()
+                .flex_none()
+                .w(px(12.))
+                .text_sm()
+                .text_color(if staged { cx.theme().muted_foreground } else { lane_color(2) })
+                .child(if staged { "−" } else { "+" }),
+        )
+        .into_any_element()
     }
 
     fn render_workspace(&self, cx: &mut Context<Self>) -> Div {
@@ -467,40 +806,83 @@ impl AppView {
             )
     }
 
+    fn render_detail_file_row(
+        &self,
+        index: usize,
+        change: &Change,
+        commit_id: &str,
+        fg: gpui::Hsla,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let color = status_color(&change.status);
+        let path = change.display_path();
+        let diff_path = change.path.clone();
+        let blame_path = change.path.clone();
+        let file_commit_id = commit_id.to_string();
+
+        div()
+            .id(format!("detail-file-{index}"))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py_0p5()
+            .rounded(px(4.))
+            .cursor_pointer()
+            .hover(move |style| style.bg(hsla(fg.h, fg.s, fg.l, 0.07)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.open_commit_diff(file_commit_id.clone(), Some(diff_path.clone()), cx)
+            }))
+            .child(
+                div()
+                    .w(px(14.))
+                    .flex_none()
+                    .text_xs()
+                    .text_color(color)
+                    .child(change.status.short_label()),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_xs()
+                    .child(path),
+            )
+            .child(
+                Button::new(format!("detail-blame-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("B")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.open_blame(blame_path.clone(), cx);
+                    })),
+            )
+            .into_any_element()
+    }
+
     fn render_detail(&self, commit: &Commit, cx: &mut Context<Self>) -> Div {
         let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
+        let commit_id = commit.id.0.clone();
+        let tag_color = lane_color(5);
+
+        let commit_tags: Vec<Tag> = self
+            .tags
+            .iter()
+            .filter(|tag| tag.commit_id == commit_id)
+            .cloned()
+            .collect();
 
         let file_rows: Vec<AnyElement> = self
             .detail_files
             .iter()
-            .map(|change| {
-                let color = status_color(&change.status);
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_0p5()
-                    .child(
-                        div()
-                            .w(px(14.))
-                            .flex_none()
-                            .text_xs()
-                            .text_color(color)
-                            .child(change.status.short_label()),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_xs()
-                            .child(change.display_path()),
-                    )
-                    .into_any_element()
+            .enumerate()
+            .map(|(index, change)| {
+                self.render_detail_file_row(index, change, &commit_id, fg, cx)
             })
             .collect();
 
@@ -557,10 +939,122 @@ impl AppView {
                     div()
                         .flex_none()
                         .text_xs()
-                        .text_color(lane_color(5))
+                        .text_color(tag_color)
                         .child(format!("∟ {}", self.detail_branches.join(", "))),
                 )
             })
+            .when(!commit_tags.is_empty(), |detail| {
+                detail.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_1()
+                        .flex_none()
+                        .child(div().flex_none().text_xs().text_color(muted).child("Tags"))
+                        .children(commit_tags.into_iter().map(|tag| {
+                            let name = tag.name;
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_0p5()
+                                .rounded(px(4.))
+                                .px_1p5()
+                                .py_0p5()
+                                .bg(hsla(tag_color.h, tag_color.s, tag_color.l, 0.15))
+                                .child(
+                                    div().text_xs().text_color(tag_color).child(name.clone()),
+                                )
+                                .child(
+                                    Button::new(format!("delete-tag-{name}"))
+                                        .ghost()
+                                        .compact()
+                                        .label("✕")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.delete_tag(&name, cx);
+                                        })),
+                                )
+                        })),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_1()
+                    .flex_none()
+                    .child(
+                        Button::new("detail-cherry-pick")
+                            .ghost()
+                            .compact()
+                            .label("Cherry-pick")
+                            .on_click(cx.listener(|this, _, _, cx| this.cherry_pick_selected(cx))),
+                    )
+                    .child(
+                        Button::new("detail-revert")
+                            .ghost()
+                            .compact()
+                            .label("Revert")
+                            .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
+                    )
+                    .child(
+                        Button::new("detail-diff")
+                            .ghost()
+                            .compact()
+                            .label("Diff")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_commit_diff(id, None, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-branch")
+                            .ghost()
+                            .compact()
+                            .label("Branch…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let start_point = this.selected.as_ref().map(|c| c.id.0.clone());
+                                this.open_prompt(PromptKind::NewBranch { start_point }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-tag")
+                            .ghost()
+                            .compact()
+                            .label("Tag…")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::NewTag { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-checkout")
+                            .ghost()
+                            .compact()
+                            .label("Checkout")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let Some(commit) = this.selected.clone() else {
+                                    return;
+                                };
+                                let id = commit.id.0.clone();
+                                let short = &id[..id.len().min(7)];
+                                let message = format!("Checked out {short}");
+                                this.run_op(&message, move |repo| repo.checkout(&id), cx);
+                            })),
+                    ),
+            )
             .child(
                 div()
                     .flex_none()
@@ -582,8 +1076,13 @@ impl AppView {
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
+        let width = match self.sidebar {
+            SidebarMode::Workspace => 360.,
+            SidebarMode::Detail => 420.,
+            SidebarMode::Diff | SidebarMode::Blame => 680.,
+        };
         let base = div()
-            .w(px(360.))
+            .w(px(width))
             .flex_none()
             .border_l_1()
             .border_color(border)
@@ -593,20 +1092,147 @@ impl AppView {
             .gap_2()
             .overflow_hidden();
 
-        match &self.selected {
-            Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
-            None => base.child(self.render_workspace(cx)).into_any_element(),
+        match self.sidebar {
+            SidebarMode::Diff => base.child(self.render_diff_panel(cx)).into_any_element(),
+            SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
+            SidebarMode::Detail => match &self.selected {
+                Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
+                None => base.child(self.render_workspace(cx)).into_any_element(),
+            },
+            SidebarMode::Workspace => base.child(self.render_workspace(cx)).into_any_element(),
         }
+    }
+
+    fn render_diff_panel(&self, cx: &mut Context<Self>) -> Div {
+        let muted = cx.theme().muted_foreground;
+        let title = self.diff_title.clone();
+
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .flex_none()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(title),
+                    )
+                    .when(self.diff_path.is_some(), |header| {
+                        header.child(
+                            Button::new("diff-blame")
+                                .ghost()
+                                .label("Blame")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    let path = this.diff_path.clone().unwrap_or_default();
+                                    this.open_blame(path, cx);
+                                })),
+                        )
+                    })
+                    .child(
+                        Button::new("diff-close")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                    ),
+            );
+
+        if self.diff_files.is_empty() {
+            panel = panel.child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("No changes"),
+            );
+        } else {
+            panel = panel.child(
+                div()
+                    .id("diff-content")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(render_diff_files(&self.diff_files, cx)),
+            );
+        }
+        panel
+    }
+
+    fn render_blame_panel(&self, cx: &mut Context<Self>) -> Div {
+        let muted = cx.theme().muted_foreground;
+        let path = self.blame_path.clone();
+
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .flex_none()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("Blame · {path}")),
+                    )
+                    .child(
+                        Button::new("blame-close")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                    ),
+            );
+
+        if self.blame_groups.is_empty() {
+            panel = panel.child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("Nothing to blame"),
+            );
+        } else {
+            panel = panel.child(
+                div()
+                    .id("blame-content")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(render_blame(&self.blame_groups, cx)),
+            );
+        }
+        panel
     }
 
     fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
-        let amend_label = if self.amend {
-            "✓ Amend"
-        } else {
-            "Amend"
-        };
-
+        let amend_label = if self.amend { "✓ Amend" } else { "Amend" };
         div()
             .flex_none()
             .border_t_1()
@@ -645,7 +1271,6 @@ impl AppView {
     fn render_statusbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
         let muted = cx.theme().muted_foreground;
-
         div()
             .h(px(28.))
             .flex_none()
@@ -657,17 +1282,19 @@ impl AppView {
             .gap_2()
             .px_3()
             .text_xs()
-            .child(match (&self.error, &self.status_message.is_empty()) {
-                (Some(error), _) => div()
-                    .text_color(hsla(0.0, 0.75, 0.55, 1.0))
-                    .child(error.clone())
-                    .into_any_element(),
-                (None, false) => div()
-                    .text_color(muted)
-                    .child(self.status_message.clone())
-                    .into_any_element(),
-                (None, true) => div().into_any_element(),
-            })
+            .child(
+                match (&self.error, self.status_message.is_empty()) {
+                    (Some(error), _) => div()
+                        .text_color(hsla(0.0, 0.75, 0.55, 1.0))
+                        .child(error.clone())
+                        .into_any_element(),
+                    (None, false) => div()
+                        .text_color(muted)
+                        .child(self.status_message.clone())
+                        .into_any_element(),
+                    (None, true) => div().into_any_element(),
+                },
+            )
             .child(div().flex_1())
             .when(self.ahead > 0, |bar| {
                 bar.child(div().text_color(muted).child(format!("↑{}", self.ahead)))
@@ -675,6 +1302,86 @@ impl AppView {
             .when(self.behind > 0, |bar| {
                 bar.child(div().text_color(muted).child(format!("↓{}", self.behind)))
             })
+    }
+
+    fn render_prompt_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let kind = self.prompt.clone()?;
+        let border = cx.theme().border;
+        let muted = cx.theme().muted_foreground;
+        let (title, hint, ok_label) = match &kind {
+            PromptKind::NewBranch { start_point } => (
+                "New branch",
+                match start_point {
+                    Some(point) => format!("From commit {}", &point[..point.len().min(7)]),
+                    None => "From current HEAD".to_string(),
+                },
+                "Create",
+            ),
+            PromptKind::NewTag { commit_id } => (
+                "New tag",
+                format!("On commit {}", &commit_id[..commit_id.len().min(7)]),
+                "Tag",
+            ),
+            PromptKind::Stash => (
+                "Stash changes",
+                "Optional message; untracked files are included".to_string(),
+                "Stash",
+            ),
+        };
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(hsla(0.0, 0.0, 0.0, 0.45))
+                .flex()
+                .items_center()
+                .justify_center()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .w(px(440.))
+                        .rounded(px(8.))
+                        .border_1()
+                        .border_color(border)
+                        .bg(cx.theme().background)
+                        .p_4()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(div().text_sm().child(title))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(SharedString::from(hint)),
+                        )
+                        .child(Textarea::new(&self.prompt_input).h(px(64.)))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .justify_end()
+                                .gap_2()
+                                .child(
+                                    Button::new("prompt-cancel")
+                                        .ghost()
+                                        .label("Cancel")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.cancel_prompt(cx)
+                                        })),
+                                )
+                                .child(
+                                    Button::new("prompt-ok")
+                                        .primary()
+                                        .label(ok_label)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.confirm_prompt(window, cx)
+                                        })),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 }
 
@@ -686,6 +1393,7 @@ impl Render for AppView {
             .flex_col()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
+            .relative()
             .child(self.render_toolbar(cx))
             .child(
                 div()
@@ -699,6 +1407,7 @@ impl Render for AppView {
             )
             .child(self.render_composer(cx))
             .child(self.render_statusbar(cx))
+            .children(self.render_prompt_overlay(cx))
     }
 }
 

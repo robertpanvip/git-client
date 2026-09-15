@@ -1,6 +1,6 @@
 use super::command::GitCommand;
 use super::error::{GitError, Result};
-use super::types::{Change, ChangeStatus};
+use super::types::{Change, ChangeStatus, Tag};
 
 pub fn add_all(cmd: &GitCommand) -> Result<()> {
     cmd.run_ok(&["add", "-A"])
@@ -105,6 +105,79 @@ pub fn discard_changes(cmd: &GitCommand, path: &str) -> Result<()> {
 
 pub fn remove_untracked(cmd: &GitCommand, path: &str) -> Result<()> {
     cmd.run_ok(&["clean", "-f", "--", path])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    Soft,
+    Mixed,
+    Hard,
+}
+
+impl ResetMode {
+    fn flag(self) -> &'static str {
+        match self {
+            ResetMode::Soft => "--soft",
+            ResetMode::Mixed => "--mixed",
+            ResetMode::Hard => "--hard",
+        }
+    }
+}
+
+pub fn cherry_pick(cmd: &GitCommand, commit: &str) -> Result<()> {
+    cmd.run_ok(&["cherry-pick", commit])
+}
+
+pub fn revert(cmd: &GitCommand, commit: &str) -> Result<()> {
+    cmd.run_ok(&["revert", "--no-edit", commit])
+}
+
+pub fn reset_to(cmd: &GitCommand, target: &str, mode: ResetMode) -> Result<()> {
+    cmd.run_ok(&["reset", mode.flag(), target])
+}
+
+pub fn create_tag(
+    cmd: &GitCommand,
+    name: &str,
+    commit: Option<&str>,
+    message: Option<&str>,
+) -> Result<()> {
+    let mut args = vec!["tag"];
+    if let Some(msg) = message {
+        args.push("-a");
+        args.push("-m");
+        args.push(msg);
+    }
+    args.push(name);
+    if let Some(c) = commit {
+        args.push(c);
+    }
+    cmd.run_ok(&args)
+}
+
+pub fn delete_tag(cmd: &GitCommand, name: &str) -> Result<()> {
+    cmd.run_ok(&["tag", "-d", name])
+}
+
+pub fn parse_tags(stdout: &str) -> Vec<Tag> {
+    stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let name = parts.next()?.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let peeled = parts.next().unwrap_or("").trim();
+            let object = parts.next().unwrap_or("").trim();
+            let commit_id = if peeled.is_empty() { object } else { peeled };
+            Some(Tag {
+                name,
+                commit_id: commit_id.to_string(),
+            })
+        })
+        .collect()
 }
 
 pub fn show_files(cmd: &GitCommand, commit: &str) -> Result<Vec<Change>> {

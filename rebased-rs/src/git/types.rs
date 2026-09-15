@@ -148,3 +148,67 @@ pub struct RepoStatus {
     pub ahead: u32,
     pub behind: u32,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tag {
+    pub name: String,
+    pub commit_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffLineKind {
+    Context,
+    Added,
+    Deleted,
+    HunkHeader,
+}
+
+impl DiffLineKind {
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            DiffLineKind::Context => " ",
+            DiffLineKind::Added => "+",
+            DiffLineKind::Deleted => "-",
+            DiffLineKind::HunkHeader => "@",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub old_no: Option<u32>,
+    pub new_no: Option<u32>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Hunk {
+    pub header: String,
+    pub lines: Vec<DiffLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FileDiff {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub is_new: bool,
+    pub is_deleted: bool,
+    pub is_binary: bool,
+    pub hunks: Vec<Hunk>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlameLine {
+    pub number: u32,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlameGroup {
+    pub commit_id: String,
+    pub author: String,
+    pub time: i64,
+    pub filename: String,
+    pub lines: Vec<BlameLine>,
+}

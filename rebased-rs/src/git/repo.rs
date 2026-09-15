@@ -5,7 +5,8 @@ use super::command::GitCommand;
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, RepoStatus};
+use super::types::{Branch, Change, Commit, RepoStatus, Tag};
+use super::{blame, diff};
 
 pub struct Repository {
     cmd: GitCommand,
@@ -149,5 +150,64 @@ impl Repository {
 
     pub fn remove_untracked(&self, path: &str) -> Result<()> {
         ops::remove_untracked(&self.cmd, path)
+    }
+
+    pub fn cherry_pick(&self, commit: &str) -> Result<()> {
+        ops::cherry_pick(&self.cmd, commit)
+    }
+
+    pub fn revert(&self, commit: &str) -> Result<()> {
+        ops::revert(&self.cmd, commit)
+    }
+
+    pub fn reset_to(&self, target: &str, mode: ops::ResetMode) -> Result<()> {
+        ops::reset_to(&self.cmd, target, mode)
+    }
+
+    pub fn tags(&self) -> Result<Vec<Tag>> {
+        let args = [
+            "for-each-ref",
+            "refs/tags",
+            "--format=%(refname:short)\t%(*objectname)\t%(objectname)",
+        ];
+        let output = self.cmd.execute(&args)?;
+        if !output.success {
+            return Err(GitError::with_stderr("git for-each-ref failed", output.stderr));
+        }
+        Ok(ops::parse_tags(&output.stdout))
+    }
+
+    pub fn create_tag(
+        &self,
+        name: &str,
+        commit: Option<&str>,
+        message: Option<&str>,
+    ) -> Result<()> {
+        ops::create_tag(&self.cmd, name, commit, message)
+    }
+
+    pub fn delete_tag(&self, name: &str) -> Result<()> {
+        ops::delete_tag(&self.cmd, name)
+    }
+
+    pub fn diff_unstaged(&self, path: Option<&str>) -> Result<String> {
+        diff::diff_unstaged(&self.cmd, path)
+    }
+
+    pub fn diff_staged(&self, path: Option<&str>) -> Result<String> {
+        diff::diff_staged(&self.cmd, path)
+    }
+
+    pub fn diff_head(&self, path: Option<&str>) -> Result<String> {
+        diff::diff_head(&self.cmd, path)
+    }
+
+    pub fn show_diff(&self, commit: &str, path: Option<&str>) -> Result<String> {
+        diff::show_diff(&self.cmd, commit, path)
+    }
+
+    pub fn blame(&self, rev: &str, path: &str) -> Result<Vec<super::BlameGroup>> {
+        let stdout = blame::blame_file(&self.cmd, rev, path)?;
+        Ok(blame::parse_blame(&stdout))
     }
 }
