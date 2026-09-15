@@ -6,7 +6,8 @@ use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
 use super::types::{Branch, Change, Commit, RepoStatus, Tag};
-use super::{blame, diff};
+use super::{blame, diff, rebase};
+use rebase::RebaseAction;
 
 pub struct Repository {
     cmd: GitCommand,
@@ -209,5 +210,25 @@ impl Repository {
     pub fn blame(&self, rev: &str, path: &str) -> Result<Vec<super::BlameGroup>> {
         let stdout = blame::blame_file(&self.cmd, rev, path)?;
         Ok(blame::parse_blame(&stdout))
+    }
+
+    pub fn rebase_todos(&self, base: &str) -> Result<Vec<RebaseAction>> {
+        rebase::todos(&self.cmd, base)
+    }
+
+    pub fn rebase_run(&self, base: &str, plan: &[RebaseAction]) -> Result<()> {
+        rebase::run(&self.cmd, base, plan)
+    }
+
+    pub fn rebase_abort(&self) -> Result<()> {
+        rebase::abort(&self.cmd)
+    }
+
+    pub fn rebase_continue(&self) -> Result<()> {
+        rebase::continue_rebase(&self.cmd)
+    }
+
+    pub fn is_rebase_in_progress(&self) -> bool {
+        rebase::in_progress(&self.cmd)
     }
 }

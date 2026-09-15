@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    filter_commits, load_repo_data, parse_unified_diff, ChangeStatus, DiffLineKind, Repository,
-    DEFAULT_LOG_LIMIT,
+    filter_commits, load_repo_data, parse_unified_diff, ChangeStatus, DiffLineKind,
+    RebaseActionKind, Repository, DEFAULT_LOG_LIMIT,
 };
 
 struct TempRepo {
@@ -452,4 +452,95 @@ fn blame_parsing() {
     assert_ne!(groups[0].commit_id, groups[1].commit_id);
     assert_eq!(groups[1].lines[0].number, 2);
     assert_eq!(groups[1].lines[0].content, "line2");
+}
+
+#[test]
+fn interactive_rebase_drop_and_squash() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "c\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let log = repo.log(10).expect("log");
+    assert_eq!(log.len(), 3);
+    let base = log[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    assert_eq!(plan.len(), 2);
+    assert_eq!(plan[0].subject, "second");
+    assert_eq!(plan[1].subject, "third");
+    assert!(plan.iter().all(|a| a.kind == RebaseActionKind::Pick));
+
+    plan[1].kind = RebaseActionKind::Squash;
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 2);
+    assert!(temp.path.join("b.txt").exists());
+    assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn interactive_rebase_drop() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "b\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "second"]);
+    temp.write("c.txt", "c\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "third"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[2].id.0.clone();
+
+    let mut plan = repo.rebase_todos(&base).expect("todos");
+    plan[0].kind = RebaseActionKind::Drop;
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 2);
+    assert!(!temp.path.join("b.txt").exists());
+    assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn rebase_conflict_and_abort() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.git(&["checkout", "-b", "feature"]);
+    temp.write("a.txt", "feature\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "feature edit"]);
+    temp.git(&["checkout", "main"]);
+    temp.write("a.txt", "main\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "main edit"]);
+    temp.git(&["checkout", "feature"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let plan = repo.rebase_todos("main").expect("todos");
+    assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].subject, "feature edit");
+
+    assert!(repo.rebase_run("main", &plan).is_err());
+    assert!(repo.is_rebase_in_progress());
+
+    repo.rebase_abort().expect("abort");
+    assert!(!repo.is_rebase_in_progress());
+    let content = std::fs::read_to_string(temp.path.join("a.txt")).expect("read a.txt");
+    assert_eq!(content, "feature\n");
 }

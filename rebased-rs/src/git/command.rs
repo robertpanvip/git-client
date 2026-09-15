@@ -27,11 +27,18 @@ impl GitCommand {
     }
 
     pub fn execute(&self, args: &[&str]) -> Result<CommandOutput> {
+        self.execute_env(args, &[])
+    }
+
+    pub fn execute_env(&self, args: &[&str], envs: &[(&str, &str)]) -> Result<CommandOutput> {
         let mut cmd = Command::new(&self.git_path);
         cmd.current_dir(&self.workdir)
             .args(args)
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("LC_ALL", "C");
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
         let output = cmd.output()?;
         Ok(CommandOutput {
             stdout: String::from_utf8(output.stdout)?,

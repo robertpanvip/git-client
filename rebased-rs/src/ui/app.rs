@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, size, AnyElement, Bounds, AppContext, Context, Div, Entity, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, WeakEntity, Window, WindowBounds, WindowOptions,
+    div, hsla, px, size, AnyElement, Bounds, AppContext, Context, Div, Entity, FontWeight,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowBounds,
+    WindowOptions,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants, DropdownButton},
@@ -16,7 +17,7 @@ use gpui_kit::component::{
 };
 use rebased_rs::git::{
     load_repo_data, parse_unified_diff, BlameGroup, Change, ChangeStatus, Commit, FileDiff,
-    GitError, RepoData, Repository, Tag, DEFAULT_LOG_LIMIT,
+    GitError, RebaseAction, RepoData, Repository, Tag, DEFAULT_LOG_LIMIT,
 };
 
 use crate::ui::blame_view::render_blame;
@@ -30,6 +31,7 @@ enum SidebarMode {
     Detail,
     Diff,
     Blame,
+    Rebase,
 }
 
 #[derive(Clone)]
@@ -77,6 +79,9 @@ pub struct AppView {
     blame_groups: Vec<BlameGroup>,
     blame_path: String,
     prompt: Option<PromptKind>,
+    rebase_plan: Vec<RebaseAction>,
+    rebase_base: String,
+    rebase_in_progress: bool,
     status_message: SharedString,
     error: Option<SharedString>,
     loading: bool,
@@ -122,6 +127,9 @@ impl AppView {
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
+            rebase_plan: Vec::new(),
+            rebase_base: String::new(),
+            rebase_in_progress: false,
             status_message: SharedString::from("Ready"),
             error: None,
             loading: true,
@@ -173,6 +181,12 @@ impl AppView {
         self.blame_groups.clear();
         self.blame_path.clear();
         self.prompt = None;
+        self.rebase_plan.clear();
+        self.rebase_base.clear();
+        self.rebase_in_progress = self
+            .repo
+            .as_ref()
+            .is_some_and(|repo| repo.is_rebase_in_progress());
         self.list.update(cx, |list, cx| {
             list.delegate_mut().set_data(LogData { commits, graph });
             cx.notify();
@@ -486,6 +500,85 @@ impl AppView {
         self.run_op(&message, move |repo| repo.revert(&id), cx);
     }
 
+    fn start_rebase(&mut self, base: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.rebase_todos(&base) {
+            Ok(plan) => {
+                self.rebase_base = base;
+                self.rebase_plan = plan;
+                self.sidebar = SidebarMode::Rebase;
+                self.error = None;
+                cx.notify();
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn cycle_rebase_action(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(action) = self.rebase_plan.get_mut(index) {
+            action.kind = action.kind.next();
+            cx.notify();
+        }
+    }
+
+    fn move_rebase_action(&mut self, index: usize, delta: isize, cx: &mut Context<Self>) {
+        let target = index as isize + delta;
+        if target < 0 || target >= self.rebase_plan.len() as isize {
+            return;
+        }
+        self.rebase_plan.swap(index, target as usize);
+        cx.notify();
+    }
+
+    fn apply_rebase(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let base = self.rebase_base.clone();
+        let plan = self.rebase_plan.clone();
+        if plan.is_empty() {
+            return;
+        }
+        match repo.rebase_run(&base, &plan) {
+            Ok(()) => {
+                self.error = None;
+                self.status_message =
+                    format!("Rebased onto {}", &base[..base.len().min(7)]).into();
+                self.rebase_plan.clear();
+                self.rebase_base.clear();
+                self.refresh(cx);
+            }
+            Err(e) => {
+                self.error = Some(e.to_string().into());
+                self.rebase_in_progress = repo.is_rebase_in_progress();
+                if self.rebase_in_progress {
+                    self.sidebar = SidebarMode::Workspace;
+                }
+                cx.notify();
+            }
+        }
+    }
+
+    fn cancel_rebase(&mut self, cx: &mut Context<Self>) {
+        self.rebase_plan.clear();
+        self.rebase_base.clear();
+        self.sidebar = SidebarMode::Workspace;
+        cx.notify();
+    }
+
+    fn abort_rebase(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Rebase aborted", |repo| repo.rebase_abort(), cx);
+    }
+
+    fn continue_rebase(&mut self, cx: &mut Context<Self>) {
+        self.run_op("Rebase continued", |repo| repo.rebase_continue(), cx);
+    }
+
     fn delete_branch(&mut self, name: &str, cx: &mut Context<Self>) {
         let name = name.to_string();
         let message = format!("Deleted branch {name}");
@@ -639,6 +732,22 @@ impl AppView {
                     .label("Refresh")
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
             )
+            .when(self.rebase_in_progress, |bar| {
+                bar.child(
+                    Button::new("rebase-abort")
+                        .danger()
+                        .compact()
+                        .label("Abort Rebase")
+                        .on_click(cx.listener(|this, _, _, cx| this.abort_rebase(cx))),
+                )
+                .child(
+                    Button::new("rebase-continue")
+                        .danger()
+                        .compact()
+                        .label("Continue Rebase")
+                        .on_click(cx.listener(|this, _, _, cx| this.continue_rebase(cx))),
+                )
+            })
     }
 
     fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1002,6 +1111,20 @@ impl AppView {
                             .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
                     )
                     .child(
+                        Button::new("detail-rebase")
+                            .ghost()
+                            .compact()
+                            .label("Rebase from here")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let base = this
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.start_rebase(base, cx);
+                            })),
+                    )
+                    .child(
                         Button::new("detail-diff")
                             .ghost()
                             .compact()
@@ -1074,12 +1197,134 @@ impl AppView {
             )
     }
 
+    fn render_rebase_panel(&self, cx: &mut Context<Self>) -> Div {
+        let border = cx.theme().border;
+        let muted = cx.theme().muted_foreground;
+        let short_base = self.rebase_base[..self.rebase_base.len().min(7)].to_string();
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Interactive Rebase"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(format!("onto {short_base}…")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("Click the action to cycle Pick → Squash → Fixup → Drop. Use ↑ ↓ to reorder."),
+            );
+
+        if self.rebase_plan.is_empty() {
+            panel = panel.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("No commits between base and HEAD."),
+            );
+        }
+
+        for (index, action) in self.rebase_plan.iter().enumerate() {
+            let kind_label = action.kind.label();
+            let summary = format!(
+                "{} {}",
+                &action.id[..action.id.len().min(7)],
+                action.subject
+            );
+            panel = panel.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_1()
+                    .border_b_1()
+                    .border_color(border)
+                    .pb_1()
+                    .child(
+                        Button::new(("rebase-kind", index))
+                            .ghost()
+                            .compact()
+                            .label(kind_label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.cycle_rebase_action(index, cx)
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .text_ellipsis()
+                            .overflow_hidden()
+                            .child(summary),
+                    )
+                    .child(
+                        Button::new(("rebase-up", index))
+                            .ghost()
+                            .compact()
+                            .label("↑")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.move_rebase_action(index, -1, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(("rebase-down", index))
+                            .ghost()
+                            .compact()
+                            .label("↓")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.move_rebase_action(index, 1, cx)
+                            })),
+                    ),
+            );
+        }
+
+        panel.child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .mt_1()
+                .child(
+                    Button::new("rebase-start")
+                        .primary()
+                        .compact()
+                        .label("Start Rebase")
+                        .on_click(cx.listener(|this, _, _, cx| this.apply_rebase(cx))),
+                )
+                .child(
+                    Button::new("rebase-cancel")
+                        .ghost()
+                        .compact()
+                        .label("Cancel")
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
+                ),
+        )
+    }
+
     fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
         let width = match self.sidebar {
             SidebarMode::Workspace => 360.,
             SidebarMode::Detail => 420.,
             SidebarMode::Diff | SidebarMode::Blame => 680.,
+            SidebarMode::Rebase => 480.,
         };
         let base = div()
             .w(px(width))
@@ -1095,6 +1340,7 @@ impl AppView {
         match self.sidebar {
             SidebarMode::Diff => base.child(self.render_diff_panel(cx)).into_any_element(),
             SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
+            SidebarMode::Rebase => base.child(self.render_rebase_panel(cx)).into_any_element(),
             SidebarMode::Detail => match &self.selected {
                 Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),

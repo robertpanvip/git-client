@@ -6,6 +6,7 @@ pub mod error;
 pub mod graph;
 pub mod log;
 pub mod ops;
+pub mod rebase;
 pub mod repo;
 pub mod repo_data;
 pub mod status;
@@ -17,6 +18,7 @@ pub use diff::parse_unified_diff;
 pub use error::{GitError, Result};
 pub use graph::{build_graph, Graph, GraphRow, RowEdge, MAX_COLORS};
 pub use ops::ResetMode;
+pub use rebase::{RebaseAction, RebaseActionKind};
 pub use repo::Repository;
 pub use repo_data::{filter_commits, load_repo_data, RepoData, DEFAULT_LOG_LIMIT};
 pub use types::{
