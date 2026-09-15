@@ -94,6 +94,35 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn open_file_history(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = use_cases::open_file_history(repo.as_ref(), &mut self.state, path) {
+            self.state.error = Some(e.to_string());
+        }
+        cx.notify();
+    }
+
+    /// Amend 开启时，把当前 HEAD 的完整提交消息预填到消息输入框。
+    pub(crate) fn prefill_amend_message(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        match repo.head_message() {
+            Ok(message) if !message.is_empty() => {
+                self.message_input
+                    .update(cx, |state, cx| state.set_value(&message, window, cx));
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
     pub(crate) fn sidebar_back(&mut self, cx: &mut Context<Self>) {
         self.state.sidebar = if self.state.selected.is_some() {
             SidebarMode::Detail

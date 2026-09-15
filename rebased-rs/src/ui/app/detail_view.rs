@@ -7,7 +7,7 @@ use gpui_kit::component::{button::{Button, ButtonVariants}, ActiveTheme};
 
 use rebased_rs::git::{Change, Commit, Tag};
 
-use crate::ui::commit_list::format_time;
+use crate::ui::commit_list::format_full_time;
 use crate::ui::graph_view::{lane_color, status_color};
 
 use super::{AppView, ConfirmAction, PromptKind};
@@ -25,6 +25,7 @@ impl AppView {
         let path = change.display_path();
         let diff_path = change.path.clone();
         let blame_path = change.path.clone();
+        let history_path = change.path.clone();
         let file_commit_id = commit_id.to_string();
 
         div()
@@ -66,6 +67,16 @@ impl AppView {
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.open_blame(blame_path.clone(), cx);
+                    })),
+            )
+            .child(
+                Button::new(format!("detail-history-{index}"))
+                    .ghost()
+                    .compact()
+                    .label("H")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.open_file_history(history_path.clone(), cx);
                     })),
             )
             .into_any_element()
@@ -132,10 +143,11 @@ impl AppView {
                     .text_xs()
                     .text_color(muted)
                     .child(format!(
-                        "{} · {} · {}",
+                        "{} · {} · {} · {}",
                         &commit.id.0[..commit.id.0.len().min(7)],
                         commit.author.name,
-                        format_time(commit.time)
+                        format_full_time(commit.time),
+                        commit.author.email
                     )),
             )
             .when(!commit.body.is_empty(), |detail| {

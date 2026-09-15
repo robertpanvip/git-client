@@ -219,3 +219,14 @@ pub(crate) fn format_time(secs: i64) -> String {
         None => String::new(),
     }
 }
+
+/// 完整日期时间（含年份与秒），用于 Detail 头部的提交时间展示。
+pub(crate) fn format_full_time(secs: i64) -> String {
+    match DateTime::from_timestamp(secs, 0) {
+        Some(time) => time
+            .with_timezone(&Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+        None => String::new(),
+    }
+}

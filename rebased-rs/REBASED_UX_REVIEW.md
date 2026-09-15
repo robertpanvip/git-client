@@ -213,3 +213,12 @@
 - [x] P0-3 危险操作确认对话框（ConfirmPrompt）
 - [x] P0-1 Commit 右键菜单（log 行 context menu）
 - [x] statusbar 显示仓库路径 + 当前分支名
+
+### P1 修复记录
+
+- [x] P1-8 File History：后端 `log_follow`（`git log --follow -- path`，`Repository::log_follow`）+ `SidebarMode::History` 面板 + Detail 文件行的 **H** 入口 + 测试 `log_follow_args_scoped_to_path`。
+- [x] P1-7 Amend 沿用原消息：`Amend` 开启时经 `head_message()`（`git log -1 --format=%B`）预填原提交消息到输入框（`prefill_amend_message`）。
+- [x] P1-9 Detail 补全：meta 行补全完整日期（`%Y-%m-%d %H:%M:%S`，`format_full_time`）与作者 email。
+- [x] P1-9 Blame → commit 跳转：`render_blame` 接受 `BlameJump` 回调，点击提交元信息行跳转到该提交的 diff。
+- [x] P1-4 Staged/Unstaged 分组：变更列表按 `change.staged` 分组渲染小节标题（Unstaged / Staged）。
+- [ ] P1-1 快捷键体系、P1-2 Branches 弹窗、P1-3 Rebase 计划 Reword/squash 消息编辑、P1-5 结构化过滤器 + Go to、P1-6 操作异步化 + 进度、P1-10 三栏式 conflict 对话框——**本轮未做**（体量较大或需新增后端/交互体系，建议后续分项进行）。

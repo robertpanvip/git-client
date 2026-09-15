@@ -14,6 +14,7 @@ pub(crate) enum SidebarMode {
     Rebase,
     Conflicts,
     Shelve,
+    History,
 }
 
 #[derive(Clone)]
@@ -153,6 +154,8 @@ pub(crate) struct AppState {
     pub(crate) conflict_choices: Vec<Option<HunkChoice>>,
     pub(crate) conflict_raw: String,
     pub(crate) shelves: Vec<StashEntry>,
+    pub(crate) history_path: String,
+    pub(crate) history_commits: Vec<Commit>,
     pub(crate) status_message: String,
     pub(crate) error: Option<String>,
     pub(crate) loading: bool,
@@ -190,6 +193,8 @@ impl Default for AppState {
             conflict_choices: Vec::new(),
             conflict_raw: String::new(),
             shelves: Vec::new(),
+            history_path: String::new(),
+            history_commits: Vec::new(),
             status_message: "Ready".to_string(),
             error: None,
             loading: true,

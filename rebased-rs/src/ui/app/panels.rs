@@ -7,7 +7,7 @@ use gpui_kit::component::{button::{Button, ButtonVariants}, input::Textarea, Act
 
 use rebased_rs::git::{HunkChoice, ResetMode};
 
-use crate::ui::blame_view::render_blame;
+use crate::ui::blame_view::{render_blame, BlameJump};
 use crate::ui::diff_view::render_diff_files;
 
 use super::{AppView, SidebarMode};
@@ -439,6 +439,7 @@ impl AppView {
             SidebarMode::Rebase => 480.,
             SidebarMode::Conflicts => 680.,
             SidebarMode::Shelve => 420.,
+            SidebarMode::History => 680.,
         };
         let base = div()
             .w(px(width))
@@ -459,6 +460,7 @@ impl AppView {
                 base.child(self.render_conflicts_panel(cx)).into_any_element()
             }
             SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
+            SidebarMode::History => base.child(self.render_history_panel(cx)).into_any_element(),
             SidebarMode::Detail => match &self.state.selected {
                 Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),
@@ -582,14 +584,112 @@ impl AppView {
                     .child("Nothing to blame"),
             );
         } else {
+            let on_commit: BlameJump = {
+                let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                std::sync::Arc::new(move |id, app| {
+                    let _ = weak.update(app, |this, cx| {
+                        this.open_commit_diff(id.clone(), None, cx)
+                    });
+                })
+            };
             panel = panel.child(
                 div()
                     .id("blame-content")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(render_blame(&self.state.blame_groups, cx)),
+                    .child(render_blame(&self.state.blame_groups, Some(&on_commit), cx)),
             );
+        }
+        panel
+    }
+
+    pub(crate) fn render_history_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let muted = cx.theme().muted_foreground;
+        let path = self.state.history_path.clone();
+
+        let mut panel = div()
+            .id("history-panel")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .flex_none()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("History · {path}")),
+                    )
+                    .child(
+                        Button::new("history-close")
+                            .ghost()
+                            .label("✕")
+                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                    ),
+            );
+
+        if self.state.history_commits.is_empty() {
+            panel = panel.child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("No history for this file"),
+            );
+        } else {
+            for commit in &self.state.history_commits {
+                let id = commit.id.0.clone();
+                let short = id[..id.len().min(7)].to_string();
+                let muted_fg = muted;
+                let time = crate::ui::commit_list::format_time(commit.time);
+                panel = panel.child(
+                    div()
+                        .id(format!("history-{id}"))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.open_commit_diff(id.clone(), None, cx)
+                        }))
+                        .child(div().flex_none().text_xs().text_color(muted_fg).child(short))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_xs()
+                                .child(commit.subject.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted_fg)
+                                .child(time),
+                        ),
+                );
+            }
         }
         panel
     }

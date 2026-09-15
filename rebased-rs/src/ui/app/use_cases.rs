@@ -214,6 +214,18 @@ pub(crate) fn open_commit_diff(
     Ok(())
 }
 
+pub(crate) fn open_file_history(
+    repo: &dyn GitBackend,
+    state: &mut AppState,
+    path: String,
+) -> Result<(), GitError> {
+    state.history_commits = repo.log_follow(100, &path)?;
+    state.history_path = path;
+    state.sidebar = SidebarMode::History;
+    state.error = None;
+    Ok(())
+}
+
 pub(crate) fn open_blame(
     repo: &dyn GitBackend,
     state: &mut AppState,

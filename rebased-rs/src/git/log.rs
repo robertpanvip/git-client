@@ -20,6 +20,24 @@ pub fn log_args(limit: usize, from: Option<&str>) -> Vec<String> {
     args
 }
 
+/// History of commits touching a single path（`--follow -- path`）。
+pub fn log_follow_args(limit: usize, path: &str) -> Vec<String> {
+    vec![
+        "log".to_string(),
+        format!("--max-count={limit}"),
+        "--format=".to_string() + LOG_FORMAT,
+        "--follow".to_string(),
+        "--".to_string(),
+        path.to_string(),
+    ]
+}
+
+/// Full message（%B）of a revision，例如 HEAD 用于 Amend 预填。
+pub fn full_message(cmd: &super::command::GitCommand, revision: &str) -> Result<String> {
+    let output = cmd.run(&["log", "-1", "--format=%B", revision])?;
+    Ok(output.trim().to_string())
+}
+
 pub fn parse_log(output: &str) -> Vec<Commit> {
     let mut commits = Vec::new();
     for record in output.split(RECORD_SEP) {
@@ -148,5 +166,16 @@ mod tests {
     fn short_id() {
         let id = CommitId("1234567890abcdef".to_string());
         assert_eq!(id.short(), "1234567");
+    }
+
+    #[test]
+    fn log_follow_args_scoped_to_path() {
+        let args = log_follow_args(50, "src/main.rs");
+        assert_eq!(args[0], "log");
+        assert_eq!(args[1], "--max-count=50");
+        assert!(args[2].starts_with("--format="));
+        assert_eq!(args[3], "--follow");
+        assert_eq!(args[4], "--");
+        assert_eq!(args[5], "src/main.rs");
     }
 }

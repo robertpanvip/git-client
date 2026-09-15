@@ -541,15 +541,43 @@ impl AppView {
 
     pub(crate) fn render_workspace(&self, cx: &mut Context<Self>) -> Div {
         let fg = cx.theme().foreground;
+        let muted = cx.theme().muted_foreground;
         let count = self.state.changes.len();
 
-        let rows: Vec<AnyElement> = self
+        let mut rows: Vec<AnyElement> = Vec::new();
+        let mut next_index = 0usize;
+
+        let mut section = |label: &'static str, group: &[&Change], accumulator: &mut Vec<AnyElement>| {
+            if group.is_empty() {
+                return;
+            }
+            accumulator.push(
+                div()
+                    .flex_none()
+                    .px_2()
+                    .pt_2()
+                    .pb_0p5()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child(format!("{label} ({})", group.len()))
+                    .into_any_element(),
+            );
+            for change in group {
+                accumulator.push(self.render_change_row(next_index, change, cx));
+                next_index += 1;
+            }
+        };
+
+        let staged: Vec<&Change> = self.state.changes.iter().filter(|c| c.staged).collect();
+        let unstaged: Vec<&Change> = self
             .state
             .changes
             .iter()
-            .enumerate()
-            .map(|(index, change)| self.render_change_row(index, change, cx))
+            .filter(|c| !c.staged)
             .collect();
+        section("Unstaged", &unstaged, &mut rows);
+        section("Staged", &staged, &mut rows);
 
         div()
             .flex_1()
@@ -627,8 +655,12 @@ impl AppView {
                         Button::new("amend")
                             .ghost()
                             .label(amend_label)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.state.amend = !this.state.amend;
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let enabling = !this.state.amend;
+                                this.state.amend = enabling;
+                                if enabling {
+                                    this.prefill_amend_message(window, cx);
+                                }
                                 cx.notify();
                             })),
                     )
