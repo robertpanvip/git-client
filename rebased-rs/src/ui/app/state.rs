@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rebased_rs::git::{
     BlameGroup, Branch, CancelToken, Change, Commit, ConflictFile, ConflictHunk, FileDiff,
-    HunkChoice, RebaseAction, StashEntry, Tag,
+    HunkChoice, RebaseAction, Remote, StashEntry, Tag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,12 +35,16 @@ pub(crate) enum PromptKind {
     Stash,
     Reword { commit_id: String },
     RenameBranch,
-        RenameBranchByName { name: String },
-        MergeMessage { name: String },
+    RenameBranchByName { name: String },
+    MergeMessage { name: String },
     Reset { commit_id: String },
     RebaseEdit { index: usize },
     GoTo,
     FilterAuthor,
+    /// 添加远程仓库：两个输入框分别为 remote 名字与 URL。
+    AddRemote,
+    /// 为指定分支设置上游：输入形如 `origin/main`。
+    SetUpstream { branch: String },
     Confirm(ConfirmAction),
 }
 
@@ -49,6 +53,7 @@ pub(crate) enum ConfirmAction {
     ForcePush,
     DeleteBranch { name: String },
     DeleteTag { name: String },
+    RemoveRemote { name: String },
     DropHeadCommit,
     UndoHeadCommit,
     DiscardChanges { path: String },
@@ -60,6 +65,7 @@ impl ConfirmAction {
             Self::ForcePush => "Force push",
             Self::DeleteBranch { .. } => "Delete branch",
             Self::DeleteTag { .. } => "Delete tag",
+            Self::RemoveRemote { .. } => "Remove remote",
             Self::DropHeadCommit => "Drop HEAD commit",
             Self::UndoHeadCommit => "Undo HEAD commit",
             Self::DiscardChanges { .. } => "Discard changes",
@@ -73,6 +79,9 @@ impl ConfirmAction {
                 format!("Branch {name} will be deleted permanently.")
             }
             Self::DeleteTag { name } => format!("Tag {name} will be deleted permanently."),
+            Self::RemoveRemote { name } => {
+                format!("Remote {name} will be removed from this repository.")
+            }
             Self::DropHeadCommit => "The HEAD commit will be removed from history. Its changes are lost.".to_string(),
             Self::UndoHeadCommit => {
                 "The HEAD commit will be undone. Its changes stay staged in the working tree.".to_string()
@@ -87,6 +96,7 @@ impl ConfirmAction {
         match self {
             Self::ForcePush => "Force push",
             Self::DeleteBranch { .. } | Self::DeleteTag { .. } => "Delete",
+            Self::RemoveRemote { .. } => "Remove",
             Self::DropHeadCommit => "Drop",
             Self::UndoHeadCommit => "Undo",
             Self::DiscardChanges { .. } => "Discard",
@@ -144,6 +154,8 @@ pub(crate) struct AppState {
     pub(crate) branches: Arc<Vec<String>>,
     /// 本地 + 远程分支的完整信息（tracking/ahead/behind），供 Branches 菜单展示。
     pub(crate) branch_entries: Arc<Vec<Branch>>,
+    /// 远程仓库列表（name + fetch url），供 remote 管理区展示。
+    pub(crate) remotes: Arc<Vec<Remote>>,
     pub(crate) current_branch: Option<String>,
     pub(crate) current_upstream: Option<String>,
     /// 作者过滤器（空串 = 不过滤），配合 Branches 范围过滤器使用。
@@ -206,6 +218,7 @@ impl Default for AppState {
         Self {
             branches: Arc::new(Vec::new()),
             branch_entries: Arc::new(Vec::new()),
+            remotes: Arc::new(Vec::new()),
             current_branch: None,
             current_upstream: None,
             filter_author: String::new(),

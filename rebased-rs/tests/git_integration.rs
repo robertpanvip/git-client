@@ -275,6 +275,90 @@ fn tag_workflow() {
 }
 
 #[test]
+fn remote_and_upstream_workflow() {
+    // 建一个裸仓库充当远程。
+    let origin_path = std::env::temp_dir().join(format!(
+        "rebased-rs-test-origin-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&origin_path).expect("create origin dir");
+    let output = Command::new("git")
+        .args(["init", "--bare", "-b", "main"])
+        .current_dir(&origin_path)
+        .output()
+        .expect("init bare");
+    assert!(output.status.success(), "bare init failed");
+
+    let temp = TempRepo::new();
+    temp.write("a.txt", "a\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let url = origin_path.to_string_lossy().to_string();
+    assert!(repo.remotes().expect("remotes").is_empty(), "no remotes yet");
+
+    repo.remote_add("origin", &url).expect("add remote");
+    let remotes = repo.remotes().expect("remotes after add");
+    assert_eq!(remotes.len(), 1);
+    assert_eq!(remotes[0].name, "origin");
+    assert_eq!(remotes[0].url, url);
+
+    // 推送并建立 upstream。
+    temp.git(&["push", "-u", "origin", "main"]);
+    let branches = repo.branches().expect("branches");
+    let main = branches.iter().find(|b| b.name == "main").expect("main");
+    assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+
+    // unset 后 upstream 清空，可重新设置。
+    repo.unset_upstream("main").expect("unset upstream");
+    let branches = repo.branches().expect("branches after unset");
+    let main = branches.iter().find(|b| b.name == "main").expect("main");
+    assert_eq!(main.upstream, None);
+    repo.set_upstream("main", "origin/main").expect("set upstream");
+    let branches = repo.branches().expect("branches after set");
+    let main = branches.iter().find(|b| b.name == "main").expect("main");
+    assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+
+    // prune：远程删掉 feature 后清理本地过期的远程引用。
+    temp.git(&["branch", "feature"]);
+    temp.git(&["push", "origin", "feature"]);
+    // 直接在裸仓库删分支（等价于服务端删除），本地 remote-tracking ref 因此过期。
+    let output = Command::new("git")
+        .args(["update-ref", "-d", "refs/heads/feature"])
+        .current_dir(&origin_path)
+        .output()
+        .expect("delete remote ref");
+    assert!(output.status.success(), "delete remote ref failed");
+    assert!(
+        repo.branches()
+            .expect("branches")
+            .iter()
+            .any(|b| b.name == "origin/feature"),
+        "stale remote branch before prune"
+    );
+    repo.remote_prune("origin").expect("prune");
+    assert!(
+        !repo
+            .branches()
+            .expect("branches after prune")
+            .iter()
+            .any(|b| b.name == "origin/feature"),
+        "remote branch gone after prune"
+    );
+
+    // remove remote。
+    repo.remote_remove("origin").expect("remove remote");
+    assert!(
+        repo.remotes().expect("remotes").is_empty(),
+        "no remotes after remove"
+    );
+
+    let _ = std::fs::remove_dir_all(&origin_path);
+}
+
+#[test]
 fn cherry_pick_and_revert() {
     let temp = TempRepo::new();
     temp.write("a.txt", "a\n");

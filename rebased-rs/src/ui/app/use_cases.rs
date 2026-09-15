@@ -47,11 +47,13 @@ pub(crate) fn sync_repo_state(
         status,
         branches,
         tags,
+        remotes,
     } = data;
     state.repo_root = repo.root().to_string_lossy().to_string();
     state.head_id = commits.first().map(|commit| commit.id.0.clone());
     state.changes = status.changes;
     state.branch_entries = Arc::new(branches.clone());
+    state.remotes = Arc::new(remotes);
     let current = branches.iter().find(|branch| branch.is_current());
     state.ahead = current.map_or(0, |branch| branch.ahead);
     state.behind = current.map_or(0, |branch| branch.behind);

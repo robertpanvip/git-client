@@ -323,6 +323,26 @@ impl AppView {
             PromptKind::FilterAuthor => {
                 self.set_author_filter(input, cx);
             }
+            PromptKind::SetUpstream { branch } => {
+                if input.is_empty() {
+                    self.state.error = Some("Upstream is empty".to_string());
+                    cx.notify();
+                } else {
+                    self.set_branch_upstream(branch, input, cx);
+                }
+            }
+            PromptKind::AddRemote => {
+                let url = self.prompt_input2.read(cx).value().trim().to_string();
+                self.prompt_input2
+                    .update(cx, |state, cx| state.set_value("", window, cx));
+                if input.is_empty() || url.is_empty() {
+                    self.state.error =
+                        Some("Remote name and URL are required".to_string());
+                } else {
+                    let message = format!("Added remote {input}");
+                    self.run_op(&message, move |repo| repo.remote_add(&input, &url), cx);
+                }
+            }
         }
         cx.notify();
     }

@@ -1044,6 +1044,14 @@ impl AppView {
                 "Filter by author".to_string(),
                 "Show only commits whose author matches this text. Leave empty to clear the filter.".to_string(),
             ),
+            super::PromptKind::AddRemote => (
+                "Add remote".to_string(),
+                "Enter the remote name (e.g. origin) and its URL.".to_string(),
+            ),
+            super::PromptKind::SetUpstream { branch } => (
+                "Set upstream".to_string(),
+                format!("Upstream of {branch} (e.g. origin/main):"),
+            ),
             super::PromptKind::Confirm(action) => {
                 (action.title().to_string(), action.hint())
             }
@@ -1109,6 +1117,35 @@ impl AppView {
                             })),
                     )
             }
+            super::PromptKind::AddRemote => div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(Textarea::new(&self.prompt_input).h(px(32.)))
+                .child(Textarea::new(&self.prompt_input2).h(px(32.)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("prompt-cancel")
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.cancel_prompt(cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("prompt-ok")
+                                .primary()
+                                .label("Add")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_prompt(window, cx)
+                                })),
+                        ),
+                ),
             _ => {
                 let ok_label = match &kind {
                     super::PromptKind::NewBranch { .. } => "Create",
@@ -1118,6 +1155,7 @@ impl AppView {
                     super::PromptKind::RenameBranch => "Rename",
                     super::PromptKind::GoTo => "Go",
                     super::PromptKind::FilterAuthor => "Filter",
+                    super::PromptKind::SetUpstream { .. } => "Set",
                     _ => "OK",
                 };
                 div()

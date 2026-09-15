@@ -11,6 +11,7 @@ pub struct RepoData {
     pub status: RepoStatus,
     pub branches: Vec<Branch>,
     pub tags: Vec<Tag>,
+    pub remotes: Vec<super::types::Remote>,
 }
 
 pub fn load_repo_data(repo: &dyn GitBackend, log_limit: usize) -> Result<RepoData> {
@@ -31,12 +32,14 @@ pub fn load_repo_data_filtered(
     let status = repo.status()?;
     let branches = repo.branches()?;
     let tags = repo.tags()?;
+    let remotes = repo.remotes().unwrap_or_default();
     Ok(RepoData {
         commits,
         graph,
         status,
         branches,
         tags,
+        remotes,
     })
 }
 

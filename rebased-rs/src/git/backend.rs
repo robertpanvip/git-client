@@ -8,7 +8,7 @@ use super::ops::ResetMode;
 use super::rebase::RebaseAction;
 use super::repo::Repository;
 use super::types::{
-    BlameGroup, Branch, Change, Commit, FileDiff, RepoStatus, StashEntry, Tag,
+    BlameGroup, Branch, Change, Commit, FileDiff, Remote, RepoStatus, StashEntry, Tag,
 };
 
 /// Storage-agnostic facade over a git repository.
@@ -82,6 +82,15 @@ pub trait GitBackend: Send + Sync {
     fn checkout(&self, target: &str) -> Result<()>;
     fn create_branch(&self, name: &str, start_point: Option<&str>) -> Result<()>;
     fn delete_branch(&self, name: &str, force: bool) -> Result<()>;
+    /// 列出远程仓库（name + fetch url）。
+    fn remotes(&self) -> Result<Vec<Remote>>;
+    fn remote_add(&self, name: &str, url: &str) -> Result<()>;
+    fn remote_remove(&self, name: &str) -> Result<()>;
+    /// 清理远程已删除分支的本地引用。
+    fn remote_prune(&self, name: &str) -> Result<()>;
+    /// 设置分支上游（upstream 形如 `origin/main`）。
+    fn set_upstream(&self, branch: &str, upstream: &str) -> Result<()>;
+    fn unset_upstream(&self, branch: &str) -> Result<()>;
     fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()>;
     fn stash_pop(&self) -> Result<()>;
     fn discard_changes(&self, path: &str) -> Result<()>;
@@ -285,6 +294,30 @@ impl GitBackend for Repository {
 
     fn delete_branch(&self, name: &str, force: bool) -> Result<()> {
         Repository::delete_branch(self, name, force)
+    }
+
+    fn remotes(&self) -> Result<Vec<Remote>> {
+        Repository::remotes(self)
+    }
+
+    fn remote_add(&self, name: &str, url: &str) -> Result<()> {
+        Repository::remote_add(self, name, url)
+    }
+
+    fn remote_remove(&self, name: &str) -> Result<()> {
+        Repository::remote_remove(self, name)
+    }
+
+    fn remote_prune(&self, name: &str) -> Result<()> {
+        Repository::remote_prune(self, name)
+    }
+
+    fn set_upstream(&self, branch: &str, upstream: &str) -> Result<()> {
+        Repository::set_upstream(self, branch, upstream)
+    }
+
+    fn unset_upstream(&self, branch: &str) -> Result<()> {
+        Repository::unset_upstream(self, branch)
     }
 
     fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()> {

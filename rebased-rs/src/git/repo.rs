@@ -5,7 +5,7 @@ use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, FileDiff, RepoStatus, StashEntry, Tag};
+use super::types::{Branch, Change, Commit, FileDiff, Remote, RepoStatus, StashEntry, Tag};
 use super::{blame, conflict, diff, merge, rebase};
 use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
@@ -250,6 +250,31 @@ impl Repository {
 
     pub fn delete_branch(&self, name: &str, force: bool) -> Result<()> {
         ops::delete_branch(&self.cmd, name, force)
+    }
+
+    pub fn remotes(&self) -> Result<Vec<Remote>> {
+        ops::remote_list(&self.cmd)
+    }
+
+    pub fn remote_add(&self, name: &str, url: &str) -> Result<()> {
+        ops::remote_add(&self.cmd, name, url)
+    }
+
+    pub fn remote_remove(&self, name: &str) -> Result<()> {
+        ops::remote_remove(&self.cmd, name)
+    }
+
+    pub fn remote_prune(&self, name: &str) -> Result<()> {
+        ops::remote_prune(&self.cmd, name)
+    }
+
+    /// 设置分支上游（upstream 形如 `origin/main`）。
+    pub fn set_upstream(&self, branch: &str, upstream: &str) -> Result<()> {
+        ops::set_upstream(&self.cmd, branch, upstream)
+    }
+
+    pub fn unset_upstream(&self, branch: &str) -> Result<()> {
+        ops::unset_upstream(&self.cmd, branch)
     }
 
     pub fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()> {

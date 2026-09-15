@@ -1,6 +1,6 @@
 use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
-use super::types::{Change, ChangeStatus, StashEntry, Tag};
+use super::types::{Change, ChangeStatus, Remote, StashEntry, Tag};
 
 pub fn add_all(cmd: &GitCommand) -> Result<()> {
     cmd.run_ok(&["add", "-A"])
@@ -153,6 +153,56 @@ pub fn apply_patch_cached(cmd: &GitCommand, patch: &str, reverse: bool) -> Resul
     }
     args.push("-");
     cmd.run_with_stdin(&args, patch)
+}
+
+/// 列出远程仓库（`git remote -v` 的 fetch 行：`name\turl (fetch)`）。
+pub fn remote_list(cmd: &GitCommand) -> Result<Vec<Remote>> {
+    let out = cmd.run(&["remote", "-v"])?;
+    let mut remotes: Vec<Remote> = Vec::new();
+    for line in out.lines() {
+        // 每个远程会输出 fetch / push 两行，只取 fetch 行。
+        let Some(rest) = line.strip_suffix(" (fetch)") else {
+            continue;
+        };
+        let Some((name, url)) = rest.split_once('\t') else {
+            continue;
+        };
+        let name = name.trim();
+        let url = url.trim();
+        if name.is_empty() || url.is_empty() {
+            continue;
+        }
+        if !remotes.iter().any(|r| r.name == name) {
+            remotes.push(Remote {
+                name: name.to_string(),
+                url: url.to_string(),
+            });
+        }
+    }
+    Ok(remotes)
+}
+
+pub fn remote_add(cmd: &GitCommand, name: &str, url: &str) -> Result<()> {
+    cmd.run_ok(&["remote", "add", name, url])
+}
+
+pub fn remote_remove(cmd: &GitCommand, name: &str) -> Result<()> {
+    cmd.run_ok(&["remote", "remove", name])
+}
+
+/// 清理远程已删除分支的本地引用（`git remote prune`）。
+pub fn remote_prune(cmd: &GitCommand, name: &str) -> Result<()> {
+    cmd.run_ok(&["remote", "prune", name])
+}
+
+/// 设置分支的上游（`git branch --set-upstream-to=`）。
+pub fn set_upstream(cmd: &GitCommand, branch: &str, upstream: &str) -> Result<()> {
+    cmd.run_ok(&["branch", &format!("--set-upstream-to={upstream}"), branch])
+}
+
+/// 清除分支的上游关联。
+pub fn unset_upstream(cmd: &GitCommand, branch: &str) -> Result<()> {
+    cmd.run_ok(&["branch", "--unset-upstream", branch])
 }
 
 pub fn checkout(cmd: &GitCommand, target: &str) -> Result<()> {

@@ -40,6 +40,8 @@ impl AppView {
         let branch_entries = self.state.branch_entries.clone();
         let tags = self.state.tags.clone();
         let current = self.state.current_branch.clone();
+        let current_upstream = self.state.current_upstream.clone();
+        let remote_list = self.state.remotes.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();
         let tag_weak = weak.clone();
         let filter_weak = weak.clone();
@@ -120,6 +122,42 @@ impl AppView {
                                 }
                             }),
                         );
+                        // 当前分支的 upstream 管理：设置 / 取消。
+                        if let Some(name) = current.clone() {
+                            result = result.item(
+                                PopupMenuItem::new(format!("⇅ Set upstream of {name}…"))
+                                    .on_click({
+                                        let weak = weak.clone();
+                                        let name = name.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.open_prompt(
+                                                    PromptKind::SetUpstream {
+                                                        branch: name.clone(),
+                                                    },
+                                                    cx,
+                                                )
+                                            });
+                                        }
+                                    }),
+                            );
+                            if let Some(upstream) = current_upstream.clone() {
+                                result = result.item(
+                                    PopupMenuItem::new(format!(
+                                        "⇅ Unset upstream of {name} (now {upstream})"
+                                    ))
+                                    .on_click({
+                                        let weak = weak.clone();
+                                        let name = name.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.unset_branch_upstream(name.clone(), cx)
+                                            });
+                                        }
+                                    }),
+                                );
+                            }
+                        }
                         // 本地分支操作：Merge into / Rebase onto / Delete。
                         for branch in branch_entries.iter().filter(|b| !b.is_remote) {
                             if branch.is_current() {
@@ -211,6 +249,41 @@ impl AppView {
                                     }
                                 },
                             ));
+                            // 每个本地分支的 upstream 管理。
+                            let name = branch.name.clone();
+                            result = result.item(
+                                PopupMenuItem::new(format!("⇅ Set upstream of {name}…"))
+                                    .on_click({
+                                        let weak = weak.clone();
+                                        let name = name.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.open_prompt(
+                                                    PromptKind::SetUpstream {
+                                                        branch: name.clone(),
+                                                    },
+                                                    cx,
+                                                )
+                                            });
+                                        }
+                                    }),
+                            );
+                            if let Some(upstream) = branch.upstream.clone() {
+                                result = result.item(
+                                    PopupMenuItem::new(format!(
+                                        "⇅ Unset upstream of {name} (now {upstream})"
+                                    ))
+                                    .on_click({
+                                        let weak = weak.clone();
+                                        let name = name.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.unset_branch_upstream(name.clone(), cx)
+                                            });
+                                        }
+                                    }),
+                                );
+                            }
                         }
                         // 远程分支：checkout / Pull into / Rebase onto。
                         let remotes: Vec<&Branch> =
@@ -270,6 +343,46 @@ impl AppView {
                                     }
                                 }));
                             }
+                        }
+                        // 远程仓库管理：Add / Prune / Remove。
+                        result = result.separator();
+                        result = result.item(PopupMenuItem::label("Remotes"));
+                        result = result.item(PopupMenuItem::new("＋ Add remote…").on_click({
+                            let weak = weak.clone();
+                            move |_, _, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    this.open_prompt(PromptKind::AddRemote, cx)
+                                });
+                            }
+                        }));
+                        for remote in remote_list.iter() {
+                            let label = format!("{} → {}", remote.name, remote.url);
+                            result = result.item(PopupMenuItem::label(&label));
+                            let prune_label = format!("⇣ Prune {}", remote.name);
+                            result = result.item(PopupMenuItem::new(prune_label).on_click({
+                                let weak = weak.clone();
+                                let name = remote.name.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.prune_remote(&name, cx)
+                                    });
+                                }
+                            }));
+                            let remove_label = format!("✕ Remove {}", remote.name);
+                            result = result.item(PopupMenuItem::new(remove_label).on_click({
+                                let weak = weak.clone();
+                                let name = remote.name.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(
+                                            PromptKind::Confirm(ConfirmAction::RemoveRemote {
+                                                name: name.clone(),
+                                            }),
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }));
                         }
                         result
                     }),

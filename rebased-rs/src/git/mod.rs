@@ -34,5 +34,5 @@ pub use repo_data::{
 };
 pub use types::{
     Author, BlameGroup, BlameLine, Branch, Change, ChangeStatus, Commit, CommitId, DiffLine,
-    DiffLineKind, FileDiff, Hunk, RepoStatus, StashEntry, Tag,
+    DiffLineKind, FileDiff, Hunk, Remote, RepoStatus, StashEntry, Tag,
 };

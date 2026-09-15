@@ -311,6 +311,38 @@ impl AppView {
         self.run_op(&message, move |repo| repo.delete_tag(&name), cx);
     }
 
+    pub(crate) fn remove_remote(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.to_string();
+        let message = format!("Removed remote {name}");
+        self.run_op(&message, move |repo| repo.remote_remove(&name), cx);
+    }
+
+    pub(crate) fn prune_remote(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.to_string();
+        let message = format!("Pruned remote {name}");
+        self.run_op(&message, move |repo| repo.remote_prune(&name), cx);
+    }
+
+    /// 设置分支上游（upstream 形如 `origin/main`）。
+    pub(crate) fn set_branch_upstream(
+        &mut self,
+        branch: String,
+        upstream: String,
+        cx: &mut Context<Self>,
+    ) {
+        let message = format!("Set upstream of {branch} to {upstream}");
+        self.run_op(&message, move |repo| repo.set_upstream(&branch, &upstream), cx);
+    }
+
+    pub(crate) fn unset_branch_upstream(
+        &mut self,
+        branch: String,
+        cx: &mut Context<Self>,
+    ) {
+        let message = format!("Unset upstream of {branch}");
+        self.run_op(&message, move |repo| repo.unset_upstream(&branch), cx);
+    }
+
     pub(crate) fn merge_branch_into_current(
         &mut self,
         name: String,
@@ -384,6 +416,7 @@ impl AppView {
             ConfirmAction::ForcePush => self.force_push_current(cx),
             ConfirmAction::DeleteBranch { name } => self.delete_branch(&name, cx),
             ConfirmAction::DeleteTag { name } => self.delete_tag(&name, cx),
+            ConfirmAction::RemoveRemote { name } => self.remove_remote(&name, cx),
             ConfirmAction::DropHeadCommit => self.drop_head(cx),
             ConfirmAction::UndoHeadCommit => self.undo_head(cx),
             ConfirmAction::DiscardChanges { path } => {

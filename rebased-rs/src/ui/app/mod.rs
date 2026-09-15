@@ -49,6 +49,8 @@ pub struct AppView {
     list: Entity<ListState<LogDelegate>>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
+    /// AddRemote 对话框的第二个输入框（remote URL）。
+    prompt_input2: Entity<TextareaState>,
     diff_edit_input: Entity<TextareaState>,
     _subscriptions: Vec<Subscription>,
 }
@@ -64,6 +66,11 @@ impl AppView {
         let prompt_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .placeholder("Name / message")
+                .soft_wrap(false)
+        });
+        let prompt_input2 = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder("URL")
                 .soft_wrap(false)
         });
         let diff_edit_input = cx.new(|cx| {
@@ -82,6 +89,7 @@ impl AppView {
             list,
             message_input,
             prompt_input,
+            prompt_input2,
             diff_edit_input,
             _subscriptions: subscriptions,
         };

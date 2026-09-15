@@ -134,6 +134,13 @@ pub struct Branch {
     pub behind: u32,
 }
 
+/// 远程仓库条目（`git remote -v` 的 name + fetch url）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Remote {
+    pub name: String,
+    pub url: String,
+}
+
 impl Branch {
     pub fn is_current(&self) -> bool {
         self.is_head && !self.is_remote
