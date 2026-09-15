@@ -1,5 +1,7 @@
 use gpui::{AppContext, Context, Window};
 
+use rebased_rs::git::autosquash_plan;
+
 use super::{AppView, PromptKind, RebaseFlow, SidebarMode};
 
 impl AppView {
@@ -56,6 +58,36 @@ impl AppView {
         cx.notify();
     }
 
+    /// 把拖拽的项移动到目标位置（drop 目标行）。
+    pub(crate) fn move_rebase_action_to(
+        &mut self,
+        from: usize,
+        to: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase else {
+            return;
+        };
+        if from >= plan.len() || to >= plan.len() || from == to {
+            return;
+        }
+        let action = plan.remove(from);
+        plan.insert(to, action);
+        cx.notify();
+    }
+
+    /// 勾选 autosquash 时立即把 fixup!/squash! 提交重排到目标之后作为预览；
+    /// 操作幂等，取消勾选保留已重排的结果。
+    pub(crate) fn toggle_rebase_autosquash(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.state.rebase_autosquash = on;
+        if on
+            && let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase
+        {
+            *plan = autosquash_plan(std::mem::take(plan));
+        }
+        cx.notify();
+    }
+
     /// 打开为计划项编辑消息的输入框，预填当前主题；确认后该提交会按 Reword 应用。
     pub(crate) fn open_rebase_edit(
         &mut self,
@@ -88,6 +120,12 @@ impl AppView {
         if plan.is_empty() || self.state.busy.is_some() {
             return;
         }
+        // 开关开着时兜底再应用一次（幂等），覆盖勾选后手动调整的情况。
+        let plan = if self.state.rebase_autosquash {
+            autosquash_plan(plan)
+        } else {
+            plan
+        };
         self.state.busy = Some("Rebasing commits".to_string());
         cx.notify();
         let task = cx.background_spawn(async move {

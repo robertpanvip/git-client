@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    conflict_hunks, filter_commits, load_repo_data, parse_unified_diff, ChangeStatus,
-    ConflictKind, DiffLineKind, HunkChoice, RebaseActionKind, Repository, DEFAULT_LOG_LIMIT,
+    autosquash_plan, conflict_hunks, filter_commits, load_repo_data, parse_unified_diff,
+    ChangeStatus, ConflictKind, DiffLineKind, HunkChoice, RebaseActionKind, Repository,
+    DEFAULT_LOG_LIMIT,
 };
 
 struct TempRepo {
@@ -1222,6 +1223,52 @@ fn rebase_squash_injects_custom_message() {
     assert!(log[0].body.contains("combined body"));
     assert!(temp.path.join("b.txt").exists());
     assert!(temp.path.join("c.txt").exists());
+    assert!(!repo.is_rebase_in_progress());
+}
+
+#[test]
+fn rebase_autosquash_reorders_fixup_commits() {
+    let temp = TempRepo::new();
+    temp.write("a.txt", "one\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+    temp.write("b.txt", "two\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "add feature"]);
+    temp.write("c.txt", "three\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "unrelated"]);
+    temp.write("b.txt", "two\nfixed\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "fixup! add feature"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+    let base = repo.log(10).expect("log")[3].id.0.clone();
+
+    let plan = repo.rebase_todos(&base).expect("todos");
+    assert_eq!(plan.len(), 3);
+    assert_eq!(plan[0].subject, "add feature");
+    assert_eq!(plan[1].subject, "unrelated");
+    assert_eq!(plan[2].subject, "fixup! add feature");
+
+    // autosquash 重排：fixup 移到目标提交之后，kind 改为 Fixup。
+    let plan = autosquash_plan(plan);
+    assert_eq!(plan[0].subject, "add feature");
+    assert_eq!(plan[1].subject, "fixup! add feature");
+    assert_eq!(plan[1].kind, RebaseActionKind::Fixup);
+    assert_eq!(plan[2].subject, "unrelated");
+    assert_eq!(plan[2].kind, RebaseActionKind::Pick);
+
+    repo.rebase_run(&base, &plan).expect("rebase run");
+
+    // fixup 合并后剩 3 个提交，fixup 的改动并入目标提交。
+    let log = repo.log(10).expect("log after rebase");
+    assert_eq!(log.len(), 3);
+    assert_eq!(log[0].subject, "unrelated");
+    assert_eq!(log[1].subject, "add feature");
+    assert_eq!(log[2].subject, "initial");
+    let merged = std::fs::read_to_string(temp.path.join("b.txt")).expect("read b.txt");
+    assert!(merged.contains("fixed"), "fixup content merged into target");
     assert!(!repo.is_rebase_in_progress());
 }
 

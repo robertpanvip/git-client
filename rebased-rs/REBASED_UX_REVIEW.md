@@ -113,13 +113,13 @@
 | Interactive todo 编辑 | ✅ | `panels.rs` rebase 面板：点击动作循环 Pick → Squash → Fixup → Drop → Edit → Reword（与 backend `RebaseActionKind::next()` 6 变体一致） |
 | Reword | ✅ | detail 内编辑，todo 行显示 `✎ {自定义消息}`；亦为循环动作之一 |
 | Edit 动作 | ✅ | 循环内含 Edit（backend + UI 循环均已覆盖） |
-| 排序 | 🟡 | ↑↓ 键盘排序可用；无拖拽 |
+| 排序 | ✅ | 拖拽（gpui 类型化 `on_drag`/`on_drop` + drop 高亮 + 跟随鼠标预览）与 ↑↓ 键盘双通道 |
 | Rebase onto | ✅ | branch / remote / commit 右键三入口 |
 | Continue / Abort | ✅ | rebase 暂停态 banner + 操作项 |
 | Conflict 接入 | ✅ | 暂停态直接进 Conflict 面板 |
-| Autosquash / fixup! 识别 | 🔴 | — |
+| Autosquash / fixup! 识别 | ✅ | 面板 Checkbox 开关：勾选即重排预览、Start 时兜底再应用；Rust 侧 `autosquash_plan` 等价 git `--autosquash` 语义（幂等、可单测） |
 
-**结论**：已远超"能执行 git rebase"——todo 循环、排序、reword、continue/abort、冲突接入俱全；距 Rebased 差在拖拽、Edit 循环项与 autosquash。
+**结论**：与 Rebased 对齐——todo 循环（Pick/Squash/Fixup/Drop/Edit/Reword 六态）、拖拽 + 键盘双通道排序、autosquash、reword、continue/abort、冲突接入俱全。
 
 ### 8. Merge / Conflict
 
@@ -158,14 +158,14 @@
 1. ~~**Graph 行内 ref 徽章可交互**~~ ✅ 已完成：`ref_badge()` 挂 `context_menu`（commit_list.rs），按 ref 类型区分——tag → 删除确认；本地分支 → Checkout（当前分支打 ✓）/ Push（无 upstream 自动 --set-upstream）/ Rename… / Delete…（确认框）；远程分支 → Checkout tracking / Pull into current / Compare。本地/远程判定经 `state.branch_entries` 查询，无匹配按远程降级。徽章均带唯一 element id（避免 CodeLocation 菜单 id 冲突）。
 2. ~~**两个最高频肌肉记忆**~~ ✅ 已完成：Ctrl+K 聚焦 Composer（FocusComposer action + ctrl-k 绑定 + TextareaState::focus，actions.rs）；双击 commit = Checkout（行级 on_click + click_count() >= 2 → checkout_commit，与单击选中互不干扰）。
 
-## D. P1（应继续补齐的 UX）——前五项 ✅ 本轮完成
+## D. P1（应继续补齐的 UX）——前六项 ✅ 本轮完成
 
 1. ~~并排 diff 视图（unified / side-by-side 切换）~~ ✅ 已完成（P1-1）：diff 面板头部切换按钮 + `side_by_side_rows` 纯函数配对（Deleted/Added 段 zip、空半行补位、Context 左右同行），4 个单元测试。
 2. ~~push / pull / fetch 的进度条与取消~~ ✅ 已完成（P1-2）：git 层 `ProgressHandle`（stderr 读线程写最新进度行）+ `CancelToken`（100ms `try_wait` 轮询 + kill）+ `run_with_stdin`；UI 层 `run_op_progress` 后台执行 + 250ms 轮询刷新状态栏进度文本，Cancel 按钮置位即取消，8 行 stderr tail 用于失败报告。
 3. ~~hunk / 行级 staging（diff 面板内选块入暂存）~~ ✅ 已完成（P1-3）：`hunk_patch()` 从解析后 FileDiff 重建单 hunk patch（含文件级头、new/deleted/rename 路径处理），`apply_hunk_to_index` / `revert_hunk_from_index` 走 `git apply --cached [-R] -`；diff 面板 hunk 头行内嵌 Stage / Unstage 按钮（`DiffSource` 区分来源，Commit 只读），操作后重开当前 diff 刷新。已知限制：`\ No newline at end of file` 标记在解析时丢弃，跨文件末尾 hunk 暂存可能失败。
 4. ~~set upstream + remote 管理 UI（add / remove / prune）~~ ✅ 已完成（P1-4）：git 层新增 `Remote` 类型与 `remote_list`（解析 `git remote -v` fetch 行）/ `remote_add` / `remote_remove` / `remote_prune` / `set_upstream`（`--set-upstream-to=`）/ `unset_upstream`，`RepoData.remotes` 随刷新下发；UI 层 branch 下拉菜单新增——当前分支与非当前分支各自的 "⇅ Set upstream… / ⇅ Unset upstream"（Unset 仅在有上游时显示），尾部 "Remotes" 管理分组（"＋ Add remote…" 双输入框对话框 `PromptKind::AddRemote` + `prompt_input2`，每个 remote 显示 `name → url` 与 "⇣ Prune" / "✕ Remove" 确认框 `ConfirmAction::RemoveRemote`）。集成测试 `remote_and_upstream_workflow`（裸仓库推拉 + prune 过期引用全流程）。
 5. ~~分支下拉树形分组（origin/* 折叠）~~ ✅ 已完成（P1-5）：branch 下拉菜单的远程分支区重构为两级子菜单树——第一级按 remote 名分组（顺序取 `git remote -v` 输出序），第二级为该 remote 下的各分支（组内条目显示去掉 `{remote}/` 前缀的短名），分支节点再展开操作子菜单（Checkout / Pull into / Rebase onto / Compare，提取为 `remote_branch_actions` 辅助函数）。实现基于 gpui-component `PopupMenu::submenu`（builder 内 `&mut Context<PopupMenu>` 可用）；闭包层级的坑：`Fn + 'static` 约束下，组/分支闭包必须 move 捕获 owned 数据且体内只 clone 使用，跨迭代需每轮 clone 独立副本避免 E0382。
-6. Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）。
+6. ~~Rebase todo：拖拽排序、autosquash（Edit 已入循环 ✅）~~ ✅ 已完成（P1-6）：git 层 `autosquash_plan()` 纯函数——识别 `fixup!`/`squash!` 前缀提交，移到目标提交之后并把 kind 改为 Fixup/Squash（保持同目标 fixup 的原有相对顺序，找不到目标保持原位，函数幂等）；**不用 git 原生 `--autosquash` 标志**——本流程的 todo 文件经 `GIT_SEQUENCE_EDITOR=cp` 整体注入会覆盖 git 的自动重排，等价逻辑在 Rust 侧完成才可单测与预览，4 个单元测试。UI 层（panels.rs）todo 行拖拽重排——gpui 类型化拖拽：`RebaseDrag(usize)` payload + `on_drag`（跟随鼠标的 `RebaseDragPreview` 浮层）/ `on_drop`（listener 调 `move_rebase_action_to`）/ `drag_over` 绿色高亮；↑↓ 键盘通道保留。Autosquash `Checkbox` 开关：勾选立即应用 `autosquash_plan` 作重排预览（幂等，取消勾选保留结果），Start 时 `apply_rebase` 兜底再应用一次覆盖勾选后手动调整；集成测试 `rebase_autosquash_reorders_fixup_commits`（TempRepo 3 提交 + 1 fixup → 重排 → `rebase_run` → 断言 fixup 内容并入目标提交）。
 7. 快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键。
 8. tag 消息编辑 / push tags。
 9. 操作历史（reflog）轻量视图。
@@ -186,4 +186,4 @@
 3. **IntelliJ 交互语法已被采纳**：Ctrl+K 提交、Ctrl+Shift+K push、Ctrl+T pull、双击 checkout、Amend 预填、Shelve、6 类危险确认、hunk 级 Ours/Theirs/Both 冲突解析、三维 commit 过滤、徽章右键菜单。
 4. **P0 清零后，"零重学习完成常见操作"已成立**：commit（Ctrl+K 或 Composer）/ stage / push / pull / 建分支 / 改名 / merge（含消息）/ rebase（含 todo）/ 解决冲突 / stash / 徽章右键 Checkout / 双击 checkout，全部能在与 Rebased 相同的位置找到相同语义的入口。
 
-剩余差距（3 窗格合并器、快捷键广度、P1 后四项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前五项（并排 diff、进度+取消、hunk 级 staging、set upstream + remote 管理、分支树形分组）已与 Rebased 对齐，下一步按 P1-6（Rebase todo 拖拽排序、autosquash）继续推进。
+剩余差距（3 窗格合并器、快捷键广度、P1 后三项）属于**同方向上的纵深推进**，不改变路线正确性。P1 前六项（并排 diff、进度+取消、hunk 级 staging、set upstream + remote 管理、分支树形分组、Rebase todo 拖拽排序 + autosquash）已与 Rebased 对齐，下一步按 P1-7（快捷键第二梯队：Alt+` VCS 操作弹层、面板切换键、blame 打开键）继续推进。

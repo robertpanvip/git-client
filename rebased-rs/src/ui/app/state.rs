@@ -187,6 +187,8 @@ pub(crate) struct AppState {
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
     pub(crate) rebase: RebaseFlow,
+    /// Planning 时勾选的 autosquash 开关：Start 后自动重排 fixup!/squash! 提交。
+    pub(crate) rebase_autosquash: bool,
     pub(crate) merge_in_progress: bool,
     pub(crate) head_id: Option<String>,
     pub(crate) conflict_files: Vec<ConflictFile>,
@@ -245,6 +247,7 @@ impl Default for AppState {
             blame_path: String::new(),
             prompt: None,
             rebase: RebaseFlow::Idle,
+            rebase_autosquash: false,
             merge_in_progress: false,
             head_id: None,
             conflict_files: Vec::new(),

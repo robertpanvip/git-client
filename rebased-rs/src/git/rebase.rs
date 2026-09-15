@@ -90,6 +90,71 @@ pub fn parse_todos(stdout: &str) -> Vec<RebaseAction> {
         .collect()
 }
 
+/// subject 以 `squash!` / `fixup!` 开头时返回对应的合并动作。
+fn autosquash_kind(subject: &str) -> Option<RebaseActionKind> {
+    if subject.starts_with("squash!") {
+        Some(RebaseActionKind::Squash)
+    } else if subject.starts_with("fixup!") {
+        Some(RebaseActionKind::Fixup)
+    } else {
+        None
+    }
+}
+
+/// 剥离一层 `fixup!` / `squash!` 前缀，得到 autosquash 的目标提交主题。
+fn autosquash_target(subject: &str) -> Option<String> {
+    let rest = subject
+        .strip_prefix("fixup!")
+        .or_else(|| subject.strip_prefix("squash!"))?;
+    Some(rest.trim_start().to_string())
+}
+
+/// 按 `git rebase --autosquash` 的语义重排计划：subject 以 `fixup!` / `squash!`
+/// 开头的提交被移到目标提交（完整 subject 匹配剥离前缀后的内容）之后，并把 kind
+/// 改为 Fixup / Squash；找不到目标的提交保持原位。函数幂等，重复应用结果不变。
+///
+/// 不使用 git 原生 `--autosquash` 标志：该流程的 todo 文件由
+/// [`run`] 通过 `GIT_SEQUENCE_EDITOR=cp` 整体注入，会覆盖 git 的自动重排，
+/// 因此等价逻辑在 Rust 侧完成，便于测试与预览。
+pub fn autosquash_plan(plan: Vec<RebaseAction>) -> Vec<RebaseAction> {
+    let mut result: Vec<RebaseAction> = Vec::with_capacity(plan.len());
+    // 完整 subject -> result 中对应合并组的末尾下标。已移位的 fixup 项也会登记，
+    // 这样 `fixup! fixup! xxx` 的链式目标能继续命中。
+    let mut heads: Vec<(String, usize)> = Vec::new();
+    for mut action in plan {
+        let kind = autosquash_kind(&action.subject);
+        let target = kind.as_ref().and_then(|_| {
+            let root = autosquash_target(&action.subject).unwrap_or_default();
+            heads.iter().rev().find(|(s, _)| *s == root).map(|(_, i)| *i)
+        });
+        match (kind, target) {
+            (Some(kind), Some(at)) => {
+                let root = autosquash_target(&action.subject).unwrap_or_default();
+                let subject = action.subject.clone();
+                action.kind = kind;
+                result.insert(at + 1, action);
+                // 插入点之后的组头下标整体后移；目标组的末尾推进到新位置，
+                // 后续同目标的 fixup 才能按 todo 原顺序接在后面（保证幂等）。
+                for head in heads.iter_mut() {
+                    if head.1 > at {
+                        head.1 += 1;
+                    }
+                }
+                if let Some(head) = heads.iter_mut().find(|(s, _)| *s == root) {
+                    head.1 = at + 1;
+                }
+                heads.push((subject, at + 1));
+            }
+            _ => {
+                let subject = action.subject.clone();
+                result.push(action);
+                heads.push((subject, result.len() - 1));
+            }
+        }
+    }
+    result
+}
+
 pub fn render_todo(plan: &[RebaseAction]) -> String {
     let mut out = String::new();
     for action in plan {
@@ -363,6 +428,87 @@ mod tests {
             todo,
             "pick 1234567890 first\nsquash fedcba0987 second\n"
         );
+    }
+
+    #[test]
+    fn autosquash_moves_fixups_after_targets() {
+        let action = |id: &str, subject: &str| RebaseAction {
+            id: id.into(),
+            subject: subject.into(),
+            kind: RebaseActionKind::Pick,
+            message: None,
+        };
+        let plan = vec![
+            action("a", "add api"),
+            action("b", "add tests"),
+            action("f", "fixup! add api"),
+            action("c", "polish docs"),
+            action("s", "squash! add api"),
+        ];
+        let plan = autosquash_plan(plan);
+        let ids: Vec<&str> = plan.iter().map(|a| a.id.as_str()).collect();
+        // 两个 fixup 目标同为 "add api"：移到目标之后并保持原有相对顺序
+        assert_eq!(ids, ["a", "f", "s", "b", "c"]);
+        assert_eq!(plan[1].kind, RebaseActionKind::Fixup);
+        assert_eq!(plan[2].kind, RebaseActionKind::Squash);
+        // 普通提交的 kind 不受影响
+        assert_eq!(plan[0].kind, RebaseActionKind::Pick);
+    }
+
+    #[test]
+    fn autosquash_keeps_unmatched_in_place() {
+        let action = |id: &str, subject: &str| RebaseAction {
+            id: id.into(),
+            subject: subject.into(),
+            kind: RebaseActionKind::Pick,
+            message: None,
+        };
+        let plan = vec![action("f", "fixup! missing"), action("a", "real")];
+        let plan = autosquash_plan(plan);
+        let ids: Vec<&str> = plan.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["f", "a"]);
+        // 找不到目标时保持原样，不强行改 kind
+        assert_eq!(plan[0].kind, RebaseActionKind::Pick);
+    }
+
+    #[test]
+    fn autosquash_is_idempotent() {
+        let action = |id: &str, subject: &str| RebaseAction {
+            id: id.into(),
+            subject: subject.into(),
+            kind: RebaseActionKind::Pick,
+            message: None,
+        };
+        let plan = vec![
+            action("a", "base"),
+            action("f1", "fixup! base"),
+            action("b", "other"),
+            action("f2", "squash! base"),
+        ];
+        let once = autosquash_plan(plan.clone());
+        assert_eq!(autosquash_plan(once.clone()), once);
+    }
+
+    #[test]
+    fn autosquash_supports_chained_fixups() {
+        let action = |id: &str, subject: &str| RebaseAction {
+            id: id.into(),
+            subject: subject.into(),
+            kind: RebaseActionKind::Pick,
+            message: None,
+        };
+        // f2 的目标是 f1（其 subject 本身以 fixup! 开头）
+        let plan = vec![
+            action("a", "base"),
+            action("b", "feature"),
+            action("f1", "fixup! feature"),
+            action("f2", "fixup! fixup! feature"),
+        ];
+        let plan = autosquash_plan(plan);
+        let ids: Vec<&str> = plan.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "f1", "f2"]);
+        assert_eq!(plan[2].kind, RebaseActionKind::Fixup);
+        assert_eq!(plan[3].kind, RebaseActionKind::Fixup);
     }
 
     #[test]

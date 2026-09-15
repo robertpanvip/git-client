@@ -1,9 +1,15 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, AnyElement, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    div, hsla, px, AnyElement, AppContext, Context, Div, FontWeight, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window,
 };
-use gpui_kit::component::{button::{Button, ButtonVariants}, input::Textarea, ActiveTheme};
+use gpui_kit::component::{
+    button::{Button, ButtonVariants},
+    checkbox::Checkbox,
+    input::Textarea,
+    ActiveTheme,
+};
 
 use rebased_rs::git::{HunkChoice, ResetMode};
 
@@ -11,6 +17,28 @@ use crate::ui::blame_view::{render_blame, BlameJump};
 use crate::ui::diff_view::{render_diff_files, HunkAction};
 
 use super::{AppView, DiffSource, SidebarMode};
+
+/// 拖拽 payload：被拖动的 rebase 计划行下标。
+#[derive(Clone, Copy)]
+pub(crate) struct RebaseDrag(pub(crate) usize);
+
+/// 拖拽时跟随鼠标的预览视图。
+struct RebaseDragPreview(SharedString);
+
+impl Render for RebaseDragPreview {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_0p5()
+            .rounded_sm()
+            .bg(cx.theme().background)
+            .border_1()
+            .border_color(cx.theme().border)
+            .text_xs()
+            .shadow_md()
+            .child(self.0.clone())
+    }
+}
 
 impl AppView {
     pub(crate) fn render_rebase_panel(&self, cx: &mut Context<Self>) -> Div {
@@ -47,7 +75,7 @@ impl AppView {
                 div()
                     .text_xs()
                     .text_color(muted)
-                    .child("Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Use ↑ ↓ to reorder."),
+                    .child("Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Drag rows or use ↑ ↓ to reorder."),
             );
 
         if plan.is_empty() {
@@ -67,8 +95,11 @@ impl AppView {
                 Some(m) if !m.trim().is_empty() => format!("{short} ✎ {m}"),
                 _ => format!("{short} {}", action.subject),
             };
+            // on_drag 的 constructor 是 Fn，可能被多次调用，label 按次克隆。
+            let drag_label: SharedString = format!("Move {short}").into();
             panel = panel.child(
                 div()
+                    .id(("rebase-row", index))
                     .flex()
                     .flex_row()
                     .items_center()
@@ -76,6 +107,16 @@ impl AppView {
                     .border_b_1()
                     .border_color(border)
                     .pb_1()
+                    .cursor_move()
+                    .drag_over::<RebaseDrag>(|style, _, _, _| {
+                        style.border_color(hsla(0.55, 0.8, 0.55, 1.0))
+                    })
+                    .on_drag(RebaseDrag(index), move |_, _, _, cx| {
+                        cx.new(|_| RebaseDragPreview(drag_label.clone()))
+                    })
+                    .on_drop(cx.listener(move |this, drag: &RebaseDrag, _, cx| {
+                        this.move_rebase_action_to(drag.0, index, cx)
+                    }))
                     .child(
                         Button::new(("rebase-kind", index))
                             .ghost()
@@ -127,22 +168,36 @@ impl AppView {
         panel.child(
             div()
                 .flex()
-                .flex_row()
+                .flex_col()
                 .gap_2()
                 .mt_1()
                 .child(
-                    Button::new("rebase-start")
-                        .primary()
-                        .compact()
-                        .label("Start Rebase")
-                        .on_click(cx.listener(|this, _, _, cx| this.apply_rebase(cx))),
+                    Checkbox::new("rebase-autosquash")
+                        .checked(self.state.rebase_autosquash)
+                        .label("Autosquash fixup!/squash! commits")
+                        .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                            this.toggle_rebase_autosquash(*checked, cx)
+                        })),
                 )
                 .child(
-                    Button::new("rebase-cancel")
-                        .ghost()
-                        .compact()
-                        .label("Cancel")
-                        .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_2()
+                        .child(
+                            Button::new("rebase-start")
+                                .primary()
+                                .compact()
+                                .label("Start Rebase")
+                                .on_click(cx.listener(|this, _, _, cx| this.apply_rebase(cx))),
+                        )
+                        .child(
+                            Button::new("rebase-cancel")
+                                .ghost()
+                                .compact()
+                                .label("Cancel")
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
+                        ),
                 ),
         )
     }
