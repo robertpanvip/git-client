@@ -21,8 +21,26 @@ impl Language {
         }
     }
 
+    /// 切换开关显示“目标语言”：按钮上写你点了之后会变成的语言。
+    pub fn other(self) -> Language {
+        match self {
+            Language::En => Language::Zh,
+            Language::Zh => Language::En,
+        }
+    }
+
     fn from_u8(v: u8) -> Language {
         if v == 1 { Language::Zh } else { Language::En }
+    }
+}
+
+/// 系统偏好语言：locale 以 zh 开头（zh-CN/zh-TW/…）→ 中文，否则英文。
+fn detect_system_language() -> Language {
+    let detected = sys_locale::get_locale().unwrap_or_default();
+    if detected.to_lowercase().starts_with("zh") {
+        Language::Zh
+    } else {
+        Language::En
     }
 }
 
@@ -74,27 +92,27 @@ fn config_path() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("config"))
 }
 
-/// 启动时读取持久化语言设置；文件缺失或损坏时保持默认英文。
+/// 启动时解析语言：持久化设置优先；首次启动（无配置）跟随系统 locale。
 pub fn load_persisted() {
-    let Some(path) = config_path() else {
-        return;
-    };
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return;
-    };
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(value) = line.strip_prefix("lang=") {
-            let lang = match value.trim() {
-                "zh" => Language::Zh,
-                _ => Language::En,
-            };
-            LANG.store(match lang {
-                Language::Zh => 1,
-                Language::En => 0,
-            }, Ordering::Relaxed);
+    let mut resolved = detect_system_language();
+    if let Some(path) = config_path() {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            for line in text.lines() {
+                let line = line.trim();
+                if let Some(value) = line.strip_prefix("lang=") {
+                    resolved = match value.trim() {
+                        "zh" => Language::Zh,
+                        "en" => Language::En,
+                        _ => resolved,
+                    };
+                }
+            }
         }
     }
+    LANG.store(match resolved {
+        Language::Zh => 1,
+        Language::En => 0,
+    }, Ordering::Relaxed);
 }
 
 fn persist(lang: Language) {
@@ -114,6 +132,12 @@ fn persist(lang: Language) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_language() {
+        assert_eq!(Language::En.other(), Language::Zh);
+        assert_eq!(Language::Zh.other(), Language::En);
+    }
 
     #[test]
     fn tr_picks_by_language() {

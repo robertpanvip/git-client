@@ -15,6 +15,7 @@ gpui-pre-platform = { version = "=0.3.3", features = [
 ] }
 chrono = "0.4"
 rust-embed = "8"
+sys-locale = "0.3"
 
 [profile.dev]
 opt-level = 1

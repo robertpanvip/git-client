@@ -5441,6 +5441,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "rust-embed",
+ "sys-locale",
 ]
 
 [[package]]

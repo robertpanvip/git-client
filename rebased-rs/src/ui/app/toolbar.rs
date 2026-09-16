@@ -754,7 +754,7 @@ impl AppView {
                 Button::new("language-toggle")
                     .ghost()
                     .icon(Ic::Language)
-                    .label(i18n::current().label())
+                    .label(i18n::current().other().label())
                     .on_click(cx.listener(|this, _, _, cx| {
                         i18n::toggle();
                         cx.notify();
@@ -766,14 +766,14 @@ impl AppView {
                     Button::new("rebase-abort")
                         .danger()
                         .compact()
-                        .label("Abort Rebase")
+                        .label(tr("Abort Rebase", "中止变基"))
                         .on_click(cx.listener(|this, _, _, cx| this.abort_rebase(cx))),
                 )
                 .child(
                     Button::new("rebase-continue")
                         .danger()
                         .compact()
-                        .label("Continue Rebase")
+                        .label(tr("Continue Rebase", "继续变基"))
                         .on_click(cx.listener(|this, _, _, cx| this.continue_rebase(cx))),
                 )
             })
@@ -782,14 +782,14 @@ impl AppView {
                     Button::new("merge-abort")
                         .danger()
                         .compact()
-                        .label("Abort Merge")
+                        .label(tr("Abort Merge", "中止合并"))
                         .on_click(cx.listener(|this, _, _, cx| this.abort_merge(cx))),
                 )
                 .child(
                     Button::new("merge-continue")
                         .danger()
                         .compact()
-                        .label("Continue Merge")
+                        .label(tr("Continue Merge", "继续合并"))
                         .on_click(cx.listener(|this, _, _, cx| this.continue_merge_op(cx))),
                 )
             })
