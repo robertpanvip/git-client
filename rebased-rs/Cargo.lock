@@ -5440,6 +5440,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "gpui-pre-platform",
+ "rust-embed",
 ]
 
 [[package]]

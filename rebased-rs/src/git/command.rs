@@ -25,6 +25,17 @@ pub struct GitCommand {
     git_path: String,
 }
 
+/// Windows GUI 子系统下每个子进程都会闪控制台黑框，统一挂 CREATE_NO_WINDOW 抑制。
+#[cfg(windows)]
+fn prepare_command(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn prepare_command(_cmd: &mut Command) {}
+
 /// 把子进程启动阶段的 io 错误映射为可读错误：git 二进制缺失时给出安装提示。
 fn map_io_error(err: std::io::Error) -> GitError {
     if err.kind() == std::io::ErrorKind::NotFound {
@@ -54,6 +65,7 @@ impl GitCommand {
 
     pub fn execute_env(&self, args: &[&str], envs: &[(&str, &str)]) -> Result<CommandOutput> {
         let mut cmd = Command::new(&self.git_path);
+        prepare_command(&mut cmd);
         cmd.current_dir(&self.workdir)
             .args(args)
             .env("GIT_OPTIONAL_LOCKS", "0")
@@ -88,6 +100,7 @@ impl GitCommand {
     /// 从 stdin 喂入内容执行 git 命令（如 `git apply --cached -`）。
     pub fn run_with_stdin(&self, args: &[&str], input: &str) -> Result<()> {
         let mut cmd = Command::new(&self.git_path);
+        prepare_command(&mut cmd);
         cmd.current_dir(&self.workdir)
             .args(args)
             .env("GIT_OPTIONAL_LOCKS", "0")
@@ -123,6 +136,7 @@ impl GitCommand {
         cancel: CancelToken,
     ) -> Result<()> {
         let mut cmd = Command::new(&self.git_path);
+        prepare_command(&mut cmd);
         cmd.current_dir(&self.workdir)
             .args(args)
             .env("GIT_OPTIONAL_LOCKS", "0")

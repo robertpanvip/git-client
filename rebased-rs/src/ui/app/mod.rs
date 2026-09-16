@@ -14,6 +14,8 @@ use rebased_rs::git::{
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
+use crate::ui::i18n::{self, tr};
+use crate::ui::icons;
 
 mod actions;
 mod conflicts;
@@ -60,12 +62,12 @@ impl AppView {
         let list = cx.new(|cx| ListState::new(LogDelegate::new(), window, cx).searchable(true));
         let message_input = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .placeholder("Commit message")
+                .placeholder(tr("Commit message", "提交信息"))
                 .soft_wrap(true)
         });
         let prompt_input = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .placeholder("Name / message")
+                .placeholder(tr("Name / message", "名称 / 消息"))
                 .soft_wrap(false)
         });
         let prompt_input2 = cx.new(|cx| {
@@ -75,7 +77,7 @@ impl AppView {
         });
         let diff_edit_input = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .placeholder("File content")
+                .placeholder(tr("File content", "文件内容"))
                 .soft_wrap(true)
         });
         let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
@@ -368,21 +370,24 @@ impl Render for AppView {
 }
 
 pub fn run(repo_path: PathBuf) {
-    gpui_kit::application().run(move |cx| {
-        gpui_kit::init(cx);
-        actions::register_keybindings(cx);
-        let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            ..Default::default()
-        };
-        cx.spawn(async move |cx| {
-            cx.open_window(options, |window, cx| {
-                let view = cx.new(|cx| AppView::new(repo_path, window, cx));
-                cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
+    i18n::load_persisted();
+    gpui_kit::application()
+        .with_assets(icons::AppAssets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            actions::register_keybindings(cx);
+            let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                ..Default::default()
+            };
+            cx.spawn(async move |cx| {
+                cx.open_window(options, |window, cx| {
+                    let view = cx.new(|cx| AppView::new(repo_path, window, cx));
+                    cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
+                })
+                .expect("Failed to open window");
             })
-            .expect("Failed to open window");
-        })
-        .detach();
-    });
+            .detach();
+        });
 }

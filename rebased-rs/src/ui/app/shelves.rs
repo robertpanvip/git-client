@@ -1,5 +1,7 @@
 use gpui::Context;
 
+use crate::ui::i18n::tr;
+
 use super::{use_cases, AppView, SidebarMode};
 
 impl AppView {
@@ -28,7 +30,7 @@ impl AppView {
         match repo.stash_apply_at(index) {
             Ok(()) => {
                 self.state.error = None;
-                self.state.status_message = "Unshelved".to_string();
+                self.state.status_message = tr("Unshelved", "已恢复搁置").to_string();
                 self.refresh(cx);
                 self.state.sidebar = SidebarMode::Shelve;
                 self.reload_shelves(cx);
@@ -47,7 +49,7 @@ impl AppView {
         match repo.stash_drop_at(index) {
             Ok(()) => {
                 self.state.error = None;
-                self.state.status_message = "Dropped shelve".to_string();
+                self.state.status_message = tr("Dropped shelve", "已丢弃搁置").to_string();
                 self.reload_shelves(cx);
             }
             Err(e) => {

@@ -4,6 +4,7 @@ use gpui_kit::component::list::{ListEvent, ListState};
 use rebased_rs::git::{Commit, MergeMode, RebaseActionKind, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
+use crate::ui::i18n::tr;
 
 use super::{use_cases, AppView, DiffSource, PromptKind, SidebarMode};
 
@@ -209,7 +210,8 @@ impl AppView {
                 self.state.diff_editing = true;
             }
             Err(e) => {
-                self.state.error = Some(format!("Cannot edit {path}: {e}"));
+                self.state.error =
+                    Some(format!("{} {path}: {e}", tr("Cannot edit", "无法编辑")));
             }
         }
         cx.notify();
@@ -221,7 +223,7 @@ impl AppView {
         };
         let content = self.diff_edit_input.read(cx).value().to_string();
         self.state.diff_editing = false;
-        let message = format!("Saved {path}");
+        let message = format!("{} {path}", tr("Saved", "已保存"));
         self.run_op(&message, move |repo| {
             repo.write_worktree_file(&path, &content)
         }, cx);
@@ -245,7 +247,7 @@ impl AppView {
     ) {
         self.state.prompt = None;
         let short = target[..target.len().min(7)].to_string();
-        let message = format!("Reset to {short}");
+        let message = format!("{} {short}", tr("Reset to", "已重置到"));
         self.run_op(&message, move |repo| repo.reset_to(&target, mode), cx);
     }
 
@@ -260,9 +262,10 @@ impl AppView {
         match kind {
             PromptKind::NewBranch { start_point } => {
                 if input.is_empty() {
-                    self.state.error = Some("Branch name is empty".to_string());
+                    self.state.error =
+                        Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
-                    let message = format!("Created branch {input}");
+                    let message = format!("{} {input}", tr("Created branch", "已创建分支"));
                     self.run_op(
                         &message,
                         move |repo| {
@@ -275,9 +278,10 @@ impl AppView {
             }
             PromptKind::NewTag { commit_id } => {
                 if input.is_empty() {
-                    self.state.error = Some("Tag name is empty".to_string());
+                    self.state.error =
+                        Some(tr("Tag name is empty", "标签名称为空").to_string());
                 } else {
-                    let message = format!("Created tag {input}");
+                    let message = format!("{} {input}", tr("Created tag", "已创建标签"));
                     self.run_op(
                         &message,
                         move |repo| repo.create_tag(&input, Some(&commit_id), None),
@@ -287,9 +291,10 @@ impl AppView {
             }
             PromptKind::EditTag { name, commit_id } => {
                 if input.is_empty() {
-                    self.state.error = Some("Tag message is empty".to_string());
+                    self.state.error =
+                        Some(tr("Tag message is empty", "标签消息为空").to_string());
                 } else {
-                    let message = format!("Updated tag {name}");
+                    let message = format!("{} {name}", tr("Updated tag", "已更新标签"));
                     self.run_op(
                         &message,
                         move |repo| repo.recreate_tag(&name, &commit_id, &input),
@@ -300,16 +305,21 @@ impl AppView {
             PromptKind::Stash => {
                 let message = if input.is_empty() { None } else { Some(input) };
                 self.run_op(
-                    "Stashed",
+                    tr("Stashed", "已贮藏"),
                     move |repo| repo.stash_push(message.as_deref(), true),
                     cx,
                 );
             }
             PromptKind::Reword { commit_id } => {
                 if input.is_empty() {
-                    self.state.error = Some("Commit message is empty".to_string());
+                    self.state.error =
+                        Some(tr("Commit message is empty", "提交信息为空").to_string());
                 } else {
-                    let message = format!("Reworded {}", &commit_id[..commit_id.len().min(7)]);
+                    let message = format!(
+                        "{} {}",
+                        tr("Reworded", "已改写"),
+                        &commit_id[..commit_id.len().min(7)]
+                    );
                     self.run_op(
                         &message,
                         move |repo| repo.reword_commit(&commit_id, &input),
@@ -319,22 +329,25 @@ impl AppView {
             }
             PromptKind::RenameBranch => {
                 let Some(old) = self.state.current_branch.clone() else {
-                    self.state.error = Some("No current branch".to_string());
+                    self.state.error =
+                        Some(tr("No current branch", "没有当前分支").to_string());
                     cx.notify();
                     return;
                 };
                 if input.is_empty() {
-                    self.state.error = Some("Branch name is empty".to_string());
+                    self.state.error =
+                        Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
-                    let message = format!("Renamed {old} to {input}");
+                    let message = format!("{} {old} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
                 }
             }
             PromptKind::RenameBranchByName { name } => {
                 if input.is_empty() {
-                    self.state.error = Some("Branch name is empty".to_string());
+                    self.state.error =
+                        Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
-                    let message = format!("Renamed {name} to {input}");
+                    let message = format!("{} {name} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&name, &input), cx);
                 }
             }
@@ -345,7 +358,8 @@ impl AppView {
             PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
             PromptKind::RebaseEdit { index } => {
                 if input.is_empty() {
-                    self.state.error = Some("Commit message is empty".to_string());
+                    self.state.error =
+                        Some(tr("Commit message is empty", "提交信息为空").to_string());
                 } else if let super::RebaseFlow::Planning { plan, .. } = &mut self.state.rebase
                     && let Some(action) = plan.get_mut(index)
                 {
@@ -355,7 +369,8 @@ impl AppView {
             }
             PromptKind::GoTo => {
                 if input.is_empty() {
-                    self.state.error = Some("Revision is empty".to_string());
+                    self.state.error =
+                        Some(tr("Revision is empty", "修订版本为空").to_string());
                 } else {
                     self.goto_revision(input, cx);
                 }
@@ -365,7 +380,7 @@ impl AppView {
             }
             PromptKind::SetUpstream { branch } => {
                 if input.is_empty() {
-                    self.state.error = Some("Upstream is empty".to_string());
+                    self.state.error = Some(tr("Upstream is empty", "上游为空").to_string());
                     cx.notify();
                 } else {
                     self.set_branch_upstream(branch, input, cx);
@@ -376,10 +391,15 @@ impl AppView {
                 self.prompt_input2
                     .update(cx, |state, cx| state.set_value("", window, cx));
                 if input.is_empty() || url.is_empty() {
-                    self.state.error =
-                        Some("Remote name and URL are required".to_string());
+                    self.state.error = Some(
+                        tr(
+                            "Remote name and URL are required",
+                            "远程名称和 URL 为必填项",
+                        )
+                        .to_string(),
+                    );
                 } else {
-                    let message = format!("Added remote {input}");
+                    let message = format!("{} {input}", tr("Added remote", "已添加远程"));
                     self.run_op(&message, move |repo| repo.remote_add(&input, &url), cx);
                 }
             }

@@ -16,6 +16,8 @@ use gpui_kit::component::{
 use rebased_rs::git::{Branch, Change, ChangeStatus, MergeMode};
 
 use crate::ui::graph_view::{lane_color, status_color};
+use crate::ui::i18n::{self, tr};
+use crate::ui::icons::Ic;
 
 use super::{AppView, ConfirmAction, PromptKind};
 
@@ -71,7 +73,12 @@ impl AppView {
             .px_3()
             .child(
                 DropdownButton::new("branch-menu")
-                    .button(Button::new("branch-button").ghost().label(branch_label))
+                    .button(
+                        Button::new("branch-button")
+                            .ghost()
+                            .icon(Ic::Branch)
+                            .label(branch_label),
+                    )
                     .dropdown_menu(move |menu, window, cx| {
                         let mut result = menu;
                         // 本地分支：点击切换，当前分支打勾并展示 tracking 状态。
@@ -91,7 +98,8 @@ impl AppView {
                             );
                         }
                         result = result.separator();
-                        result = result.item(PopupMenuItem::new("＋ New branch…").on_click({
+                        result = result.item(
+                            PopupMenuItem::new(tr("New Branch…", "新建分支…")).on_click({
                             let weak = weak.clone();
                             move |_, _, cx| {
                                 let _ = weak.update(cx, |this, cx| {
@@ -100,7 +108,11 @@ impl AppView {
                             }
                         }));
                         result = result.item(
-                            PopupMenuItem::new("✎ Rename current branch…").on_click({
+                            PopupMenuItem::new(tr(
+                                "Rename Current Branch…",
+                                "重命名当前分支…",
+                            ))
+                            .on_click({
                                 let weak = weak.clone();
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
@@ -110,7 +122,11 @@ impl AppView {
                             }),
                         );
                         result = result.item(
-                            PopupMenuItem::new("⇪ Force push (with lease)").on_click({
+                            PopupMenuItem::new(tr(
+                                "Force Push (with lease)",
+                                "强制推送（含保护检查）",
+                            ))
+                            .on_click({
                                 let weak = weak.clone();
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
@@ -125,8 +141,11 @@ impl AppView {
                         // 当前分支的 upstream 管理：设置 / 取消。
                         if let Some(name) = current.clone() {
                             result = result.item(
-                                PopupMenuItem::new(format!("⇅ Set upstream of {name}…"))
-                                    .on_click({
+                                PopupMenuItem::new(format!(
+                                    "{} {name}…",
+                                    tr("Set upstream of", "设置上游分支：")
+                                ))
+                                .on_click({
                                         let weak = weak.clone();
                                         let name = name.clone();
                                         move |_, _, cx| {
@@ -144,7 +163,8 @@ impl AppView {
                             if let Some(upstream) = current_upstream.clone() {
                                 result = result.item(
                                     PopupMenuItem::new(format!(
-                                        "⇅ Unset upstream of {name} (now {upstream})"
+                                        "{} {name} ({upstream})",
+                                        tr("Unset upstream of", "取消上游分支：")
                                     ))
                                     .on_click({
                                         let weak = weak.clone();
@@ -166,13 +186,24 @@ impl AppView {
                             let name = branch.name.clone();
                             let target = current.clone().unwrap_or_else(|| "HEAD".to_string());
                             let merge_specs = [
-                                (format!("⇄ Merge {name} into {target}"), MergeMode::Default),
                                 (
-                                    format!("⇄ Merge {name} into {target} (no ff)…"),
+                                    format!("{} {name} → {target}", tr("Merge", "合并")),
+                                    MergeMode::Default,
+                                ),
+                                (
+                                    format!(
+                                        "{} {name} → {target} {}",
+                                        tr("Merge", "合并"),
+                                        tr("(no ff)…", "（非快进）…")
+                                    ),
                                     MergeMode::NoFastForward,
                                 ),
                                 (
-                                    format!("⇄ Merge {name} into {target} (ff only)"),
+                                    format!(
+                                        "{} {name} → {target} {}",
+                                        tr("Merge", "合并"),
+                                        tr("(ff only)", "（仅快进）")
+                                    ),
                                     MergeMode::FastForwardOnly,
                                 ),
                             ];
@@ -198,7 +229,8 @@ impl AppView {
                             }
                             result = result.item(
                                 PopupMenuItem::new(format!(
-                                    "⇅ Rebase onto {name}…"
+                                    "{} {name}…",
+                                    tr("Rebase onto", "变基到")
                                 ))
                                 .on_click({
                                     let weak = weak.clone();
@@ -211,7 +243,8 @@ impl AppView {
                                 }),
                             );
                             let compare_label = format!(
-                                "⇋ Compare {name} with {}",
+                                "{} {name} ↔ {}",
+                                tr("Compare", "比较"),
                                 current.clone().unwrap_or_else(|| "HEAD".to_string())
                             );
                             result = result.item(PopupMenuItem::new(compare_label).on_click({
@@ -224,7 +257,8 @@ impl AppView {
                                 }
                             }));
                             result = result.item(PopupMenuItem::new(format!(
-                                "✎ Rename {name}…"
+                                "{} {name}…",
+                                tr("Rename", "重命名")
                             )).on_click({
                                 let weak = weak.clone();
                                 let name = name.clone();
@@ -234,7 +268,10 @@ impl AppView {
                                     });
                                 }
                             }));
-                            result = result.item(PopupMenuItem::new(format!("✕ {name}")).on_click(
+                            result = result.item(PopupMenuItem::new(format!(
+                                "{} {name}",
+                                tr("Delete", "删除")
+                            )).on_click(
                                 {
                                     let weak = weak.clone();
                                     move |_, _, cx| {
@@ -252,8 +289,11 @@ impl AppView {
                             // 每个本地分支的 upstream 管理。
                             let name = branch.name.clone();
                             result = result.item(
-                                PopupMenuItem::new(format!("⇅ Set upstream of {name}…"))
-                                    .on_click({
+                                PopupMenuItem::new(format!(
+                                    "{} {name}…",
+                                    tr("Set upstream of", "设置上游分支：")
+                                ))
+                                .on_click({
                                         let weak = weak.clone();
                                         let name = name.clone();
                                         move |_, _, cx| {
@@ -271,7 +311,8 @@ impl AppView {
                             if let Some(upstream) = branch.upstream.clone() {
                                 result = result.item(
                                     PopupMenuItem::new(format!(
-                                        "⇅ Unset upstream of {name} (now {upstream})"
+                                        "{} {name} ({upstream})",
+                                        tr("Unset upstream of", "取消上游分支：")
                                     ))
                                     .on_click({
                                         let weak = weak.clone();
@@ -295,7 +336,10 @@ impl AppView {
                             let weak = weak.clone();
                             let current = current.clone();
                             result = result.separator();
-                            result = result.item(PopupMenuItem::label("Remote branches"));
+                            result = result.item(PopupMenuItem::label(tr(
+                                "Remote Branches",
+                                "远程分支",
+                            )));
                             // 分组顺序：先 remote_list（git remote -v 输出序），再补缺失组。
                             let mut groups: Vec<String> = remote_list
                                 .iter()
@@ -350,8 +394,9 @@ impl AppView {
                         }
                         // 远程仓库管理：Add / Prune / Remove。
                         result = result.separator();
-                        result = result.item(PopupMenuItem::label("Remotes"));
-                        result = result.item(PopupMenuItem::new("＋ Add remote…").on_click({
+                        result = result.item(PopupMenuItem::label(tr("Remotes", "远程仓库")));
+                        result = result.item(
+                            PopupMenuItem::new(tr("Add Remote…", "添加远程仓库…")).on_click({
                             let weak = weak.clone();
                             move |_, _, cx| {
                                 let _ = weak.update(cx, |this, cx| {
@@ -362,7 +407,11 @@ impl AppView {
                         for remote in remote_list.iter() {
                             let label = format!("{} → {}", remote.name, remote.url);
                             result = result.item(PopupMenuItem::label(&label));
-                            let prune_label = format!("⇣ Prune {}", remote.name);
+                            let prune_label = format!(
+                                "{} {}",
+                                tr("Prune remote branches of", "清理远程分支："),
+                                remote.name
+                            );
                             result = result.item(PopupMenuItem::new(prune_label).on_click({
                                 let weak = weak.clone();
                                 let name = remote.name.clone();
@@ -372,7 +421,11 @@ impl AppView {
                                     });
                                 }
                             }));
-                            let remove_label = format!("✕ Remove {}", remote.name);
+                            let remove_label = format!(
+                                "{} {}",
+                                tr("Remove remote", "移除远程仓库："),
+                                remote.name
+                            );
                             result = result.item(PopupMenuItem::new(remove_label).on_click({
                                 let weak = weak.clone();
                                 let name = remote.name.clone();
@@ -393,9 +446,16 @@ impl AppView {
             )
             .child(
                 DropdownButton::new("tag-menu")
-                    .button(Button::new("tag-button").ghost().label("Tags"))
+                    .button(
+                        Button::new("tag-button")
+                            .ghost()
+                            .icon(Ic::Tag)
+                            .label(tr("Tags", "标签")),
+                    )
                     .dropdown_menu(move |menu, window, _cx| {
-                        let mut result = menu.item(PopupMenuItem::new("＋ New tag on HEAD…").on_click({
+                        let mut result = menu.item(
+                            PopupMenuItem::new(tr("New Tag on HEAD…", "在 HEAD 上新建标签…"))
+                                .on_click({
                             let weak = tag_weak.clone();
                             move |_, _, cx| {
                                 let _ = weak.update(cx, |this, cx| {
@@ -407,7 +467,11 @@ impl AppView {
                             }
                         }));
                         result = result.item(
-                            PopupMenuItem::new("⇪ Push all tags to origin").on_click({
+                            PopupMenuItem::new(tr(
+                                "Push All Tags to origin",
+                                "推送所有标签到 origin",
+                            ))
+                            .on_click({
                                 let weak = tag_weak.clone();
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| this.push_all_tags(cx));
@@ -425,7 +489,7 @@ impl AppView {
                                     window,
                                     _cx,
                                     move |menu, _window, _cx| {
-                                        menu.item(PopupMenuItem::new("Select commit").on_click({
+                                        menu.item(PopupMenuItem::new(tr("Select Commit", "定位提交")).on_click({
                                             let weak = weak.clone();
                                             let commit_id = commit_id.clone();
                                             move |_, _, cx| {
@@ -435,7 +499,11 @@ impl AppView {
                                             }
                                         }))
                                         .item(
-                                            PopupMenuItem::new("Push tag to origin").on_click({
+                                            PopupMenuItem::new(tr(
+                                                "Push Tag to origin",
+                                                "推送标签到 origin",
+                                            ))
+                                            .on_click({
                                                 let weak = weak.clone();
                                                 let label = label.clone();
                                                 move |_, _, cx| {
@@ -446,7 +514,11 @@ impl AppView {
                                             }),
                                         )
                                         .item(
-                                            PopupMenuItem::new("Edit message…").on_click({
+                                            PopupMenuItem::new(tr(
+                                                "Edit Message…",
+                                                "编辑标签信息…",
+                                            ))
+                                            .on_click({
                                                 let weak = weak.clone();
                                                 let label = label.clone();
                                                 let commit_id = commit_id.clone();
@@ -464,7 +536,11 @@ impl AppView {
                                             }),
                                         )
                                         .item(
-                                            PopupMenuItem::new("Delete tag…").on_click({
+                                            PopupMenuItem::new(tr(
+                                                "Delete Tag…",
+                                                "删除标签…",
+                                            ))
+                                            .on_click({
                                                 let weak = weak.clone();
                                                 let label = label.clone();
                                                 move |_, _, cx| {
@@ -491,16 +567,19 @@ impl AppView {
             .child(
                 DropdownButton::new("branch-filter-menu")
                     .button(
-                        Button::new("branch-filter-button").ghost().label(format!(
-                            "◫ {}",
-                            filter_branch
-                                .clone()
-                                .unwrap_or_else(|| "All branches".to_string())
-                        )),
+                        Button::new("branch-filter-button")
+                            .ghost()
+                            .icon(Ic::Filter)
+                            .label(format!(
+                                "{}",
+                                filter_branch
+                                    .clone()
+                                    .unwrap_or_else(|| tr("All Branches", "所有分支").to_string())
+                            )),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(
-                            PopupMenuItem::new("All branches")
+                            PopupMenuItem::new(tr("All Branches", "所有分支"))
                                 .checked(filter_branch.is_none())
                                 .on_click({
                                     let weak = filter_weak.clone();
@@ -531,10 +610,11 @@ impl AppView {
             .child(
                 Button::new("author-filter")
                     .ghost()
+                    .icon(Ic::User)
                     .label(format!(
-                        "👤 {}",
+                        "{}",
                         if self.state.filter_author.is_empty() {
-                            "All authors".to_string()
+                            tr("All Authors", "所有作者").to_string()
                         } else {
                             self.state.filter_author.clone()
                         }
@@ -546,17 +626,20 @@ impl AppView {
             .child(
                 DropdownButton::new("date-filter-menu")
                     .button(
-                        Button::new("date-filter-button").ghost().label(format!(
-                            "📅 {}",
-                            filter_since
-                                .as_ref()
-                                .map(|(label, _)| label.clone())
-                                .unwrap_or_else(|| "All time".to_string())
-                        )),
+                        Button::new("date-filter-button")
+                            .ghost()
+                            .icon(Ic::History)
+                            .label(format!(
+                                "{}",
+                                filter_since
+                                    .as_ref()
+                                    .map(|(label, _)| label.clone())
+                                    .unwrap_or_else(|| tr("All Time", "全部时间").to_string())
+                            )),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(
-                            PopupMenuItem::new("All time")
+                            PopupMenuItem::new(tr("All Time", "全部时间"))
                                 .checked(filter_since.is_none())
                                 .on_click({
                                     let weak = date_weak.clone();
@@ -568,10 +651,10 @@ impl AppView {
                                 }),
                         );
                         let date_specs = [
-                            ("Today", "midnight"),
-                            ("This week", "1 week ago"),
-                            ("This month", "1 month ago"),
-                            ("This year", "1 year ago"),
+                            (tr("Today", "今天"), "midnight"),
+                            (tr("This week", "本周"), "1 week ago"),
+                            (tr("This month", "本月"), "1 month ago"),
+                            (tr("This year", "今年"), "1 year ago"),
                         ];
                         for (label, expr) in date_specs {
                             let checked =
@@ -596,37 +679,43 @@ impl AppView {
             .child(
                 Button::new("goto")
                     .ghost()
-                    .label("→ Go to…")
+                    .icon(Ic::Search)
+                    .label(tr("Go to…", "跳转到…"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::GoTo, cx))),
             )
             .child(
-                Button::new("fetch").ghost().label("Fetch").on_click(
-                    cx.listener(|this, _, _, cx| {
+                Button::new("fetch")
+                    .ghost()
+                    .icon(Ic::Fetch)
+                    .label(tr("Fetch", "抓取"))
+                    .on_click(cx.listener(|this, _, _, cx| {
                         this.run_op_progress(
-                            "Fetch",
-                            "Fetched",
+                            tr("Fetch", "抓取"),
+                            tr("Fetched", "已抓取"),
                             |repo, progress, cancel| repo.fetch_with_control(progress, cancel),
                             cx,
                         )
-                    }),
-                ),
+                    })),
             )
             .child(
                 Button::new("pull")
                     .ghost()
-                    .label("Pull")
+                    .icon(Ic::Pull)
+                    .label(tr("Pull", "拉取"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_pull(cx))),
             )
             .child(
                 Button::new("push")
                     .ghost()
-                    .label("Push")
+                    .icon(Ic::Push)
+                    .label(tr("Push", "推送"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_push(cx))),
             )
             .child(
                 Button::new("stash")
                     .ghost()
-                    .label("Stash")
+                    .icon(Ic::Shelve)
+                    .label(tr("Stash", "贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open_prompt(PromptKind::Stash, cx)
                     })),
@@ -634,28 +723,43 @@ impl AppView {
             .child(
                 Button::new("unstash")
                     .ghost()
-                    .label("Unstash")
+                    .icon(Ic::Unshelve)
+                    .label(tr("Unstash", "恢复贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.run_op("Unstashed", |repo| repo.stash_pop(), cx)
+                        this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx)
                     })),
             )
             .child(
                 Button::new("refresh")
                     .ghost()
-                    .label("Refresh")
+                    .icon(Ic::Refresh)
+                    .label(tr("Refresh", "刷新"))
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
             )
             .child(
                 Button::new("conflicts")
                     .ghost()
-                    .label("Conflicts")
+                    .icon(Ic::Conflict)
+                    .label(tr("Conflicts", "冲突"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_conflicts(cx))),
             )
             .child(
                 Button::new("shelves")
                     .ghost()
-                    .label("Shelves")
+                    .icon(Ic::Changes)
+                    .label(tr("Shelves", "搁置"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
+            )
+            .child(
+                Button::new("language-toggle")
+                    .ghost()
+                    .icon(Ic::Language)
+                    .label(i18n::current().label())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        i18n::toggle();
+                        cx.notify();
+                        this.refresh(cx);
+                    })),
             )
             .when(self.state.rebase.in_progress(), |bar| {
                 bar.child(
@@ -700,7 +804,7 @@ impl AppView {
                 .items_center()
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
-                .child("Loading repository...")
+                .child(tr("Loading repository...", "正在加载仓库..."))
                 .into_any_element();
         }
         let list = self.list.clone();
@@ -727,7 +831,10 @@ impl AppView {
                     .as_deref()
                     == Some(id.as_str());
                 let mut result = menu.item(
-                    PopupMenuItem::new(format!("Checkout {short}")).on_click({
+                    PopupMenuItem::new(format!(
+                        "{} {short}",
+                        tr("Checkout", "检出")
+                    )).on_click({
                         let weak = weak.clone();
                         let id = id.clone();
                         move |_, _, cx| {
@@ -737,7 +844,7 @@ impl AppView {
                         }
                     }),
                 );
-                result = result.item(PopupMenuItem::new("New Branch…").on_click({
+                result = result.item(PopupMenuItem::new(tr("New Branch…", "新建分支…")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -751,7 +858,7 @@ impl AppView {
                         });
                     }
                 }));
-                result = result.item(PopupMenuItem::new("New Tag…").on_click({
+                result = result.item(PopupMenuItem::new(tr("New Tag…", "新建标签…")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -766,7 +873,7 @@ impl AppView {
                     }
                 }));
                 result = result.separator();
-                result = result.item(PopupMenuItem::new("Cherry-pick").on_click({
+                result = result.item(PopupMenuItem::new(tr("Cherry-pick", "摘取提交")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -775,7 +882,7 @@ impl AppView {
                         });
                     }
                 }));
-                result = result.item(PopupMenuItem::new("Revert Commit").on_click({
+                result = result.item(PopupMenuItem::new(tr("Revert Commit", "回滚提交")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -783,7 +890,7 @@ impl AppView {
                     }
                 }));
                 result = result.item(
-                    PopupMenuItem::new("Reset Current Branch to Here…").on_click({
+                    PopupMenuItem::new(tr("Reset Current Branch to Here…", "重置当前分支到此处…")).on_click({
                         let weak = weak.clone();
                         let id = id.clone();
                         move |_, _, cx| {
@@ -798,14 +905,14 @@ impl AppView {
                         }
                     }),
                 );
-                result = result.item(PopupMenuItem::new("Rebase from Here").on_click({
+                result = result.item(PopupMenuItem::new(tr("Rebase from Here", "从这里变基")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
                         let _ = weak.update(cx, |this, cx| this.start_rebase(id.clone(), cx));
                     }
                 }));
-                result = result.item(PopupMenuItem::new("Reword Message…").on_click({
+                result = result.item(PopupMenuItem::new(tr("Reword Message…", "修改提交信息…")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -820,7 +927,7 @@ impl AppView {
                     }
                 }));
                 result = result.separator();
-                result = result.item(PopupMenuItem::new("Diff").on_click({
+                result = result.item(PopupMenuItem::new(tr("Diff", "查看差异")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -830,7 +937,7 @@ impl AppView {
                     }
                 }));
                 result = result.item(
-                    PopupMenuItem::new("Compare with Current Branch").on_click({
+                    PopupMenuItem::new(tr("Compare with Current Branch", "与当前分支比较")).on_click({
                         let weak = weak.clone();
                         let id = id.clone();
                         move |_, _, cx| {
@@ -840,7 +947,7 @@ impl AppView {
                         }
                     }),
                 );
-                result = result.item(PopupMenuItem::new("Copy SHA").on_click({
+                result = result.item(PopupMenuItem::new(tr("Copy SHA", "复制 SHA")).on_click({
                     let weak = weak.clone();
                     let id = id.clone();
                     move |_, _, cx| {
@@ -848,7 +955,7 @@ impl AppView {
                     }
                 }));
                 if is_head {
-                    result = result.item(PopupMenuItem::new("Undo Commit").on_click({
+                    result = result.item(PopupMenuItem::new(tr("Undo Commit", "撤销提交")).on_click({
                         let weak = weak.clone();
                         move |_, _, cx| {
                             let _ = weak.update(cx, |this, cx| {
@@ -859,7 +966,7 @@ impl AppView {
                             });
                         }
                     }));
-                    result = result.item(PopupMenuItem::new("Drop Commit").on_click({
+                    result = result.item(PopupMenuItem::new(tr("Drop Commit", "丢弃提交")).on_click({
                         let weak = weak.clone();
                         move |_, _, cx| {
                             let _ = weak.update(cx, |this, cx| {
@@ -903,7 +1010,7 @@ impl AppView {
                 Button::new(format!("chg-select-{index}"))
                     .ghost()
                     .compact()
-                    .label(if checked { "☑" } else { "☐" })
+                    .label(if checked { "✓" } else { "" })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.toggle_change_selection(&checkbox_path, cx);
@@ -931,7 +1038,7 @@ impl AppView {
             Button::new(format!("chg-diff-{index}"))
                 .ghost()
                 .compact()
-                .label("Δ")
+                .icon(Ic::Diff)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     let path = diff_path.clone();
@@ -948,7 +1055,7 @@ impl AppView {
                 Button::new(format!("chg-discard-{index}"))
                     .ghost()
                     .compact()
-                    .label("↩")
+                    .icon(Ic::Revert)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.open_prompt(
@@ -966,11 +1073,11 @@ impl AppView {
                 Button::new(format!("chg-remove-{index}"))
                     .ghost()
                     .compact()
-                    .label("✕")
+                    .icon(Ic::Delete)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         let path = remove_path.clone();
-                        let message = format!("Removed {path}");
+                        let message = format!("{} {path}", tr("Removed", "已移除"));
                         this.run_op(&message, move |repo| repo.remove_untracked(&path), cx);
                     })),
             );
@@ -995,7 +1102,7 @@ impl AppView {
         let mut rows: Vec<AnyElement> = Vec::new();
         let mut next_index = 0usize;
 
-        let mut section = |label: &'static str, group: &[&Change], accumulator: &mut Vec<AnyElement>| {
+        let mut section = |label: &str, group: &[&Change], accumulator: &mut Vec<AnyElement>| {
             if group.is_empty() {
                 return;
             }
@@ -1024,8 +1131,8 @@ impl AppView {
             .iter()
             .filter(|c| !c.staged)
             .collect();
-        section("Unstaged", &unstaged, &mut rows);
-        section("Staged", &staged, &mut rows);
+        section(tr("Unstaged", "未暂存"), &unstaged, &mut rows);
+        section(tr("Staged", "已暂存"), &staged, &mut rows);
 
         div()
             .flex_1()
@@ -1039,7 +1146,7 @@ impl AppView {
                     .py_2()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("Changes ({count})")),
+                    .child(format!("{} ({count})", tr("Changes", "变更"))),
             )
             .child(
                 div()
@@ -1061,7 +1168,7 @@ impl AppView {
                                 .justify_center()
                                 .text_sm()
                                 .text_color(fg.opacity(0.4))
-                                .child("Working tree clean"),
+                                .child(tr("Working tree clean", "工作区干净")),
                         )
                     }),
             )
@@ -1069,12 +1176,17 @@ impl AppView {
 
     pub(crate) fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
-        let amend_label = if self.state.amend { "✓ Amend" } else { "Amend" };
+        let amend = tr("Amend", "修正提交");
+        let amend_label = if self.state.amend {
+            format!("✓ {amend}")
+        } else {
+            amend.to_string()
+        };
         let selected_count = self.state.selected_changes.len();
         let commit_label = if selected_count > 0 {
-            format!("Commit ({selected_count})")
+            format!("{} ({selected_count})", tr("Commit", "提交"))
         } else {
-            "Commit".to_string()
+            tr("Commit", "提交").to_string()
         };
         div()
             .flex_none()
@@ -1094,7 +1206,7 @@ impl AppView {
                     .child(
                         Button::new("shelve")
                             .ghost()
-                            .label("Shelve…")
+                            .label(tr("Shelve…", "搁置…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.open_prompt(PromptKind::Stash, cx)
                             })),
@@ -1163,7 +1275,7 @@ impl AppView {
                                 Button::new("cancel-op")
                                     .ghost()
                                     .text_xs()
-                                    .label("Cancel")
+                                    .label(tr("Cancel", "取消"))
                                     .on_click(move |_, _, _| {
                                         token.store(true, Ordering::SeqCst);
                                     }),
@@ -1196,7 +1308,7 @@ impl AppView {
                     self.state
                         .current_branch
                         .clone()
-                        .unwrap_or_else(|| "HEAD (detached)".to_string())
+                        .unwrap_or_else(|| tr("HEAD (detached)", "HEAD（分离状态）").to_string())
                 )),
             )
             .when(self.state.ahead > 0, |bar| {
@@ -1216,7 +1328,7 @@ fn remote_branch_actions(
     weak: WeakEntity<AppView>,
 ) -> PopupMenu {
     let menu = menu.item(
-        PopupMenuItem::new(format!("⇥ Checkout {name}")).on_click({
+        PopupMenuItem::new(format!("{} {name}", tr("Checkout", "检出"))).on_click({
             let weak = weak.clone();
             let name = name.to_string();
             move |_, _, cx| {
@@ -1225,7 +1337,8 @@ fn remote_branch_actions(
         }),
     );
     let pull_label = format!(
-        "⇄ Pull {name} into {}",
+        "{} {name} → {}",
+        tr("Pull into", "拉取到"),
         current.clone().unwrap_or_else(|| "HEAD".to_string())
     );
     let menu = menu.item(PopupMenuItem::new(pull_label).on_click({
@@ -1238,7 +1351,7 @@ fn remote_branch_actions(
         }
     }));
     let menu = menu.item(
-        PopupMenuItem::new(format!("⇅ Rebase onto {name}…")).on_click({
+        PopupMenuItem::new(format!("{} {name}…", tr("Rebase onto", "变基到"))).on_click({
             let weak = weak.clone();
             let name = name.to_string();
             move |_, _, cx| {
@@ -1249,7 +1362,8 @@ fn remote_branch_actions(
         }),
     );
     let compare_label = format!(
-        "⇋ Compare {name} with {}",
+        "{} {name} ↔ {}",
+        tr("Compare", "比较"),
         current.unwrap_or_else(|| "HEAD".to_string())
     );
     menu.item(PopupMenuItem::new(compare_label).on_click({

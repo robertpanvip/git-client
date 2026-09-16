@@ -1,3 +1,6 @@
+// Windows release 构建以 GUI 子系统运行，不弹控制台黑框（debug 构建保留控制台便于看日志）。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod ui;
 
 use std::path::PathBuf;

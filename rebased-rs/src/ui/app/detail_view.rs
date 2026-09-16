@@ -9,6 +9,8 @@ use rebased_rs::git::{Change, Commit, Tag};
 
 use crate::ui::commit_list::format_full_time;
 use crate::ui::graph_view::{lane_color, status_color};
+use crate::ui::i18n::tr;
+use crate::ui::icons::Ic;
 
 use super::{AppView, ConfirmAction, PromptKind};
 
@@ -63,7 +65,7 @@ impl AppView {
                 Button::new(format!("detail-blame-{index}"))
                     .ghost()
                     .compact()
-                    .label("B")
+                    .icon(Ic::Blame)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.open_blame(blame_path.clone(), cx);
@@ -73,7 +75,7 @@ impl AppView {
                 Button::new(format!("detail-history-{index}"))
                     .ghost()
                     .compact()
-                    .label("H")
+                    .icon(Ic::History)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.open_file_history(history_path.clone(), cx);
@@ -133,7 +135,7 @@ impl AppView {
                     .child(
                         Button::new("close-detail")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.clear_detail(cx))),
                     ),
             )
@@ -178,7 +180,13 @@ impl AppView {
                         .items_center()
                         .gap_1()
                         .flex_none()
-                        .child(div().flex_none().text_xs().text_color(muted).child("Tags"))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(tr("Tags", "标签")),
+                        )
                         .children(commit_tags.into_iter().map(|tag| {
                             let name = tag.name;
                             div()
@@ -197,7 +205,7 @@ impl AppView {
                                     Button::new(format!("delete-tag-{name}"))
                                         .ghost()
                                         .compact()
-                                        .label("✕")
+                                        .icon(Ic::Delete)
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
                                             this.open_prompt(
@@ -222,21 +230,21 @@ impl AppView {
                         Button::new("detail-cherry-pick")
                             .ghost()
                             .compact()
-                            .label("Cherry-pick")
+                            .label(tr("Cherry-pick", "摘取提交"))
                             .on_click(cx.listener(|this, _, _, cx| this.cherry_pick_selected(cx))),
                     )
                     .child(
                         Button::new("detail-revert")
                             .ghost()
                             .compact()
-                            .label("Revert")
+                            .label(tr("Revert", "回滚"))
                             .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
                     )
                     .child(
                         Button::new("detail-rebase")
                             .ghost()
                             .compact()
-                            .label("Rebase from here")
+                            .label(tr("Rebase from here", "从这里变基"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let base = this
                                     .state
@@ -251,7 +259,7 @@ impl AppView {
                         Button::new("detail-reset")
                             .ghost()
                             .compact()
-                            .label("Reset…")
+                            .label(tr("Reset…", "重置…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let commit_id = this
                                     .state
@@ -266,7 +274,7 @@ impl AppView {
                         Button::new("detail-reword")
                             .ghost()
                             .compact()
-                            .label("Reword…")
+                            .label(tr("Reword…", "改写…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let commit_id = this
                                     .state
@@ -281,7 +289,7 @@ impl AppView {
                         Button::new("detail-diff")
                             .ghost()
                             .compact()
-                            .label("Diff")
+                            .label(tr("Diff", "查看差异"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let id = this
                                     .state
@@ -296,7 +304,7 @@ impl AppView {
                         Button::new("detail-branch")
                             .ghost()
                             .compact()
-                            .label("Branch…")
+                            .label(tr("Branch…", "新建分支…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let start_point = this.state.selected.as_ref().map(|c| c.id.0.clone());
                                 this.open_prompt(PromptKind::NewBranch { start_point }, cx);
@@ -306,7 +314,7 @@ impl AppView {
                         Button::new("detail-tag")
                             .ghost()
                             .compact()
-                            .label("Tag…")
+                            .label(tr("Tag…", "新建标签…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let commit_id = this
                                     .state
@@ -321,14 +329,15 @@ impl AppView {
                         Button::new("detail-checkout")
                             .ghost()
                             .compact()
-                            .label("Checkout")
+                            .label(tr("Checkout", "检出"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let Some(commit) = this.state.selected.clone() else {
                                     return;
                                 };
                                 let id = commit.id.0.clone();
                                 let short = &id[..id.len().min(7)];
-                                let message = format!("Checked out {short}");
+                                let message =
+                                    format!("{} {short}", tr("Checked out", "已检出"));
                                 this.run_op(&message, move |repo| repo.checkout(&id), cx);
                             })),
                     )
@@ -336,7 +345,8 @@ impl AppView {
                         Button::new("detail-copy-sha")
                             .ghost()
                             .compact()
-                            .label("⧉ Copy SHA")
+                            .icon(Ic::Copy)
+                            .label(tr("Copy SHA", "复制 SHA"))
                             .on_click(cx.listener(|this, _, _, cx| this.copy_commit_sha(cx))),
                     )
                     .when(is_head, |row| {
@@ -344,7 +354,8 @@ impl AppView {
                             Button::new("detail-undo-commit")
                                 .ghost()
                                 .compact()
-                                .label("↶ Undo Commit")
+                                .icon(Ic::Undo)
+                                .label(tr("Undo Commit", "撤销提交"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.open_prompt(
                                         PromptKind::Confirm(ConfirmAction::UndoHeadCommit),
@@ -356,7 +367,8 @@ impl AppView {
                             Button::new("detail-drop-commit")
                                 .danger()
                                 .compact()
-                                .label("✕ Drop Commit")
+                                .icon(Ic::Delete)
+                                .label(tr("Drop Commit", "丢弃提交"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.open_prompt(
                                         PromptKind::Confirm(ConfirmAction::DropHeadCommit),
@@ -370,7 +382,8 @@ impl AppView {
                             Button::new("detail-compare")
                                 .ghost()
                                 .compact()
-                                .label("⇄ Compare")
+                                .icon(Ic::Compare)
+                                .label(tr("Compare", "比较"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     let id = this
                                         .state
@@ -388,7 +401,11 @@ impl AppView {
                     .flex_none()
                     .text_xs()
                     .text_color(muted)
-                    .child(format!("Files ({})", self.state.detail_files.len())),
+                    .child(format!(
+                        "{} ({})",
+                        tr("Files", "文件"),
+                        self.state.detail_files.len()
+                    )),
             )
             .child(
                 div()

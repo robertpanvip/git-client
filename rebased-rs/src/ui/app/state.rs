@@ -5,6 +5,8 @@ use rebased_rs::git::{
     HunkChoice, RebaseAction, ReflogEntry, Remote, StashEntry, Tag,
 };
 
+use crate::ui::i18n::tr;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SidebarMode {
     Workspace,
@@ -63,46 +65,68 @@ pub(crate) enum ConfirmAction {
 }
 
 impl ConfirmAction {
-    pub(crate) fn title(&self) -> &'static str {
+    pub(crate) fn title(&self) -> String {
         match self {
-            Self::ForcePush => "Force push",
-            Self::DeleteBranch { .. } => "Delete branch",
-            Self::DeleteTag { .. } => "Delete tag",
-            Self::RemoveRemote { .. } => "Remove remote",
-            Self::DropHeadCommit => "Drop HEAD commit",
-            Self::UndoHeadCommit => "Undo HEAD commit",
-            Self::DiscardChanges { .. } => "Discard changes",
+            Self::ForcePush => tr("Force push", "强制推送").to_string(),
+            Self::DeleteBranch { .. } => tr("Delete branch", "删除分支").to_string(),
+            Self::DeleteTag { .. } => tr("Delete tag", "删除标签").to_string(),
+            Self::RemoveRemote { .. } => tr("Remove remote", "移除远程仓库").to_string(),
+            Self::DropHeadCommit => tr("Drop HEAD commit", "丢弃 HEAD 提交").to_string(),
+            Self::UndoHeadCommit => tr("Undo HEAD commit", "撤销 HEAD 提交").to_string(),
+            Self::DiscardChanges { .. } => tr("Discard changes", "丢弃更改").to_string(),
         }
     }
 
     pub(crate) fn hint(&self) -> String {
         match self {
-            Self::ForcePush => "This rewrites the remote branch history. Commits that only exist on the remote may be lost.".to_string(),
-            Self::DeleteBranch { name } => {
-                format!("Branch {name} will be deleted permanently.")
-            }
-            Self::DeleteTag { name } => format!("Tag {name} will be deleted permanently."),
-            Self::RemoveRemote { name } => {
-                format!("Remote {name} will be removed from this repository.")
-            }
-            Self::DropHeadCommit => "The HEAD commit will be removed from history. Its changes are lost.".to_string(),
-            Self::UndoHeadCommit => {
-                "The HEAD commit will be undone. Its changes stay staged in the working tree.".to_string()
-            }
-            Self::DiscardChanges { path } => {
-                format!("All uncommitted changes in {path} will be lost.")
-            }
+            Self::ForcePush => tr(
+                "This rewrites the remote branch history. Commits that only exist on the remote may be lost.",
+                "这将改写远程分支历史，仅存在于远程的提交可能丢失。",
+            )
+            .to_string(),
+            Self::DeleteBranch { name } => format!(
+                "{} {name} {}",
+                tr("Branch", "分支"),
+                tr("will be deleted permanently.", "将被永久删除。")
+            ),
+            Self::DeleteTag { name } => format!(
+                "{} {name} {}",
+                tr("Tag", "标签"),
+                tr("will be deleted permanently.", "将被永久删除。")
+            ),
+            Self::RemoveRemote { name } => format!(
+                "{} {name} {}",
+                tr("Remote", "远程仓库"),
+                tr("will be removed from this repository.", "将从本仓库中移除。")
+            ),
+            Self::DropHeadCommit => tr(
+                "The HEAD commit will be removed from history. Its changes are lost.",
+                "HEAD 提交将从历史中移除，其更改将丢失。",
+            )
+            .to_string(),
+            Self::UndoHeadCommit => tr(
+                "The HEAD commit will be undone. Its changes stay staged in the working tree.",
+                "HEAD 提交将被撤销，其更改保留在工作区暂存中。",
+            )
+            .to_string(),
+            Self::DiscardChanges { path } => format!(
+                "{} ({path}) {}",
+                tr("All uncommitted changes in", "所有未提交的更改"),
+                tr("will be lost.", "将丢失。")
+            ),
         }
     }
 
-    pub(crate) fn confirm_label(&self) -> &'static str {
+    pub(crate) fn confirm_label(&self) -> String {
         match self {
-            Self::ForcePush => "Force push",
-            Self::DeleteBranch { .. } | Self::DeleteTag { .. } => "Delete",
-            Self::RemoveRemote { .. } => "Remove",
-            Self::DropHeadCommit => "Drop",
-            Self::UndoHeadCommit => "Undo",
-            Self::DiscardChanges { .. } => "Discard",
+            Self::ForcePush => tr("Force push", "强制推送").to_string(),
+            Self::DeleteBranch { .. } | Self::DeleteTag { .. } => {
+                tr("Delete", "删除").to_string()
+            }
+            Self::RemoveRemote { .. } => tr("Remove", "移除").to_string(),
+            Self::DropHeadCommit => tr("Drop", "丢弃").to_string(),
+            Self::UndoHeadCommit => tr("Undo", "撤销").to_string(),
+            Self::DiscardChanges { .. } => tr("Discard", "丢弃").to_string(),
         }
     }
 }
@@ -272,7 +296,7 @@ impl Default for AppState {
             history_path: String::new(),
             history_commits: Vec::new(),
             reflog_entries: Vec::new(),
-            status_message: "Ready".to_string(),
+            status_message: tr("Ready", "就绪").to_string(),
             error: None,
             loading: true,
             busy: None,

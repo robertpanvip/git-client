@@ -15,6 +15,8 @@ use rebased_rs::git::{HunkChoice, ResetMode};
 
 use crate::ui::blame_view::{render_blame, BlameJump};
 use crate::ui::diff_view::{render_diff_files, HunkAction};
+use crate::ui::i18n::tr;
+use crate::ui::icons::Ic;
 
 use super::actions::FocusComposer;
 use super::{AppView, DiffSource, SidebarMode};
@@ -63,20 +65,23 @@ impl AppView {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .child("Interactive Rebase"),
+                            .child(tr("Interactive Rebase", "交互式变基")),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child(format!("onto {short_base}…")),
+                            .child(format!("{} {short_base}…", tr("onto", "变基到"))),
                     ),
             )
             .child(
                 div()
                     .text_xs()
                     .text_color(muted)
-                    .child("Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Drag rows or use ↑ ↓ to reorder."),
+                    .child(tr(
+                        "Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Drag rows or use ↑ ↓ to reorder.",
+                        "点击操作循环切换 挑选 → 压缩 → 修整 → 丢弃 → 编辑 → 改写。拖动行或用 ↑ ↓ 调整顺序。",
+                    )),
             );
 
         if plan.is_empty() {
@@ -84,7 +89,7 @@ impl AppView {
                 div()
                     .text_xs()
                     .text_color(muted)
-                    .child("No commits between base and HEAD."),
+                    .child(tr("No commits between base and HEAD.", "基点与 HEAD 之间没有提交。")),
             );
         }
 
@@ -97,7 +102,8 @@ impl AppView {
                 _ => format!("{short} {}", action.subject),
             };
             // on_drag 的 constructor 是 Fn，可能被多次调用，label 按次克隆。
-            let drag_label: SharedString = format!("Move {short}").into();
+            let drag_label: SharedString =
+                format!("{} {short}", tr("Move", "移动")).into();
             panel = panel.child(
                 div()
                     .id(("rebase-row", index))
@@ -140,7 +146,7 @@ impl AppView {
                         Button::new(("rebase-edit", index))
                             .ghost()
                             .compact()
-                            .label("✎ Edit")
+                            .icon(Ic::Edit)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_rebase_edit(index, window, cx)
                             })),
@@ -175,7 +181,10 @@ impl AppView {
                 .child(
                     Checkbox::new("rebase-autosquash")
                         .checked(self.state.rebase_autosquash)
-                        .label("Autosquash fixup!/squash! commits")
+                        .label(tr(
+                            "Autosquash fixup!/squash! commits",
+                            "自动压缩 fixup!/squash! 提交",
+                        ))
                         .on_click(cx.listener(|this, checked: &bool, _, cx| {
                             this.toggle_rebase_autosquash(*checked, cx)
                         })),
@@ -189,14 +198,14 @@ impl AppView {
                             Button::new("rebase-start")
                                 .primary()
                                 .compact()
-                                .label("Start Rebase")
+                                .label(tr("Start Rebase", "开始变基"))
                                 .on_click(cx.listener(|this, _, _, cx| this.apply_rebase(cx))),
                         )
                         .child(
                             Button::new("rebase-cancel")
                                 .ghost()
                                 .compact()
-                                .label("Cancel")
+                                .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
                         ),
                 ),
@@ -222,16 +231,22 @@ impl AppView {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .child("Conflicts"),
+                            .child(tr("Conflicts", "冲突")),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(muted)
                             .child(if self.state.merge_in_progress {
-                                "Merge is paused. Resolve conflicts, then continue the merge."
+                                tr(
+                                    "Merge is paused. Resolve conflicts, then continue the merge.",
+                                    "合并已暂停。解决冲突后继续合并。",
+                                )
                             } else {
-                                "Rebase is paused. Resolve conflicts, then continue the rebase."
+                                tr(
+                                    "Rebase is paused. Resolve conflicts, then continue the rebase.",
+                                    "变基已暂停。解决冲突后继续变基。",
+                                )
                             }),
                     ),
             );
@@ -239,11 +254,16 @@ impl AppView {
         if self.state.conflict_files.is_empty() {
             let message = if let Some(sha) = self.state.rebase.stopped_commit() {
                 format!(
-                    "Rebase stopped for editing at {}… Make changes, amend or commit, then click Continue Rebase.",
-                    &sha[..sha.len().min(7)]
+                    "{} {}… {}",
+                    tr("Rebase stopped for editing at", "变基在此处暂停编辑："),
+                    &sha[..sha.len().min(7)],
+                    tr(
+                        "Make changes, amend or commit, then click Continue Rebase.",
+                        "修改、修正或提交后，点击“继续变基”。",
+                    )
                 )
             } else {
-                "No conflicted files.".to_string()
+                tr("No conflicted files.", "没有冲突文件。").to_string()
             };
             panel = panel.child(div().text_xs().text_color(muted).child(message));
         }
@@ -275,7 +295,7 @@ impl AppView {
                         Button::new(("take-ours", index))
                             .ghost()
                             .compact()
-                            .label("Take ours")
+                            .label(tr("Take ours", "采用我们的"))
                             .on_click(cx.listener({
                                 let path = file.path.clone();
                                 move |this, _, _, cx| {
@@ -287,7 +307,7 @@ impl AppView {
                         Button::new(("take-theirs", index))
                             .ghost()
                             .compact()
-                            .label("Take theirs")
+                            .label(tr("Take theirs", "采用他们的"))
                             .on_click(cx.listener({
                                 let path = file.path.clone();
                                 move |this, _, _, cx| {
@@ -305,32 +325,41 @@ impl AppView {
                         .text_xs()
                         .text_color(muted)
                         .child(
-                            "No textual hunks in this file. Use the buttons above to take one side.",
+                            tr(
+                                "No textual hunks in this file. Use the buttons above to take one side.",
+                                "该文件没有文本冲突块。使用上方按钮选择一侧。",
+                            ),
                         ),
                 );
             }
             for (index, hunk) in self.state.conflict_hunks.iter().enumerate() {
                 let ours_text = if hunk.ours.is_empty() {
-                    "(empty)".to_string()
+                    tr("(empty)", "（空）").to_string()
                 } else {
                     hunk.ours.join("\n")
                 };
                 let theirs_text = if hunk.theirs.is_empty() {
-                    "(empty)".to_string()
+                    tr("(empty)", "（空）").to_string()
                 } else {
                     hunk.theirs.join("\n")
                 };
                 let ours_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Ours)) => "✓ Use ours".to_string(),
-                    _ => "Use ours".to_string(),
+                    Some(Some(HunkChoice::Ours)) => {
+                        format!("✓ {}", tr("Use ours", "采用我们的"))
+                    }
+                    _ => tr("Use ours", "采用我们的").to_string(),
                 };
                 let theirs_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Theirs)) => "✓ Use theirs".to_string(),
-                    _ => "Use theirs".to_string(),
+                    Some(Some(HunkChoice::Theirs)) => {
+                        format!("✓ {}", tr("Use theirs", "采用他们的"))
+                    }
+                    _ => tr("Use theirs", "采用他们的").to_string(),
                 };
                 let both_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Both)) => "✓ Use both".to_string(),
-                    _ => "Use both".to_string(),
+                    Some(Some(HunkChoice::Both)) => {
+                        format!("✓ {}", tr("Use both", "两者都采用"))
+                    }
+                    _ => tr("Use both", "两者都采用").to_string(),
                 };
                 let chose_ours = self
                     .state
@@ -355,13 +384,25 @@ impl AppView {
                         format!("{}\n{}", ours_text, theirs_text)
                     }
                 } else {
-                    "— unresolved —".to_string()
+                    tr("— unresolved —", "— 未解决 —").to_string()
                 };
                 let result_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Ours)) => "Result · ours".to_string(),
-                    Some(Some(HunkChoice::Theirs)) => "Result · theirs".to_string(),
-                    Some(Some(HunkChoice::Both)) => "Result · both".to_string(),
-                    _ => "Result".to_string(),
+                    Some(Some(HunkChoice::Ours)) => format!(
+                        "{} · {}",
+                        tr("Result", "结果"),
+                        tr("ours", "我们的")
+                    ),
+                    Some(Some(HunkChoice::Theirs)) => format!(
+                        "{} · {}",
+                        tr("Result", "结果"),
+                        tr("theirs", "他们的")
+                    ),
+                    Some(Some(HunkChoice::Both)) => format!(
+                        "{} · {}",
+                        tr("Result", "结果"),
+                        tr("both", "两者")
+                    ),
+                    _ => tr("Result", "结果").to_string(),
                 };
                 panel = panel.child(
                     div()
@@ -376,7 +417,12 @@ impl AppView {
                             div()
                                 .text_xs()
                                 .font_weight(FontWeight::MEDIUM)
-                                .child(format!("Hunk {} in {}", index + 1, path)),
+                                .child(format!(
+                                    "{} {} · {}",
+                                    tr("Hunk", "冲突块"),
+                                    index + 1,
+                                    path
+                                )),
                         )
                         .child(
                             div()
@@ -435,7 +481,7 @@ impl AppView {
                                                 .text_xs()
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(muted)
-                                                .child("Yours"),
+                                                .child(tr("Yours", "你的")),
                                         )
                                         .child(div().text_xs().child(ours_text)),
                                 )
@@ -475,7 +521,7 @@ impl AppView {
                                                 .text_xs()
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(muted)
-                                                .child("Theirs"),
+                                                .child(tr("Theirs", "他们的")),
                                         )
                                         .child(div().text_xs().child(theirs_text)),
                                 ),
@@ -487,7 +533,7 @@ impl AppView {
                     Button::new("conflict-apply")
                         .primary()
                         .compact()
-                        .label("Apply Resolutions")
+                        .label(tr("Apply Resolutions", "应用解决结果"))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.apply_conflict_resolutions(cx)
                         })),
@@ -516,13 +562,16 @@ impl AppView {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .child("Shelves"),
+                            .child(tr("Shelves", "搁置")),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child("Stashed workspaces. Unshelve to bring changes back."),
+                            .child(tr(
+                                "Stashed workspaces. Unshelve to bring changes back.",
+                                "已贮藏的工作区。恢复搁置以找回更改。",
+                            )),
                     ),
             );
 
@@ -532,7 +581,10 @@ impl AppView {
                     .text_xs()
                     .text_color(muted)
                     .child(
-                        "Nothing on the shelf. Use Shelve in the commit composer.",
+                        tr(
+                            "Nothing on the shelf. Use Shelve in the commit composer.",
+                            "搁置区为空。在提交区使用“搁置”。",
+                        ),
                     ),
             );
         }
@@ -558,7 +610,7 @@ impl AppView {
                         Button::new(("shelve-apply", index))
                             .ghost()
                             .compact()
-                            .label("Unshelve")
+                            .label(tr("Unshelve", "恢复搁置"))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.unshelve_at(index, cx)
                             })),
@@ -567,7 +619,7 @@ impl AppView {
                         Button::new(("shelve-drop", index))
                             .ghost()
                             .compact()
-                            .label("Drop")
+                            .label(tr("Drop", "丢弃"))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.drop_shelve_at(index, cx)
                             })),
@@ -579,7 +631,7 @@ impl AppView {
             Button::new("shelve-reload")
                 .ghost()
                 .compact()
-                .label("Reload")
+                .label(tr("Reload", "刷新"))
                 .on_click(cx.listener(|this, _, _, cx| this.reload_shelves(cx))),
         )
     }
@@ -610,23 +662,34 @@ impl AppView {
                             .whitespace_nowrap()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("Compare · {mine} ←→ {theirs}")),
+                            .child(format!(
+                                "{} · {mine} ←→ {theirs}",
+                                tr("Compare", "比较")
+                            )),
                     )
                     .child(
                         Button::new("compare-close")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
 
         let sections = [
             (
-                format!("{mine} only ({})", self.state.compare_ahead.len()),
+                format!(
+                    "{} {mine} ({})",
+                    tr("Only in", "仅存在于"),
+                    self.state.compare_ahead.len()
+                ),
                 &self.state.compare_ahead,
             ),
             (
-                format!("{theirs} only ({})", self.state.compare_behind.len()),
+                format!(
+                    "{} {theirs} ({})",
+                    tr("Only in", "仅存在于"),
+                    self.state.compare_behind.len()
+                ),
                 &self.state.compare_behind,
             ),
         ];
@@ -646,7 +709,7 @@ impl AppView {
                         .px_2()
                         .text_xs()
                         .text_color(muted)
-                        .child("None"),
+                        .child(tr("None", "无")),
                 );
             }
             for commit in commits.iter() {
@@ -766,9 +829,9 @@ impl AppView {
                                 Button::new("diff-ignore-ws")
                                     .ghost()
                                     .label(if self.state.ignore_whitespace {
-                                        "☑ Ignore whitespace"
+                                        format!("✓ {}", tr("Ignore whitespace", "忽略空白"))
                                     } else {
-                                        "☐ Ignore whitespace"
+                                        tr("Ignore whitespace", "忽略空白").to_string()
                                     })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.toggle_ignore_whitespace(cx)
@@ -778,9 +841,9 @@ impl AppView {
                                 Button::new("diff-view-mode")
                                     .ghost()
                                     .label(if self.state.diff_side_by_side {
-                                        "⇔ Side-by-side"
+                                        tr("⇔ Side-by-side", "⇔ 并排对比")
                                     } else {
-                                        "≡ Unified"
+                                        tr("≡ Unified", "≡ 统一视图")
                                     })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.state.diff_side_by_side =
@@ -793,7 +856,7 @@ impl AppView {
                         header.child(
                             Button::new("diff-blame")
                                 .ghost()
-                                .label("Blame")
+                                .label(tr("Blame", "追溯"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     let path = this.state.diff_path.clone().unwrap_or_default();
                                     this.open_blame(path, cx);
@@ -806,7 +869,7 @@ impl AppView {
                             header.child(
                                 Button::new("diff-edit")
                                     .ghost()
-                                    .label("✎ Edit")
+                                    .icon(Ic::Edit)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_diff_edit(window, cx)
                                     })),
@@ -818,7 +881,7 @@ impl AppView {
                             .child(
                                 Button::new("diff-save")
                                     .ghost()
-                                    .label("Save")
+                                    .label(tr("Save", "保存"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.save_diff_edit(cx)),
                                     ),
@@ -826,7 +889,7 @@ impl AppView {
                             .child(
                                 Button::new("diff-cancel")
                                     .ghost()
-                                    .label("Cancel")
+                                    .label(tr("Cancel", "取消"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx)),
                                     ),
@@ -835,7 +898,7 @@ impl AppView {
                     .child(
                         Button::new("diff-close")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
@@ -859,16 +922,16 @@ impl AppView {
                     .justify_center()
                     .text_sm()
                     .text_color(muted)
-                    .child("No changes"),
+                    .child(tr("No changes", "无更改")),
             );
         } else {
             let hunk_controls: Option<(&'static str, HunkAction)> =
                 match self.state.diff_source {
                     Some(source @ (DiffSource::Staged | DiffSource::Unstaged)) => {
                         let label = if source == DiffSource::Staged {
-                            "Unstage"
+                            tr("Unstage", "取消暂存")
                         } else {
-                            "Stage"
+                            tr("Stage", "暂存")
                         };
                         let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
                         Some((
@@ -925,12 +988,12 @@ impl AppView {
                             .whitespace_nowrap()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("Blame · {path}")),
+                            .child(format!("{} · {path}", tr("Blame", "追溯"))),
                     )
                     .child(
                         Button::new("blame-close")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
@@ -944,7 +1007,7 @@ impl AppView {
                     .justify_center()
                     .text_sm()
                     .text_color(muted)
-                    .child("Nothing to blame"),
+                    .child(tr("Nothing to blame", "无追溯信息")),
             );
         } else {
             let on_commit: BlameJump = {
@@ -993,12 +1056,12 @@ impl AppView {
                             .whitespace_nowrap()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("History · {path}")),
+                            .child(format!("{} · {path}", tr("History", "历史"))),
                     )
                     .child(
                         Button::new("history-close")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
@@ -1012,7 +1075,7 @@ impl AppView {
                     .justify_center()
                     .text_sm()
                     .text_color(muted)
-                    .child("No history for this file"),
+                    .child(tr("No history for this file", "该文件没有历史记录")),
             );
         } else {
             for commit in &self.state.history_commits {
@@ -1083,19 +1146,23 @@ impl AppView {
                             .whitespace_nowrap()
                             .text_sm()
                             .text_color(muted)
-                            .child("Reflog · recent operations"),
+                            .child(format!(
+                                "{} · {}",
+                                tr("Reflog", "引用日志"),
+                                tr("recent operations", "最近操作")
+                            )),
                     )
                     .child(
                         Button::new("reflog-refresh")
                             .ghost()
                             .compact()
-                            .label("↻")
+                            .icon(Ic::Refresh)
                             .on_click(cx.listener(|this, _, _, cx| this.open_reflog(cx))),
                     )
                     .child(
                         Button::new("reflog-close")
                             .ghost()
-                            .label("✕")
+                            .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
@@ -1109,7 +1176,7 @@ impl AppView {
                     .justify_center()
                     .text_sm()
                     .text_color(muted)
-                    .child("No reflog entries"),
+                    .child(tr("No reflog entries", "没有引用日志")),
             );
         } else {
             for entry in &self.state.reflog_entries {
@@ -1170,28 +1237,28 @@ impl AppView {
 
         let mut items: Vec<AnyElement> = Vec::new();
         items.push(
-            self.palette_item("pal-commit", "Commit changes…", "Ctrl+K", cx, |this, window, cx| {
+            self.palette_item("pal-commit", tr("Commit changes…", "提交更改…"), "Ctrl+K", cx, |this, window, cx| {
                 this.on_focus_composer(&FocusComposer, window, cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-push", "Push", "Ctrl+Shift+K", cx, |this, _, cx| {
+            self.palette_item("pal-push", tr("Push", "推送"), "Ctrl+Shift+K", cx, |this, _, cx| {
                 this.do_push(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-pull", "Pull", "Ctrl+T", cx, |this, _, cx| {
+            self.palette_item("pal-pull", tr("Pull", "拉取"), "Ctrl+T", cx, |this, _, cx| {
                 this.do_pull(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-fetch", "Fetch", "", cx, |this, _, cx| {
+            self.palette_item("pal-fetch", tr("Fetch", "抓取"), "", cx, |this, _, cx| {
                 this.run_op_progress(
-                    "Fetch",
-                    "Fetched",
+                    tr("Fetch", "抓取"),
+                    tr("Fetched", "已抓取"),
                     |repo, progress, cancel| repo.fetch_with_control(progress, cancel),
                     cx,
                 );
@@ -1199,19 +1266,19 @@ impl AppView {
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-stash", "Stash changes…", "", cx, |this, _, cx| {
+            self.palette_item("pal-stash", tr("Stash changes…", "贮藏更改…"), "", cx, |this, _, cx| {
                 this.open_prompt(super::PromptKind::Stash, cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-unstash", "Unstash latest", "", cx, |this, _, cx| {
-                this.run_op("Unstashed", |repo| repo.stash_pop(), cx);
+            self.palette_item("pal-unstash", tr("Unstash latest", "恢复最近的贮藏"), "", cx, |this, _, cx| {
+                this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-branch", "New branch…", "", cx, |this, _, cx| {
+            self.palette_item("pal-branch", tr("New branch…", "新建分支…"), "", cx, |this, _, cx| {
                 this.open_prompt(
                     super::PromptKind::NewBranch { start_point: None },
                     cx,
@@ -1221,7 +1288,7 @@ impl AppView {
         );
         if let Some(head) = head {
             items.push(
-                self.palette_item("pal-tag", "New tag on HEAD…", "", cx, move |this, _, cx| {
+                self.palette_item("pal-tag", tr("New tag on HEAD…", "在 HEAD 上新建标签…"), "", cx, move |this, _, cx| {
                     this.open_prompt(
                         super::PromptKind::NewTag {
                             commit_id: head.clone(),
@@ -1233,37 +1300,37 @@ impl AppView {
             );
         }
         items.push(
-            self.palette_item("pal-goto", "Go to commit…", "", cx, |this, _, cx| {
+            self.palette_item("pal-goto", tr("Go to commit…", "跳转到提交…"), "", cx, |this, _, cx| {
                 this.open_prompt(super::PromptKind::GoTo, cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-blame", "Blame current file", "Ctrl+Alt+B", cx, |this, _, cx| {
+            self.palette_item("pal-blame", tr("Blame current file", "追溯当前文件"), "Ctrl+Alt+B", cx, |this, _, cx| {
                 this.blame_current_file(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-reflog", "Show reflog", "", cx, |this, _, cx| {
+            self.palette_item("pal-reflog", tr("Show reflog", "显示引用日志"), "", cx, |this, _, cx| {
                 this.open_reflog(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-conflicts", "Show conflicts", "Ctrl+Alt+8", cx, |this, _, cx| {
+            self.palette_item("pal-conflicts", tr("Show conflicts", "显示冲突"), "Ctrl+Alt+8", cx, |this, _, cx| {
                 this.open_conflicts(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-shelves", "Show shelves", "Ctrl+Alt+6", cx, |this, _, cx| {
+            self.palette_item("pal-shelves", tr("Show shelves", "显示搁置"), "Ctrl+Alt+6", cx, |this, _, cx| {
                 this.open_shelves(cx);
             })
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-refresh", "Refresh repository", "F5", cx, |this, _, cx| {
+            self.palette_item("pal-refresh", tr("Refresh repository", "刷新仓库"), "F5", cx, |this, _, cx| {
                 this.refresh(cx);
             })
             .into_any_element(),
@@ -1297,7 +1364,7 @@ impl AppView {
                                 .pt_1()
                                 .text_sm()
                                 .font_weight(FontWeight::MEDIUM)
-                                .child("VCS Operations"),
+                                .child(tr("VCS Operations", "VCS 操作")),
                         )
                         .child(
                             div()
@@ -1305,7 +1372,10 @@ impl AppView {
                                 .pb_1()
                                 .text_xs()
                                 .text_color(muted)
-                                .child("Alt+` toggle · Esc to close"),
+                                .child(tr(
+                                    "Alt+` toggle · Esc to close",
+                                    "Alt+` 切换 · Esc 关闭",
+                                )),
                         )
                         .child(div().flex().flex_col().gap_0p5().children(items)),
                 )
@@ -1351,76 +1421,122 @@ impl AppView {
         let muted = cx.theme().muted_foreground;
         let (title, hint): (String, String) = match &kind {
             super::PromptKind::NewBranch { start_point } => (
-                "New branch".to_string(),
+                tr("New branch", "新建分支").to_string(),
                 match start_point {
-                    Some(point) => format!("From commit {}", &point[..point.len().min(7)]),
-                    None => "From current HEAD".to_string(),
+                    Some(point) => format!(
+                        "{} {}",
+                        tr("From commit", "从提交"),
+                        &point[..point.len().min(7)]
+                    ),
+                    None => tr("From current HEAD", "从当前 HEAD").to_string(),
                 },
             ),
             super::PromptKind::NewTag { commit_id } => (
-                "New tag".to_string(),
-                format!("On commit {}", &commit_id[..commit_id.len().min(7)]),
+                tr("New tag", "新建标签").to_string(),
+                format!(
+                    "{} {}",
+                    tr("On commit", "在提交"),
+                    &commit_id[..commit_id.len().min(7)]
+                ),
             ),
             super::PromptKind::EditTag { name, commit_id } => (
-                "Edit tag message".to_string(),
+                tr("Edit tag message", "编辑标签信息").to_string(),
                 format!(
-                    "Rebuild {name} on commit {} with a new annotated message.",
-                    &commit_id[..commit_id.len().min(7)]
+                    "{} {name} @ {} — {}",
+                    tr("Rebuild", "重建"),
+                    &commit_id[..commit_id.len().min(7)],
+                    tr("with a new annotated message", "使用新的附注信息")
                 ),
             ),
             super::PromptKind::Stash => (
-                "Stash changes".to_string(),
-                "Optional message; untracked files are included".to_string(),
+                tr("Stash changes", "贮藏更改").to_string(),
+                tr(
+                    "Optional message; untracked files are included",
+                    "可选信息；未跟踪文件也会被包含",
+                )
+                .to_string(),
             ),
             super::PromptKind::Reword { commit_id } => (
-                "Reword commit".to_string(),
-                format!("New message for {}", &commit_id[..commit_id.len().min(7)]),
-            ),
-            super::PromptKind::RenameBranch => (
-                "Rename branch".to_string(),
-                match &self.state.current_branch {
-                    Some(name) => format!("Rename current branch {name} to:"),
-                    None => "No current branch".to_string(),
-                },
-            ),
-            super::PromptKind::RenameBranchByName { name } => (
-                "Rename branch".to_string(),
-                format!("Rename {name} to:"),
-            ),
-            super::PromptKind::MergeMessage { name } => (
-                "Merge message".to_string(),
-                format!("Merge commit message for merging {name} (no ff):"),
-            ),
-            super::PromptKind::RebaseEdit { .. } => (
-                "Edit commit message".to_string(),
-                "Set the message used when this commit is reworded (or merged by squash).".to_string(),
-            ),
-            super::PromptKind::Reset { commit_id } => (
-                "Reset current branch to here".to_string(),
+                tr("Reword commit", "改写提交").to_string(),
                 format!(
-                    "Move the current branch to {}. Pick a mode: Soft keeps everything staged, Mixed keeps changes unstaged, Hard discards all changes.",
+                    "{} {}",
+                    tr("New message for", "新的提交信息："),
                     &commit_id[..commit_id.len().min(7)]
                 ),
             ),
+            super::PromptKind::RenameBranch => (
+                tr("Rename branch", "重命名分支").to_string(),
+                match &self.state.current_branch {
+                    Some(name) => format!(
+                        "{} {name} →",
+                        tr("Rename current branch", "重命名当前分支")
+                    ),
+                    None => tr("No current branch", "没有当前分支").to_string(),
+                },
+            ),
+            super::PromptKind::RenameBranchByName { name } => (
+                tr("Rename branch", "重命名分支").to_string(),
+                format!("{} {name} →", tr("Rename", "重命名")),
+            ),
+            super::PromptKind::MergeMessage { name } => (
+                tr("Merge message", "合并信息").to_string(),
+                format!(
+                    "{} {name} (no ff):",
+                    tr("Merge commit message for merging", "合并提交信息（非快进）")
+                ),
+            ),
+            super::PromptKind::RebaseEdit { .. } => (
+                tr("Edit commit message", "编辑提交信息").to_string(),
+                tr(
+                    "Set the message used when this commit is reworded (or merged by squash).",
+                    "设置此提交改写（或被 squash 合并）时使用的信息。",
+                )
+                .to_string(),
+            ),
+            super::PromptKind::Reset { commit_id } => (
+                tr("Reset current branch to here", "重置当前分支到此处").to_string(),
+                format!(
+                    "{} {}. {}",
+                    tr("Move the current branch to", "将当前分支移动到"),
+                    &commit_id[..commit_id.len().min(7)],
+                    tr(
+                        "Pick a mode: Soft keeps everything staged, Mixed keeps changes unstaged, Hard discards all changes.",
+                        "选择模式：Soft 保留全部更改并暂存，Mixed 保留更改但取消暂存，Hard 丢弃所有更改。",
+                    ),
+                ),
+            ),
             super::PromptKind::GoTo => (
-                "Go to commit".to_string(),
-                "Enter a hash, branch or tag name to select it in the log.".to_string(),
+                tr("Go to commit", "跳转到提交").to_string(),
+                tr(
+                    "Enter a hash, branch or tag name to select it in the log.",
+                    "输入哈希、分支或标签名以在日志中定位。",
+                )
+                .to_string(),
             ),
             super::PromptKind::FilterAuthor => (
-                "Filter by author".to_string(),
-                "Show only commits whose author matches this text. Leave empty to clear the filter.".to_string(),
+                tr("Filter by author", "按作者过滤").to_string(),
+                tr(
+                    "Show only commits whose author matches this text. Leave empty to clear the filter.",
+                    "仅显示作者匹配的提交。留空以清除过滤。",
+                )
+                .to_string(),
             ),
             super::PromptKind::AddRemote => (
-                "Add remote".to_string(),
-                "Enter the remote name (e.g. origin) and its URL.".to_string(),
+                tr("Add remote", "添加远程仓库").to_string(),
+                tr(
+                    "Enter the remote name (e.g. origin) and its URL.",
+                    "输入远程名称（如 origin）及其 URL。",
+                )
+                .to_string(),
             ),
             super::PromptKind::SetUpstream { branch } => (
-                "Set upstream".to_string(),
-                format!("Upstream of {branch} (e.g. origin/main):"),
+                tr("Set upstream", "设置上游").to_string(),
+                format!(
+                    "{} {branch} (e.g. origin/main):",
+                    tr("Upstream of", "上游分支：")
+                ),
             ),
-            super::PromptKind::Confirm(action) => {
-                (action.title().to_string(), action.hint())
-            }
+            super::PromptKind::Confirm(action) => (action.title(), action.hint()),
         };
 
         let body: Div = match &kind {
@@ -1433,7 +1549,7 @@ impl AppView {
                     .child(
                         Button::new("reset-soft")
                             .primary()
-                            .label("Soft — keep all changes staged")
+                            .label(tr("Soft — keep all changes staged", "Soft — 保留全部更改并暂存"))
                             .on_click(cx.listener({
                                 let target = target.clone();
                                 move |this, _, _, cx| {
@@ -1443,7 +1559,7 @@ impl AppView {
                     )
                     .child(
                         Button::new("reset-mixed")
-                            .label("Mixed — keep changes unstaged")
+                            .label(tr("Mixed — keep changes unstaged", "Mixed — 保留更改但不暂存"))
                             .on_click(cx.listener({
                                 let target = target.clone();
                                 move |this, _, _, cx| {
@@ -1454,7 +1570,7 @@ impl AppView {
                     .child(
                         Button::new("reset-hard")
                             .danger()
-                            .label("Hard — discard all changes")
+                            .label(tr("Hard — discard all changes", "Hard — 丢弃所有更改"))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.reset_branch_to(target.clone(), ResetMode::Hard, cx)
                             })),
@@ -1471,7 +1587,7 @@ impl AppView {
                     .child(
                         Button::new("prompt-cancel")
                             .ghost()
-                            .label("Cancel")
+                            .label(tr("Cancel", "取消"))
                             .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
                     )
                     .child(
@@ -1498,7 +1614,7 @@ impl AppView {
                         .child(
                             Button::new("prompt-cancel")
                                 .ghost()
-                                .label("Cancel")
+                                .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.cancel_prompt(cx)
                                 })),
@@ -1506,7 +1622,7 @@ impl AppView {
                         .child(
                             Button::new("prompt-ok")
                                 .primary()
-                                .label("Add")
+                                .label(tr("Add", "添加"))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.confirm_prompt(window, cx)
                                 })),
@@ -1514,16 +1630,18 @@ impl AppView {
                 ),
             _ => {
                 let ok_label = match &kind {
-                    super::PromptKind::NewBranch { .. } => "Create",
-                    super::PromptKind::NewTag { .. } => "Tag",
-                    super::PromptKind::EditTag { .. } => "Save",
-                    super::PromptKind::Stash => "Stash",
-                    super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => "Reword",
-                    super::PromptKind::RenameBranch => "Rename",
-                    super::PromptKind::GoTo => "Go",
-                    super::PromptKind::FilterAuthor => "Filter",
-                    super::PromptKind::SetUpstream { .. } => "Set",
-                    _ => "OK",
+                    super::PromptKind::NewBranch { .. } => tr("Create", "创建"),
+                    super::PromptKind::NewTag { .. } => tr("Tag", "打标签"),
+                    super::PromptKind::EditTag { .. } => tr("Save", "保存"),
+                    super::PromptKind::Stash => tr("Stash", "贮藏"),
+                    super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => {
+                        tr("Reword", "改写")
+                    }
+                    super::PromptKind::RenameBranch => tr("Rename", "重命名"),
+                    super::PromptKind::GoTo => tr("Go", "跳转"),
+                    super::PromptKind::FilterAuthor => tr("Filter", "过滤"),
+                    super::PromptKind::SetUpstream { .. } => tr("Set", "设置"),
+                    _ => tr("OK", "确定"),
                 };
                 div()
                     .flex()
@@ -1539,7 +1657,7 @@ impl AppView {
                             .child(
                                 Button::new("prompt-cancel")
                                     .ghost()
-                                    .label("Cancel")
+                                    .label(tr("Cancel", "取消"))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.cancel_prompt(cx)
                                     })),
