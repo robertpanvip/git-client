@@ -37,6 +37,13 @@ struct Loaded {
     data: RepoData,
 }
 
+/// X11 窗口图标（Windows 走 exe 内嵌资源、macOS 走 app bundle，均不经过此路径）。
+fn load_window_icon() -> Option<Arc<image::RgbaImage>> {
+    image::load_from_memory(include_bytes!("../../../assets/icon.png"))
+        .ok()
+        .map(|img| Arc::new(img.into_rgba8()))
+}
+
 fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
     let repo = open_backend(path)?;
     let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None, None)?;
@@ -386,10 +393,10 @@ impl Render for AppView {
                     .flex()
                     .flex_row()
                     .overflow_hidden()
+                    .child(self.render_commit_sidebar(cx))
                     .child(self.render_commit_panel(cx))
                     .child(self.render_sidebar(cx)),
             )
-            .child(self.render_composer(cx))
             .child(self.render_statusbar(cx))
             .children(self.render_vcs_palette(cx))
             .children(self.render_prompt_overlay(cx))
@@ -414,6 +421,7 @@ pub fn run(repo_path: PathBuf) {
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                icon: load_window_icon(),
                 ..Default::default()
             };
             settings::log_event("opening main window");

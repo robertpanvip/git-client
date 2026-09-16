@@ -865,6 +865,85 @@ impl AppView {
             })
     }
 
+    /// 左侧 Commit 面板（对齐原版布局）：工作区变更列表 + 底部提交输入区。
+    pub(crate) fn render_commit_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .w(px(theme::COMMIT_PANEL_WIDTH))
+            .flex_none()
+            .min_h_0()
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .child(self.render_workspace(cx))
+            .child(self.render_composer(cx))
+            .into_any_element()
+    }
+
+    /// Log 主区标题行：“Log: <分支>” + 激活过滤摘要（作者/日期）。
+    fn render_log_header(&self, cx: &mut Context<Self>) -> Div {
+        let fg = cx.theme().foreground;
+        let muted = cx.theme().muted_foreground;
+        let branch = self
+            .state
+            .filter_branch
+            .clone()
+            .or_else(|| self.state.current_branch.clone())
+            .unwrap_or_else(|| tr("All Branches", "所有分支").to_string());
+        div()
+            .h(px(theme::LOG_HEADER_HEIGHT))
+            .flex_none()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(format!("{}: {branch}", tr("Log", "日志"))),
+            )
+            .child(div().flex_1())
+            .when(!self.state.filter_author.is_empty(), |header| {
+                header.child(
+                    div()
+                        .px_1()
+                        .rounded(px(theme::RADIUS_SM))
+                        .bg(theme::badge_bg(muted))
+                        .text_xs()
+                        .text_color(fg)
+                        .child(format!(
+                            "{}: {}",
+                            tr("User", "用户"),
+                            self.state.filter_author
+                        )),
+                )
+            })
+            .when(self.state.filter_since.is_some(), |header| {
+                let label = self
+                    .state
+                    .filter_since
+                    .as_ref()
+                    .map(|(label, _)| label.clone())
+                    .unwrap_or_default();
+                header.child(
+                    div()
+                        .px_1()
+                        .rounded(px(theme::RADIUS_SM))
+                        .bg(theme::badge_bg(muted))
+                        .text_xs()
+                        .text_color(fg)
+                        .child(label),
+                )
+            })
+    }
+
     pub(crate) fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.state.loading {
             return div()
@@ -884,177 +963,204 @@ impl AppView {
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(List::new(&self.list))
-            .context_menu(move |menu, _window, cx| {
-                let row = list.read(cx).right_clicked_index().map(|ix| ix.row);
-                let Some(commit) = row.and_then(|row| list.read(cx).delegate().commit_at(row))
-                else {
-                    return menu;
-                };
-                let id = commit.id.0.clone();
-                let short = id[..id.len().min(7)].to_string();
-                let is_head = weak
-                    .upgrade()
-                    .and_then(|app| app.read(cx).state.head_id.clone())
-                    .as_deref()
-                    == Some(id.as_str());
-                let mut result = menu.item(
-                    PopupMenuItem::new(format!("{} {short}", tr("Checkout", "检出"))).on_click({
-                        let weak = weak.clone();
-                        let id = id.clone();
-                        move |_, _, cx| {
-                            let _ =
-                                weak.update(cx, |this, cx| this.checkout_commit(id.clone(), cx));
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .child(self.render_log_header(cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(List::new(&self.list))
+                    .context_menu(move |menu, _window, cx| {
+                        let row = list.read(cx).right_clicked_index().map(|ix| ix.row);
+                        let Some(commit) =
+                            row.and_then(|row| list.read(cx).delegate().commit_at(row))
+                        else {
+                            return menu;
+                        };
+                        let id = commit.id.0.clone();
+                        let short = id[..id.len().min(7)].to_string();
+                        let is_head = weak
+                            .upgrade()
+                            .and_then(|app| app.read(cx).state.head_id.clone())
+                            .as_deref()
+                            == Some(id.as_str());
+                        let mut result = menu.item(
+                            PopupMenuItem::new(format!("{} {short}", tr("Checkout", "检出")))
+                                .on_click({
+                                    let weak = weak.clone();
+                                    let id = id.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.checkout_commit(id.clone(), cx)
+                                        });
+                                    }
+                                }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("New Branch…", "新建分支…")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(
+                                            PromptKind::NewBranch {
+                                                start_point: Some(id.clone()),
+                                            },
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("New Tag…", "新建标签…")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(
+                                            PromptKind::NewTag {
+                                                commit_id: id.clone(),
+                                            },
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.separator();
+                        result = result.item(
+                            PopupMenuItem::new(tr("Cherry-pick", "摘取提交")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.cherry_pick_commit(id.clone(), cx)
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("Revert Commit", "回滚提交")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak
+                                        .update(cx, |this, cx| this.revert_commit(id.clone(), cx));
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr(
+                                "Reset Current Branch to Here…",
+                                "重置当前分支到此处…",
+                            ))
+                            .on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(
+                                            PromptKind::Reset {
+                                                commit_id: id.clone(),
+                                            },
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("Rebase from Here", "从这里变基")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak
+                                        .update(cx, |this, cx| this.start_rebase(id.clone(), cx));
+                                }
+                            }),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("Reword Message…", "修改提交信息…")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(
+                                            PromptKind::Reword {
+                                                commit_id: id.clone(),
+                                            },
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }),
+                        );
+                        result = result.separator();
+                        result =
+                            result.item(PopupMenuItem::new(tr("Diff", "查看差异")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_commit_diff(id.clone(), None, cx)
+                                    });
+                                }
+                            }));
+                        result = result.item(
+                            PopupMenuItem::new(tr("Compare with Current Branch", "与当前分支比较"))
+                                .on_click({
+                                    let weak = weak.clone();
+                                    let id = id.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_branch_compare(id.clone(), cx)
+                                        });
+                                    }
+                                }),
+                        );
+                        result =
+                            result.item(PopupMenuItem::new(tr("Copy SHA", "复制 SHA")).on_click({
+                                let weak = weak.clone();
+                                let id = id.clone();
+                                move |_, _, cx| {
+                                    let _ = weak
+                                        .update(cx, |this, cx| this.copy_commit_id(id.clone(), cx));
+                                }
+                            }));
+                        if is_head {
+                            result = result.item(
+                                PopupMenuItem::new(tr("Undo Commit", "撤销提交")).on_click({
+                                    let weak = weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_prompt(
+                                                PromptKind::Confirm(ConfirmAction::UndoHeadCommit),
+                                                cx,
+                                            )
+                                        });
+                                    }
+                                }),
+                            );
+                            result = result.item(
+                                PopupMenuItem::new(tr("Drop Commit", "丢弃提交")).on_click({
+                                    let weak = weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_prompt(
+                                                PromptKind::Confirm(ConfirmAction::DropHeadCommit),
+                                                cx,
+                                            )
+                                        });
+                                    }
+                                }),
+                            );
                         }
+                        result
                     }),
-                );
-                result = result.item(PopupMenuItem::new(tr("New Branch…", "新建分支…")).on_click(
-                    {
-                        let weak = weak.clone();
-                        let id = id.clone();
-                        move |_, _, cx| {
-                            let _ = weak.update(cx, |this, cx| {
-                                this.open_prompt(
-                                    PromptKind::NewBranch {
-                                        start_point: Some(id.clone()),
-                                    },
-                                    cx,
-                                )
-                            });
-                        }
-                    },
-                ));
-                result = result.item(PopupMenuItem::new(tr("New Tag…", "新建标签…")).on_click({
-                    let weak = weak.clone();
-                    let id = id.clone();
-                    move |_, _, cx| {
-                        let _ = weak.update(cx, |this, cx| {
-                            this.open_prompt(
-                                PromptKind::NewTag {
-                                    commit_id: id.clone(),
-                                },
-                                cx,
-                            )
-                        });
-                    }
-                }));
-                result = result.separator();
-                result = result.item(PopupMenuItem::new(tr("Cherry-pick", "摘取提交")).on_click({
-                    let weak = weak.clone();
-                    let id = id.clone();
-                    move |_, _, cx| {
-                        let _ = weak.update(cx, |this, cx| this.cherry_pick_commit(id.clone(), cx));
-                    }
-                }));
-                result = result.item(
-                    PopupMenuItem::new(tr("Revert Commit", "回滚提交")).on_click({
-                        let weak = weak.clone();
-                        let id = id.clone();
-                        move |_, _, cx| {
-                            let _ = weak.update(cx, |this, cx| this.revert_commit(id.clone(), cx));
-                        }
-                    }),
-                );
-                result = result.item(
-                    PopupMenuItem::new(tr("Reset Current Branch to Here…", "重置当前分支到此处…"))
-                        .on_click({
-                            let weak = weak.clone();
-                            let id = id.clone();
-                            move |_, _, cx| {
-                                let _ = weak.update(cx, |this, cx| {
-                                    this.open_prompt(
-                                        PromptKind::Reset {
-                                            commit_id: id.clone(),
-                                        },
-                                        cx,
-                                    )
-                                });
-                            }
-                        }),
-                );
-                result = result.item(
-                    PopupMenuItem::new(tr("Rebase from Here", "从这里变基")).on_click({
-                        let weak = weak.clone();
-                        let id = id.clone();
-                        move |_, _, cx| {
-                            let _ = weak.update(cx, |this, cx| this.start_rebase(id.clone(), cx));
-                        }
-                    }),
-                );
-                result = result.item(
-                    PopupMenuItem::new(tr("Reword Message…", "修改提交信息…")).on_click({
-                        let weak = weak.clone();
-                        let id = id.clone();
-                        move |_, _, cx| {
-                            let _ = weak.update(cx, |this, cx| {
-                                this.open_prompt(
-                                    PromptKind::Reword {
-                                        commit_id: id.clone(),
-                                    },
-                                    cx,
-                                )
-                            });
-                        }
-                    }),
-                );
-                result = result.separator();
-                result = result.item(PopupMenuItem::new(tr("Diff", "查看差异")).on_click({
-                    let weak = weak.clone();
-                    let id = id.clone();
-                    move |_, _, cx| {
-                        let _ =
-                            weak.update(cx, |this, cx| this.open_commit_diff(id.clone(), None, cx));
-                    }
-                }));
-                result = result.item(
-                    PopupMenuItem::new(tr("Compare with Current Branch", "与当前分支比较"))
-                        .on_click({
-                            let weak = weak.clone();
-                            let id = id.clone();
-                            move |_, _, cx| {
-                                let _ = weak.update(cx, |this, cx| {
-                                    this.open_branch_compare(id.clone(), cx)
-                                });
-                            }
-                        }),
-                );
-                result = result.item(PopupMenuItem::new(tr("Copy SHA", "复制 SHA")).on_click({
-                    let weak = weak.clone();
-                    let id = id.clone();
-                    move |_, _, cx| {
-                        let _ = weak.update(cx, |this, cx| this.copy_commit_id(id.clone(), cx));
-                    }
-                }));
-                if is_head {
-                    result =
-                        result.item(PopupMenuItem::new(tr("Undo Commit", "撤销提交")).on_click({
-                            let weak = weak.clone();
-                            move |_, _, cx| {
-                                let _ = weak.update(cx, |this, cx| {
-                                    this.open_prompt(
-                                        PromptKind::Confirm(ConfirmAction::UndoHeadCommit),
-                                        cx,
-                                    )
-                                });
-                            }
-                        }));
-                    result =
-                        result.item(PopupMenuItem::new(tr("Drop Commit", "丢弃提交")).on_click({
-                            let weak = weak.clone();
-                            move |_, _, cx| {
-                                let _ = weak.update(cx, |this, cx| {
-                                    this.open_prompt(
-                                        PromptKind::Confirm(ConfirmAction::DropHeadCommit),
-                                        cx,
-                                    )
-                                });
-                            }
-                        }));
-                }
-                result
-            })
+            )
             .into_any_element()
     }
 

@@ -286,7 +286,7 @@ impl Default for AppState {
             selected: None,
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
-            sidebar: SidebarMode::Workspace,
+            sidebar: SidebarMode::Detail,
             diff_files: Vec::new(),
             diff_title: String::new(),
             diff_path: None,

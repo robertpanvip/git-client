@@ -13,6 +13,12 @@ pub const TOOLBAR_HEIGHT: f32 = 36.0;
 pub const STATUSBAR_HEIGHT: f32 = 24.0;
 pub const GROUP_HEADER_HEIGHT: f32 = 22.0;
 
+// ---------- 三栏布局（对齐原版 Rebased 主界面） ----------
+/// 左侧 Commit 面板宽度：变更列表 + 提交输入区。
+pub const COMMIT_PANEL_WIDTH: f32 = 320.0;
+/// 中间 Log 主区标题行高度（“Log: <分支>” + 过滤摘要）。
+pub const LOG_HEADER_HEIGHT: f32 = 26.0;
+
 // ---------- 图形泳道 ----------
 pub const LANE_WIDTH: f32 = 14.0;
 pub const DOT_RADIUS: f32 = 2.5;
