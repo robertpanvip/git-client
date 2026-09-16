@@ -4,7 +4,9 @@
 use gpui_kit::component::theme::ThemeMode;
 use std::path::PathBuf;
 
-fn config_dir() -> Option<PathBuf> {
+/// 应用数据目录：Windows 优先 %APPDATA%，其余平台沿用 XDG 约定。
+/// config 文件、启动日志、panic 日志统一存放于此。
+pub(crate) fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("APPDATA") {
         if !dir.is_empty() {
             return Some(PathBuf::from(dir).join("rebased-rs"));
@@ -13,8 +15,7 @@ fn config_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| {
-            std::env::var_os("HOME")
-                .map(|home| PathBuf::from(home).join(".local").join("share"))
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
         })?;
     Some(base.join("rebased-rs"))
 }
@@ -66,6 +67,23 @@ pub fn load_theme_mode() -> Option<ThemeMode> {
 
 pub fn persist_theme_mode(mode: ThemeMode) {
     write_config_value("theme", mode.name());
+}
+
+/// 追加一条启动/运行诊断日志到 `<数据目录>/startup.log`；任何失败静默忽略，
+/// 日志属于尽力而为的观测手段，不允许影响主流程。
+pub fn log_event(message: &str) {
+    if let Some(dir) = config_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("startup.log"))
+        {
+            use std::io::Write;
+            let ts = chrono::Utc::now().to_rfc3339();
+            let _ = writeln!(f, "[{ts}] {message}");
+        }
+    }
 }
 
 #[cfg(test)]

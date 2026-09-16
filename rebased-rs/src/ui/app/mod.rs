@@ -4,15 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    div, px, size, AppContext, Bounds, Context, Entity, IntoElement, InteractiveElement,
-    ParentElement, Render, Styled, Subscription, Window, WindowBounds, WindowOptions,
+    AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    Styled, Subscription, Window, WindowBounds, WindowOptions, div, px, size,
 };
-use gpui_kit::component::{
-    input::TextareaState, list::ListState, theme::Theme, ActiveTheme, Root,
-};
+use gpui_kit::component::{ActiveTheme, Root, input::TextareaState, list::ListState, theme::Theme};
 use rebased_rs::git::{
-    load_repo_data_filtered, open_backend, CancelToken, GitBackend, GitError, ProgressHandle,
-    RepoData, DEFAULT_LOG_LIMIT,
+    CancelToken, DEFAULT_LOG_LIMIT, GitBackend, GitError, ProgressHandle, RepoData,
+    load_repo_data_filtered, open_backend,
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
@@ -181,7 +179,11 @@ impl AppView {
             return;
         };
         let author = self.state.filter_author.trim().to_string();
-        let author = if author.is_empty() { None } else { Some(author) };
+        let author = if author.is_empty() {
+            None
+        } else {
+            Some(author)
+        };
         let branch = self.state.filter_branch.clone();
         let since = self.state.filter_since.clone().map(|(_, expr)| expr);
         let task = cx.background_spawn(async move {
@@ -193,17 +195,15 @@ impl AppView {
                 since.as_deref(),
             )
         });
-        cx.spawn(async move |this, cx| {
-            match task.await {
-                Ok(data) => {
-                    let _ = this.update(cx, |this, cx| this.apply_data(data, cx));
-                }
-                Err(e) => {
-                    let _ = this.update(cx, |this, cx| {
-                        this.state.error = Some(e.to_string());
-                        cx.notify();
-                    });
-                }
+        cx.spawn(async move |this, cx| match task.await {
+            Ok(data) => {
+                let _ = this.update(cx, |this, cx| this.apply_data(data, cx));
+            }
+            Err(e) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.state.error = Some(e.to_string());
+                    cx.notify();
+                });
             }
         })
         .detach();
@@ -252,8 +252,8 @@ impl AppView {
         busy_message: &str,
         done_message: &str,
         op: impl FnOnce(&dyn GitBackend, ProgressHandle, CancelToken) -> Result<(), GitError>
-            + Send
-            + 'static,
+        + Send
+        + 'static,
         cx: &mut Context<Self>,
     ) {
         let Some(repo) = self.repo.clone() else {
@@ -398,12 +398,17 @@ impl Render for AppView {
 
 pub fn run(repo_path: PathBuf) {
     i18n::load_persisted();
+    settings::log_event("entering gpui application");
     gpui_kit::application()
         .with_assets(icons::AppAssets)
         .run(move |cx| {
             gpui_kit::init(cx);
             actions::register_keybindings(cx);
+            if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_some() {
+                settings::log_event("GPUI_DISABLE_DIRECT_COMPOSITION is set");
+            }
             if let Some(mode) = settings::load_theme_mode() {
+                settings::log_event(&format!("restoring theme mode: {}", mode.name()));
                 Theme::change(mode, None, cx);
             }
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
@@ -411,12 +416,15 @@ pub fn run(repo_path: PathBuf) {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             };
+            settings::log_event("opening main window");
             cx.spawn(async move |cx| {
-                cx.open_window(options, |window, cx| {
+                match cx.open_window(options, |window, cx| {
                     let view = cx.new(|cx| AppView::new(repo_path, window, cx));
                     cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
-                })
-                .expect("Failed to open window");
+                }) {
+                    Ok(_) => settings::log_event("main window opened"),
+                    Err(err) => settings::log_event(&format!("failed to open window: {err:#}")),
+                }
             })
             .detach();
         });
