@@ -1,16 +1,18 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled,
+    div, px, AnyElement, Context, Div, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled,
 };
 use gpui_kit::component::{button::{Button, ButtonVariants}, ActiveTheme};
 
 use rebased_rs::git::{Change, Commit, Tag};
 
 use crate::ui::commit_list::format_full_time;
-use crate::ui::graph_view::{lane_color, status_color};
+use crate::ui::components::{badge, group_header, ref_style, v_separator};
+use crate::ui::graph_view::status_color;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
+use crate::ui::theme;
 
 use super::{AppView, ConfirmAction, PromptKind};
 
@@ -38,9 +40,9 @@ impl AppView {
             .gap_2()
             .px_2()
             .py_0p5()
-            .rounded(px(4.))
+            .rounded(px(theme::RADIUS))
             .cursor_pointer()
-            .hover(move |style| style.bg(hsla(fg.h, fg.s, fg.l, 0.07)))
+            .hover(move |style| style.bg(theme::hover_bg(fg)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.open_commit_diff(file_commit_id.clone(), Some(diff_path.clone()), cx)
             }))
@@ -88,7 +90,6 @@ impl AppView {
         let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         let commit_id = commit.id.0.clone();
-        let tag_color = lane_color(5);
         let is_head = self
             .state
             .head_id
@@ -128,13 +129,30 @@ impl AppView {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_sm()
-                            .text_color(fg)
-                            .child(commit.subject.clone()),
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(fg)
+                                    .child(commit.subject.clone()),
+                            )
+                            .when(is_head, |head_row| {
+                                head_row.child(badge(
+                                    SharedString::from("detail-head"),
+                                    "HEAD",
+                                    theme::head_color(),
+                                ))
+                            }),
                     )
                     .child(
                         Button::new("close-detail")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.clear_detail(cx))),
                     ),
@@ -163,13 +181,22 @@ impl AppView {
                 )
             })
             .when(!self.state.detail_branches.is_empty(), |detail| {
-                detail.child(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(tag_color)
-                        .child(format!("∟ {}", self.state.detail_branches.join(", "))),
-                )
+                let branch_row = div()
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_1()
+                    .children(self.state.detail_branches.iter().map(|branch| {
+                        let (label, color) = ref_style(branch);
+                        badge(
+                            SharedString::from(format!("detail-branch-{branch}")),
+                            label,
+                            color,
+                        )
+                    }));
+                detail.child(branch_row)
             })
             .when(!commit_tags.is_empty(), |detail| {
                 detail.child(
@@ -180,42 +207,28 @@ impl AppView {
                         .items_center()
                         .gap_1()
                         .flex_none()
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(tr("Tags", "标签")),
-                        )
                         .children(commit_tags.into_iter().map(|tag| {
                             let name = tag.name;
-                            div()
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .gap_0p5()
-                                .rounded(px(4.))
-                                .px_1p5()
-                                .py_0p5()
-                                .bg(hsla(tag_color.h, tag_color.s, tag_color.l, 0.15))
-                                .child(
-                                    div().text_xs().text_color(tag_color).child(name.clone()),
-                                )
-                                .child(
-                                    Button::new(format!("delete-tag-{name}"))
-                                        .ghost()
-                                        .compact()
-                                        .icon(Ic::Delete)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            cx.stop_propagation();
-                                            this.open_prompt(
-                                                PromptKind::Confirm(ConfirmAction::DeleteTag {
-                                                    name: name.clone(),
-                                                }),
-                                                cx,
-                                            );
-                                        })),
-                                )
+                            badge(
+                                SharedString::from(format!("detail-tag-{name}")),
+                                name.clone(),
+                                theme::tag_color(),
+                            )
+                            .child(
+                                Button::new(format!("delete-tag-{name}"))
+                                    .ghost()
+                                    .compact()
+                                    .icon(Ic::Delete)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.open_prompt(
+                                            PromptKind::Confirm(ConfirmAction::DeleteTag {
+                                                name: name.clone(),
+                                            }),
+                                            cx,
+                                        );
+                                    })),
+                            )
                         })),
                 )
             })
@@ -224,146 +237,27 @@ impl AppView {
                     .flex()
                     .flex_row()
                     .flex_wrap()
+                    .items_center()
                     .gap_1()
                     .flex_none()
                     .child(
                         Button::new("detail-cherry-pick")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Cherry-pick", "摘取提交"))
                             .on_click(cx.listener(|this, _, _, cx| this.cherry_pick_selected(cx))),
                     )
                     .child(
                         Button::new("detail-revert")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Revert", "回滚"))
                             .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
                     )
-                    .child(
-                        Button::new("detail-rebase")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Rebase from here", "从这里变基"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let base = this
-                                    .state
-                                    .selected
-                                    .as_ref()
-                                    .map(|c| c.id.0.clone())
-                                    .unwrap_or_default();
-                                this.start_rebase(base, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-reset")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Reset…", "重置…"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let commit_id = this
-                                    .state
-                                    .selected
-                                    .as_ref()
-                                    .map(|c| c.id.0.clone())
-                                    .unwrap_or_default();
-                                this.open_prompt(PromptKind::Reset { commit_id }, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-reword")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Reword…", "改写…"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let commit_id = this
-                                    .state
-                                    .selected
-                                    .as_ref()
-                                    .map(|c| c.id.0.clone())
-                                    .unwrap_or_default();
-                                this.open_prompt(PromptKind::Reword { commit_id }, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-diff")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Diff", "查看差异"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let id = this
-                                    .state
-                                    .selected
-                                    .as_ref()
-                                    .map(|c| c.id.0.clone())
-                                    .unwrap_or_default();
-                                this.open_commit_diff(id, None, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-branch")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Branch…", "新建分支…"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let start_point = this.state.selected.as_ref().map(|c| c.id.0.clone());
-                                this.open_prompt(PromptKind::NewBranch { start_point }, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-tag")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Tag…", "新建标签…"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let commit_id = this
-                                    .state
-                                    .selected
-                                    .as_ref()
-                                    .map(|c| c.id.0.clone())
-                                    .unwrap_or_default();
-                                this.open_prompt(PromptKind::NewTag { commit_id }, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-checkout")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .label(tr("Checkout", "检出"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                let Some(commit) = this.state.selected.clone() else {
-                                    return;
-                                };
-                                let id = commit.id.0.clone();
-                                let short = &id[..id.len().min(7)];
-                                let message =
-                                    format!("{} {short}", tr("Checked out", "已检出"));
-                                this.run_op(&message, move |repo| repo.checkout(&id), cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("detail-copy-sha")
-                            .secondary()
-                            .outline()
-                            .compact()
-                            .icon(Ic::Copy)
-                            .label(tr("Copy SHA", "复制 SHA"))
-                            .on_click(cx.listener(|this, _, _, cx| this.copy_commit_sha(cx))),
-                    )
                     .when(is_head, |row| {
                         row.child(
                             Button::new("detail-undo-commit")
-                                .secondary()
-                                .outline()
+                                .ghost()
                                 .compact()
                                 .icon(Ic::Undo)
                                 .label(tr("Undo Commit", "撤销提交"))
@@ -388,11 +282,122 @@ impl AppView {
                                 })),
                         )
                     })
+                    .child(v_separator(fg))
+                    .child(
+                        Button::new("detail-rebase")
+                            .ghost()
+                            .compact()
+                            .label(tr("Rebase from here", "从这里变基"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let base = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.start_rebase(base, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-reset")
+                            .ghost()
+                            .compact()
+                            .label(tr("Reset…", "重置…"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::Reset { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-reword")
+                            .ghost()
+                            .compact()
+                            .label(tr("Reword…", "改写…"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::Reword { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-checkout")
+                            .ghost()
+                            .compact()
+                            .label(tr("Checkout", "检出"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let Some(commit) = this.state.selected.clone() else {
+                                    return;
+                                };
+                                let id = commit.id.0.clone();
+                                let short = &id[..id.len().min(7)];
+                                let message =
+                                    format!("{} {short}", tr("Checked out", "已检出"));
+                                this.run_op(&message, move |repo| repo.checkout(&id), cx);
+                            })),
+                    )
+                    .child(v_separator(fg))
+                    .child(
+                        Button::new("detail-branch")
+                            .ghost()
+                            .compact()
+                            .label(tr("Branch…", "新建分支…"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let start_point = this.state.selected.as_ref().map(|c| c.id.0.clone());
+                                this.open_prompt(PromptKind::NewBranch { start_point }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-tag")
+                            .ghost()
+                            .compact()
+                            .label(tr("Tag…", "新建标签…"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let commit_id = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_prompt(PromptKind::NewTag { commit_id }, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("detail-copy-sha")
+                            .ghost()
+                            .compact()
+                            .icon(Ic::Copy)
+                            .label(tr("Copy SHA", "复制 SHA"))
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_commit_sha(cx))),
+                    )
+                    .child(v_separator(fg))
+                    .child(
+                        Button::new("detail-diff")
+                            .ghost()
+                            .compact()
+                            .label(tr("Diff", "查看差异"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let id = this
+                                    .state
+                                    .selected
+                                    .as_ref()
+                                    .map(|c| c.id.0.clone())
+                                    .unwrap_or_default();
+                                this.open_commit_diff(id, None, cx);
+                            })),
+                    )
                     .when(!is_head, |row| {
                         row.child(
                             Button::new("detail-compare")
-                                .secondary()
-                                .outline()
+                                .ghost()
                                 .compact()
                                 .icon(Ic::Compare)
                                 .label(tr("Compare", "比较"))
@@ -408,17 +413,14 @@ impl AppView {
                         )
                     }),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!(
-                        "{} ({})",
-                        tr("Files", "文件"),
-                        self.state.detail_files.len()
-                    )),
-            )
+            .child(group_header(
+                format!(
+                    "{} ({})",
+                    tr("Files", "文件"),
+                    self.state.detail_files.len()
+                ),
+                muted,
+            ))
             .child(
                 div()
                     .id("detail-files")

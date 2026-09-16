@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    div, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, WeakEntity,
 };
 use gpui_kit::component::{
@@ -10,14 +10,16 @@ use gpui_kit::component::{
     input::Textarea,
     list::List,
     menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
-    ActiveTheme,
+    Sizable, Size, ActiveTheme,
 };
 
 use rebased_rs::git::{Branch, Change, ChangeStatus, MergeMode};
 
-use crate::ui::graph_view::{lane_color, status_color};
+use crate::ui::components::{empty_state, group_header, v_separator, Checkbox};
+use crate::ui::graph_view::status_color;
 use crate::ui::i18n::{self, tr};
 use crate::ui::icons::Ic;
+use crate::ui::theme;
 
 use super::{AppView, ConfirmAction, PromptKind};
 
@@ -39,6 +41,7 @@ impl AppView {
 
     pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
+        let fg = cx.theme().foreground;
         let branch_entries = self.state.branch_entries.clone();
         let tags = self.state.tags.clone();
         let current = self.state.current_branch.clone();
@@ -62,23 +65,29 @@ impl AppView {
         }
 
         div()
-            .h(px(44.))
+            .h(px(theme::TOOLBAR_HEIGHT))
             .flex_none()
             .border_b_1()
             .border_color(border)
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
-            .px_3()
+            .gap_1()
+            .px_2()
             .child(
                 DropdownButton::new("branch-menu")
                     .button(
                         Button::new("branch-button")
                             .secondary()
                             .outline()
+                            .compact()
                             .icon(Ic::Branch)
-                            .label(branch_label),
+                            .label(branch_label.clone())
+                            .tooltip(format!(
+                                "{}: {}",
+                                tr("Branches", "分支"),
+                                branch_label
+                            )),
                     )
                     .dropdown_menu(move |menu, window, cx| {
                         let mut result = menu;
@@ -445,14 +454,15 @@ impl AppView {
                         result
                     }),
             )
+            .child(v_separator(fg))
             .child(
                 DropdownButton::new("tag-menu")
                     .button(
                         Button::new("tag-button")
-                            .secondary()
-                            .outline()
+                            .ghost()
+                            .compact()
                             .icon(Ic::Tag)
-                            .label(tr("Tags", "标签")),
+                            .tooltip(tr("Tags", "标签")),
                     )
                     .dropdown_menu(move |menu, window, _cx| {
                         let mut result = menu.item(
@@ -566,14 +576,15 @@ impl AppView {
                         result
                     }),
             )
+            .child(v_separator(fg))
             .child(
                 DropdownButton::new("branch-filter-menu")
                     .button(
                         Button::new("branch-filter-button")
-                            .secondary()
-                            .outline()
+                            .ghost()
+                            .compact()
                             .icon(Ic::Filter)
-                            .label(format!(
+                            .tooltip(format!(
                                 "{}",
                                 filter_branch
                                     .clone()
@@ -612,10 +623,10 @@ impl AppView {
             )
             .child(
                 Button::new("author-filter")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::User)
-                    .label(format!(
+                    .tooltip(format!(
                         "{}",
                         if self.state.filter_author.is_empty() {
                             tr("All Authors", "所有作者").to_string()
@@ -631,10 +642,10 @@ impl AppView {
                 DropdownButton::new("date-filter-menu")
                     .button(
                         Button::new("date-filter-button")
-                            .secondary()
-                            .outline()
+                            .ghost()
+                            .compact()
                             .icon(Ic::History)
-                            .label(format!(
+                            .tooltip(format!(
                                 "{}",
                                 filter_since
                                     .as_ref()
@@ -683,18 +694,27 @@ impl AppView {
             )
             .child(
                 Button::new("goto")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Search)
-                    .label(tr("Go to…", "跳转到…"))
+                    .tooltip(tr("Go to…", "跳转到…"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::GoTo, cx))),
             )
             .child(
+                Button::new("refresh")
+                    .ghost()
+                    .compact()
+                    .icon(Ic::Refresh)
+                    .tooltip(tr("Refresh", "刷新"))
+                    .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
+            )
+            .child(v_separator(fg))
+            .child(
                 Button::new("fetch")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Fetch)
-                    .label(tr("Fetch", "抓取"))
+                    .tooltip(tr("Fetch", "抓取"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.run_op_progress(
                             tr("Fetch", "抓取"),
@@ -706,70 +726,65 @@ impl AppView {
             )
             .child(
                 Button::new("pull")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Pull)
-                    .label(tr("Pull", "拉取"))
+                    .tooltip(tr("Pull", "拉取"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_pull(cx))),
             )
             .child(
                 Button::new("push")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Push)
-                    .label(tr("Push", "推送"))
+                    .tooltip(tr("Push", "推送"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_push(cx))),
             )
+            .child(v_separator(fg))
             .child(
                 Button::new("stash")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Shelve)
-                    .label(tr("Stash", "贮藏"))
+                    .tooltip(tr("Stash", "贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open_prompt(PromptKind::Stash, cx)
                     })),
             )
             .child(
                 Button::new("unstash")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Unshelve)
-                    .label(tr("Unstash", "恢复贮藏"))
+                    .tooltip(tr("Unstash", "恢复贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx)
                     })),
             )
-            .child(
-                Button::new("refresh")
-                    .secondary()
-                    .outline()
-                    .icon(Ic::Refresh)
-                    .label(tr("Refresh", "刷新"))
-                    .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
-            )
+            .child(v_separator(fg))
             .child(
                 Button::new("conflicts")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Conflict)
-                    .label(tr("Conflicts", "冲突"))
+                    .tooltip(tr("Conflicts", "冲突"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_conflicts(cx))),
             )
             .child(
                 Button::new("shelves")
-                    .secondary()
-                    .outline()
+                    .ghost()
+                    .compact()
                     .icon(Ic::Changes)
-                    .label(tr("Shelves", "搁置"))
+                    .tooltip(tr("Shelves", "搁置"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
             )
+            .child(v_separator(fg))
             .child(
                 Button::new("language-toggle")
-                    .secondary()
-                    .outline()
-                    .icon(Ic::Language)
+                    .ghost()
+                    .compact()
                     .label(i18n::current().other().label())
+                    .tooltip(tr("Switch Language", "切换语言"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         i18n::toggle();
                         cx.notify();
@@ -1008,28 +1023,33 @@ impl AppView {
         let diff_path = change.path.clone();
         let checkbox_path = change.path.clone();
         let checked = self.state.selected_changes.contains(&change.path);
+        let weak = cx.entity().downgrade();
+        let checkbox_weak = weak.clone();
 
-        let mut row = div()
+        let menu_change = change.clone();
+        let menu_path = change.path.clone();
+        let row = div()
             .id(format!("change-{index}"))
             .flex()
             .flex_row()
             .items_center()
             .gap_2()
             .px_2()
-            .py_1()
-            .rounded(px(4.))
+            .py_0p5()
+            .rounded(px(theme::RADIUS))
             .cursor_pointer()
-            .hover(move |style| style.bg(hsla(fg.h, fg.s, fg.l, 0.07)))
+            .hover(move |style| style.bg(theme::hover_bg(fg)))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_stage(&change_for_click, cx)))
             .child(
-                Button::new(format!("chg-select-{index}"))
-                    .ghost()
-                    .compact()
-                    .label(if checked { "✓" } else { "" })
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.toggle_change_selection(&checkbox_path, cx);
-                    })),
+                Checkbox::new(format!("chg-select-{index}"))
+                    .checked(checked)
+                    .with_size(Size::XSmall)
+                    .on_click(move |_, _, app| {
+                        app.stop_propagation();
+                        let _ = checkbox_weak.update(app, |this, cx| {
+                            this.toggle_change_selection(&checkbox_path, cx);
+                        });
+                    }),
             )
             .child(
                 div()
@@ -1049,11 +1069,12 @@ impl AppView {
                     .child(path),
             );
 
-        row = row.child(
+        let row = row.child(
             Button::new(format!("chg-diff-{index}"))
                 .ghost()
                 .compact()
                 .icon(Ic::Diff)
+                .tooltip(tr("Show Diff", "查看差异"))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     let path = diff_path.clone();
@@ -1064,13 +1085,14 @@ impl AppView {
                     }
                 })),
         );
-        if !staged && !is_untracked {
+        let row = if !staged && !is_untracked {
             let discard_path = change.path.clone();
-            row = row.child(
+            row.child(
                 Button::new(format!("chg-discard-{index}"))
                     .ghost()
                     .compact()
                     .icon(Ic::Revert)
+                    .tooltip(tr("Rollback…", "回滚…"))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.open_prompt(
@@ -1080,30 +1102,98 @@ impl AppView {
                             cx,
                         );
                     })),
-            );
-        }
-        if is_untracked {
+            )
+        } else {
+            row
+        };
+        let row = if is_untracked {
             let remove_path = change.path.clone();
-            row = row.child(
+            row.child(
                 Button::new(format!("chg-remove-{index}"))
                     .ghost()
                     .compact()
                     .icon(Ic::Delete)
+                    .tooltip(tr("Delete", "删除"))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         let path = remove_path.clone();
                         let message = format!("{} {path}", tr("Removed", "已移除"));
                         this.run_op(&message, move |repo| repo.remove_untracked(&path), cx);
                     })),
-            );
-        }
+            )
+        } else {
+            row
+        };
 
-        row.child(
+        let menu = row.context_menu(move |menu, _window, _app| {
+            let weak = weak.clone();
+            let path = menu_path.clone();
+            let stage_label = if menu_change.staged {
+                tr("Unstage", "取消暂存")
+            } else {
+                tr("Stage", "暂存")
+            };
+            let weak_for_stage = weak.clone();
+            let change_for_stage = menu_change.clone();
+            let weak_for_diff = weak.clone();
+            let path_for_diff = path.clone();
+            let mut m = menu
+                .item(PopupMenuItem::new(stage_label).on_click(move |_, _, app| {
+                    let _ = weak_for_stage.update(app, |this, cx| {
+                        this.toggle_stage(&change_for_stage, cx);
+                    });
+                }))
+                .item(PopupMenuItem::new(tr("Show Diff", "查看差异")).on_click(move |_, _, app| {
+                    let _ = weak_for_diff.update(app, |this, cx| {
+                        if menu_change.staged {
+                            this.open_staged_diff(Some(path_for_diff.clone()), cx);
+                        } else {
+                            this.open_unstaged_diff(Some(path_for_diff.clone()), cx);
+                        }
+                    });
+                }));
+            if !menu_change.staged && !is_untracked {
+                let weak_for_discard = weak.clone();
+                let path_for_discard = path.clone();
+                m = m.item(
+                    PopupMenuItem::new(tr("Rollback…", "回滚…")).on_click(move |_, _, app| {
+                        let _ = weak_for_discard.update(app, |this, cx| {
+                            this.open_prompt(
+                                PromptKind::Confirm(ConfirmAction::DiscardChanges {
+                                    path: path_for_discard.clone(),
+                                }),
+                                cx,
+                            );
+                        });
+                    }),
+                );
+            }
+            if is_untracked {
+                let weak_for_remove = weak.clone();
+                let path_for_remove = path.clone();
+                m = m.item(
+                    PopupMenuItem::new(tr("Delete", "删除")).on_click(move |_, _, app| {
+                        let _ = weak_for_remove.update(app, |this, cx| {
+                            let path = path_for_remove.clone();
+                            let message = format!("{} {path}", tr("Removed", "已移除"));
+                            this.run_op(&message, move |repo| repo.remove_untracked(&path), cx);
+                        });
+                    }),
+                );
+            }
+            m
+        });
+
+        menu.child(
             div()
                 .flex_none()
                 .w(px(12.))
                 .text_sm()
-                .text_color(if staged { cx.theme().muted_foreground } else { lane_color(2) })
+                .text_color(if staged {
+                    cx.theme().muted_foreground
+                } else {
+                    theme::added_color()
+                })
                 .child(if staged { "−" } else { "+" }),
         )
         .into_any_element()
@@ -1122,15 +1212,8 @@ impl AppView {
                 return;
             }
             accumulator.push(
-                div()
-                    .flex_none()
-                    .px_2()
-                    .pt_2()
-                    .pb_0p5()
-                    .text_xs()
+                group_header(format!("{label} ({})", group.len()), muted)
                     .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(muted)
-                    .child(format!("{label} ({})", group.len()))
                     .into_any_element(),
             );
             for change in group {
@@ -1155,13 +1238,11 @@ impl AppView {
             .flex()
             .flex_col()
             .child(
-                div()
-                    .flex_none()
-                    .px_3()
-                    .py_2()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("{} ({count})", tr("Changes", "变更"))),
+                group_header(
+                    format!("{} ({count})", tr("Changes", "变更")),
+                    cx.theme().muted_foreground,
+                )
+                .font_weight(gpui::FontWeight::MEDIUM),
             )
             .child(
                 div()
@@ -1175,16 +1256,10 @@ impl AppView {
                     .px_1()
                     .children(rows)
                     .when(count == 0, |container| {
-                        container.child(
-                            div()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_sm()
-                                .text_color(fg.opacity(0.4))
-                                .child(tr("Working tree clean", "工作区干净")),
-                        )
+                        container.child(empty_state(
+                            tr("Working tree clean", "工作区干净"),
+                            fg.opacity(0.4),
+                        ))
                     }),
             )
     }
@@ -1207,11 +1282,11 @@ impl AppView {
             .flex_none()
             .border_t_1()
             .border_color(border)
-            .p_3()
+            .p_2()
             .flex()
             .flex_col()
             .gap_2()
-            .child(Textarea::new(&self.message_input).h(px(72.)))
+            .child(Textarea::new(&self.message_input).h(px(64.)))
             .child(
                 div()
                     .flex()
@@ -1220,8 +1295,7 @@ impl AppView {
                     .gap_2()
                     .child(
                         Button::new("shelve")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .label(tr("Shelve…", "搁置…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.open_prompt(PromptKind::Stash, cx)
@@ -1229,8 +1303,7 @@ impl AppView {
                     )
                     .child(
                         Button::new("amend")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .label(amend_label)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let enabling = !this.state.amend;
@@ -1256,7 +1329,7 @@ impl AppView {
         let border = cx.theme().border;
         let muted = cx.theme().muted_foreground;
         div()
-            .h(px(28.))
+            .h(px(theme::STATUSBAR_HEIGHT))
             .flex_none()
             .border_t_1()
             .border_color(border)
@@ -1264,7 +1337,7 @@ impl AppView {
             .flex_row()
             .items_center()
             .gap_2()
-            .px_3()
+            .px_2()
             .text_xs()
             .child(
                 match (
@@ -1273,7 +1346,7 @@ impl AppView {
                     self.state.status_message.is_empty(),
                 ) {
                     (Some(error), _, _) => div()
-                        .text_color(hsla(0.0, 0.75, 0.55, 1.0))
+                        .text_color(theme::error_color())
                         .child(error.clone())
                         .into_any_element(),
                     (None, Some(busy), _) => {
@@ -1290,8 +1363,8 @@ impl AppView {
                         if let Some(token) = self.state.cancel_token.clone() {
                             busy_row = busy_row.child(
                                 Button::new("cancel-op")
-                                    .secondary()
-                                    .outline()
+                                    .ghost()
+                                    .compact()
                                     .text_xs()
                                     .label(tr("Cancel", "取消"))
                                     .on_click(move |_, _, _| {

@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, hsla, px, App, Div, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled,
+    div, px, App, Div, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled,
 };
 use gpui_kit::component::ActiveTheme;
 use rebased_rs::git::BlameGroup;
 
 use crate::ui::commit_list::format_time;
 use crate::ui::graph_view::lane_color;
+use crate::ui::theme::{badge_bg, stripe_bg, transparent};
 
 pub type BlameJump = Arc<dyn Fn(String, &mut App)>;
 
@@ -20,9 +21,9 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
 
     for (index, group) in groups.iter().enumerate() {
         let stripe = if index % 2 == 0 {
-            hsla(fg.h, fg.s, fg.l, 0.04)
+            stripe_bg(fg)
         } else {
-            hsla(0.0, 0.0, 0.5, 0.0)
+            transparent()
         };
         let short: String = group.commit_id.chars().take(7).collect();
         let meta_color = lane_color(index);
@@ -37,7 +38,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
             .flex_row()
             .items_center()
             .gap_2()
-            .bg(hsla(meta_color.h, meta_color.s, meta_color.l, 0.12))
+            .bg(badge_bg(meta_color))
             .child(
                 div()
                     .text_xs()

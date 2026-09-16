@@ -1,32 +1,13 @@
 use gpui::{
-    canvas, div, fill, hsla, point, px, size, Bounds, Hsla, IntoElement, ParentElement, PathBuilder,
-    Pixels, Styled, Window,
+    canvas, div, fill, point, px, size, Bounds, IntoElement, ParentElement, PathBuilder, Pixels,
+    Styled, Window,
 };
-use rebased_rs::git::{ChangeStatus, GraphRow, MAX_COLORS};
+use rebased_rs::git::GraphRow;
 
-pub const ROW_HEIGHT: f32 = 40.0;
-const LANE_WIDTH: f32 = 16.0;
-const DOT_RADIUS: f32 = 3.5;
-const LINE_WIDTH: f32 = 2.0;
+use crate::ui::theme::{DOT_RADIUS, LANE_WIDTH, LINE_WIDTH};
 
-const HUES: [f32; MAX_COLORS] = [0.58, 0.0, 0.33, 0.83, 0.13, 0.45, 0.65, 0.95];
-
-pub fn lane_color(index: usize) -> Hsla {
-    hsla(HUES[index % MAX_COLORS], 0.65, 0.55, 1.0)
-}
-
-pub fn status_color(status: &ChangeStatus) -> Hsla {
-    match status {
-        ChangeStatus::Added => lane_color(2),
-        ChangeStatus::Modified => lane_color(0),
-        ChangeStatus::Deleted => lane_color(1),
-        ChangeStatus::Renamed => lane_color(4),
-        ChangeStatus::Copied => lane_color(5),
-        ChangeStatus::TypeChanged => lane_color(7),
-        ChangeStatus::Conflicted => lane_color(3),
-        ChangeStatus::Untracked => lane_color(6),
-    }
-}
+pub const ROW_HEIGHT: f32 = crate::ui::theme::ROW_HEIGHT;
+pub use crate::ui::theme::{lane_color, status_color};
 
 fn lane_x(lane: usize) -> f32 {
     LANE_WIDTH * lane as f32 + LANE_WIDTH / 2.0

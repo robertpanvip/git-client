@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, hsla, px, AnyElement, AppContext, Context, Div, FontWeight, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, AppContext, Context, Div, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    Window,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants},
@@ -14,9 +14,11 @@ use gpui_kit::component::{
 use rebased_rs::git::{HunkChoice, ResetMode};
 
 use crate::ui::blame_view::{render_blame, BlameJump};
+use crate::ui::components::{empty_state, group_header};
 use crate::ui::diff_view::{render_diff_files, HunkAction};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
+use crate::ui::theme;
 
 use super::actions::FocusComposer;
 use super::{AppView, DiffSource, SidebarMode};
@@ -56,23 +58,14 @@ impl AppView {
             .flex_col()
             .gap_2()
             .size_full()
+            .child(group_header(tr("Interactive Rebase", "交互式变基"), muted))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(tr("Interactive Rebase", "交互式变基")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(format!("{} {short_base}…", tr("onto", "变基到"))),
-                    ),
+                    .flex_none()
+                    .px_2()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{} {short_base}…", tr("onto", "变基到"))),
             )
             .child(
                 div()
@@ -116,7 +109,7 @@ impl AppView {
                     .pb_1()
                     .cursor_move()
                     .drag_over::<RebaseDrag>(|style, _, _, _| {
-                        style.border_color(hsla(0.55, 0.8, 0.55, 1.0))
+                        style.border_color(theme::success_color())
                     })
                     .on_drag(RebaseDrag(index), move |_, _, _, cx| {
                         cx.new(|_| RebaseDragPreview(drag_label.clone()))
@@ -203,8 +196,7 @@ impl AppView {
                         )
                         .child(
                             Button::new("rebase-cancel")
-                                .secondary()
-                                .outline()
+                                .ghost()
                                 .compact()
                                 .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
@@ -223,33 +215,24 @@ impl AppView {
             .gap_2()
             .size_full()
             .overflow_y_scroll()
+            .child(group_header(tr("Conflicts", "冲突"), muted))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(tr("Conflicts", "冲突")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(if self.state.merge_in_progress {
-                                tr(
-                                    "Merge is paused. Resolve conflicts, then continue the merge.",
-                                    "合并已暂停。解决冲突后继续合并。",
-                                )
-                            } else {
-                                tr(
-                                    "Rebase is paused. Resolve conflicts, then continue the rebase.",
-                                    "变基已暂停。解决冲突后继续变基。",
-                                )
-                            }),
-                    ),
+                    .flex_none()
+                    .px_2()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(if self.state.merge_in_progress {
+                        tr(
+                            "Merge is paused. Resolve conflicts, then continue the merge.",
+                            "合并已暂停。解决冲突后继续合并。",
+                        )
+                    } else {
+                        tr(
+                            "Rebase is paused. Resolve conflicts, then continue the rebase.",
+                            "变基已暂停。解决冲突后继续变基。",
+                        )
+                    }),
             );
 
         if self.state.conflict_files.is_empty() {
@@ -294,8 +277,7 @@ impl AppView {
                     )
                     .child(
                         Button::new(("take-ours", index))
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Take ours", "采用我们的"))
                             .on_click(cx.listener({
@@ -307,8 +289,7 @@ impl AppView {
                     )
                     .child(
                         Button::new(("take-theirs", index))
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Take theirs", "采用他们的"))
                             .on_click(cx.listener({
@@ -414,7 +395,7 @@ impl AppView {
                         .gap_1()
                         .border_1()
                         .border_color(border)
-                        .rounded(px(4.))
+                        .rounded(px(theme::RADIUS))
                         .p_2()
                         .child(
                             div()
@@ -434,8 +415,7 @@ impl AppView {
                                 .gap_1()
                                 .child(
                                     Button::new(("hunk-ours", index))
-                                        .secondary()
-                                        .outline()
+                                        .ghost()
                                         .compact()
                                         .label(ours_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -444,8 +424,7 @@ impl AppView {
                                 )
                                 .child(
                                     Button::new(("hunk-theirs", index))
-                                        .secondary()
-                                        .outline()
+                                        .ghost()
                                         .compact()
                                         .label(theirs_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -454,8 +433,7 @@ impl AppView {
                                 )
                                 .child(
                                     Button::new(("hunk-both", index))
-                                        .secondary()
-                                        .outline()
+                                        .ghost()
                                         .compact()
                                         .label(both_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -480,7 +458,7 @@ impl AppView {
                                         .gap_1()
                                         .border_1()
                                         .border_color(border)
-                                        .rounded(px(4.))
+                                        .rounded(px(theme::RADIUS))
                                         .p_1()
                                         .child(
                                             div()
@@ -500,7 +478,7 @@ impl AppView {
                                         .gap_1()
                                         .border_1()
                                         .border_color(border)
-                                        .rounded(px(4.))
+                                        .rounded(px(theme::RADIUS))
                                         .p_1()
                                         .child(
                                             div()
@@ -520,7 +498,7 @@ impl AppView {
                                         .gap_1()
                                         .border_1()
                                         .border_color(border)
-                                        .rounded(px(4.))
+                                        .rounded(px(theme::RADIUS))
                                         .p_1()
                                         .child(
                                             div()
@@ -559,27 +537,7 @@ impl AppView {
             .gap_2()
             .size_full()
             .overflow_y_scroll()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(tr("Shelves", "搁置")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(tr(
-                                "Stashed workspaces. Unshelve to bring changes back.",
-                                "已贮藏的工作区。恢复搁置以找回更改。",
-                            )),
-                    ),
-            );
+            .child(group_header(tr("Shelves", "搁置"), muted));
 
         if self.state.shelves.is_empty() {
             panel = panel.child(
@@ -614,8 +572,7 @@ impl AppView {
                     )
                     .child(
                         Button::new(("shelve-apply", index))
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Unshelve", "恢复搁置"))
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -624,8 +581,7 @@ impl AppView {
                     )
                     .child(
                         Button::new(("shelve-drop", index))
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .label(tr("Drop", "丢弃"))
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -637,8 +593,7 @@ impl AppView {
 
         panel.child(
             Button::new("shelve-reload")
-                .secondary()
-                .outline()
+                .ghost()
                 .compact()
                 .label(tr("Reload", "刷新"))
                 .on_click(cx.listener(|this, _, _, cx| this.reload_shelves(cx))),
@@ -646,6 +601,7 @@ impl AppView {
     }
 
     pub(crate) fn render_compare_panel(&self, cx: &mut Context<Self>) -> Div {
+        let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         let mine = self.state.compare_mine.clone();
         let theirs = self.state.compare_theirs.clone();
@@ -679,6 +635,7 @@ impl AppView {
                     .child(
                         Button::new("compare-close")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
@@ -703,14 +660,7 @@ impl AppView {
             ),
         ];
         for (label, commits) in sections {
-            panel = panel.child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(muted)
-                    .child(label),
-            );
+            panel = panel.child(group_header(label, muted));
             if commits.is_empty() {
                 panel = panel.child(
                     div()
@@ -736,8 +686,9 @@ impl AppView {
                         .gap_2()
                         .px_2()
                         .py_0p5()
-                        .rounded(px(4.))
+                        .rounded(px(theme::RADIUS))
                         .cursor_pointer()
+                        .hover(move |style| style.bg(theme::hover_bg(fg)))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.select_commit_by_id(&id, cx)
                         }))
@@ -781,7 +732,7 @@ impl AppView {
             .flex_none()
             .border_l_1()
             .border_color(border)
-            .p_3()
+            .p_2()
             .flex()
             .flex_col()
             .gap_2()
@@ -836,8 +787,8 @@ impl AppView {
                         header
                             .child(
                                 Button::new("diff-ignore-ws")
-                                    .secondary()
-                                    .outline()
+                                    .ghost()
+                                    .compact()
                                     .label(if self.state.ignore_whitespace {
                                         format!("✓ {}", tr("Ignore whitespace", "忽略空白"))
                                     } else {
@@ -849,8 +800,8 @@ impl AppView {
                             )
                             .child(
                                 Button::new("diff-view-mode")
-                                    .secondary()
-                                    .outline()
+                                    .ghost()
+                                    .compact()
                                     .label(if self.state.diff_side_by_side {
                                         tr("⇔ Side-by-side", "⇔ 并排对比")
                                     } else {
@@ -866,8 +817,8 @@ impl AppView {
                     .when(self.state.diff_path.is_some(), |header| {
                         header.child(
                             Button::new("diff-blame")
-                                .secondary()
-                                .outline()
+                                .ghost()
+                                .compact()
                                 .label(tr("Blame", "追溯"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     let path = this.state.diff_path.clone().unwrap_or_default();
@@ -881,6 +832,7 @@ impl AppView {
                             header.child(
                                 Button::new("diff-edit")
                                     .ghost()
+                                    .compact()
                                     .icon(Ic::Edit)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_diff_edit(window, cx)
@@ -892,8 +844,8 @@ impl AppView {
                         header
                             .child(
                                 Button::new("diff-save")
-                                    .secondary()
-                                    .outline()
+                                    .ghost()
+                                    .compact()
                                     .label(tr("Save", "保存"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.save_diff_edit(cx)),
@@ -901,8 +853,8 @@ impl AppView {
                             )
                             .child(
                                 Button::new("diff-cancel")
-                                    .secondary()
-                                    .outline()
+                                    .ghost()
+                                    .compact()
                                     .label(tr("Cancel", "取消"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx)),
@@ -912,6 +864,7 @@ impl AppView {
                     .child(
                         Button::new("diff-close")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
@@ -928,16 +881,7 @@ impl AppView {
                     .child(Textarea::new(&self.diff_edit_input).flex_1()),
             );
         } else if self.state.diff_files.is_empty() {
-            panel = panel.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(tr("No changes", "无更改")),
-            );
+            panel = panel.child(empty_state(tr("No changes", "无更改"), muted));
         } else {
             let hunk_controls: Option<(&'static str, HunkAction)> =
                 match self.state.diff_source {
@@ -1007,22 +951,14 @@ impl AppView {
                     .child(
                         Button::new("blame-close")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
 
         if self.state.blame_groups.is_empty() {
-            panel = panel.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(tr("Nothing to blame", "无追溯信息")),
-            );
+            panel = panel.child(empty_state(tr("Nothing to blame", "无追溯信息"), muted));
         } else {
             let on_commit: BlameJump = {
                 let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
@@ -1045,6 +981,7 @@ impl AppView {
     }
 
     pub(crate) fn render_history_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         let path = self.state.history_path.clone();
 
@@ -1075,22 +1012,17 @@ impl AppView {
                     .child(
                         Button::new("history-close")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
 
         if self.state.history_commits.is_empty() {
-            panel = panel.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(tr("No history for this file", "该文件没有历史记录")),
-            );
+            panel = panel.child(empty_state(
+                tr("No history for this file", "该文件没有历史记录"),
+                muted,
+            ));
         } else {
             for commit in &self.state.history_commits {
                 let id = commit.id.0.clone();
@@ -1106,8 +1038,9 @@ impl AppView {
                         .gap_2()
                         .px_2()
                         .py_0p5()
-                        .rounded(px(4.))
+                        .rounded(px(theme::RADIUS))
                         .cursor_pointer()
+                        .hover(move |style| style.bg(theme::hover_bg(fg)))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.open_commit_diff(id.clone(), None, cx)
                         }))
@@ -1136,6 +1069,7 @@ impl AppView {
 
     /// reflog 轻量视图：一览 HEAD 的最近操作，点击跳到对应 commit 的 diff。
     pub(crate) fn render_reflog_panel(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
 
         let mut panel = div()
@@ -1176,22 +1110,14 @@ impl AppView {
                     .child(
                         Button::new("reflog-close")
                             .ghost()
+                            .compact()
                             .icon(Ic::Close)
                             .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
                     ),
             );
 
         if self.state.reflog_entries.is_empty() {
-            panel = panel.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(tr("No reflog entries", "没有引用日志")),
-            );
+            panel = panel.child(empty_state(tr("No reflog entries", "没有引用日志"), muted));
         } else {
             for entry in &self.state.reflog_entries {
                 let id = entry.commit_id.clone();
@@ -1204,8 +1130,9 @@ impl AppView {
                         .gap_2()
                         .px_2()
                         .py_0p5()
-                        .rounded(px(4.))
+                        .rounded(px(theme::RADIUS))
                         .cursor_pointer()
+                        .hover(move |style| style.bg(theme::hover_bg(fg)))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.open_commit_diff(id.clone(), None, cx)
                         }))
@@ -1354,7 +1281,7 @@ impl AppView {
             div()
                 .absolute()
                 .inset_0()
-                .bg(hsla(0.0, 0.0, 0.0, 0.45))
+                .bg(theme::overlay_bg())
                 .flex()
                 .items_start()
                 .justify_center()
@@ -1363,26 +1290,19 @@ impl AppView {
                 .child(
                     div()
                         .w(px(420.))
-                        .rounded(px(8.))
+                        .rounded(px(theme::RADIUS_LG))
                         .border_1()
                         .border_color(border)
                         .bg(cx.theme().background)
-                        .p_3()
+                        .p_2()
                         .flex()
                         .flex_col()
                         .gap_1()
                         .shadow_lg()
+                        .child(group_header(tr("VCS Operations", "VCS 操作"), muted))
                         .child(
                             div()
-                                .px_3()
-                                .pt_1()
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(tr("VCS Operations", "VCS 操作")),
-                        )
-                        .child(
-                            div()
-                                .px_3()
+                                .px_2()
                                 .pb_1()
                                 .text_xs()
                                 .text_color(muted)
@@ -1406,6 +1326,7 @@ impl AppView {
         cx: &mut Context<Self>,
         run: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> Stateful<Div> {
+        let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         div()
             .id(SharedString::from(id))
@@ -1413,11 +1334,11 @@ impl AppView {
             .flex()
             .items_center()
             .justify_between()
-            .px_3()
+            .px_2()
             .py_1p5()
-            .rounded(px(6.))
+            .rounded(px(theme::RADIUS))
             .text_sm()
-            .hover(move |style| style.bg(muted.opacity(0.12)))
+            .hover(move |style| style.bg(theme::hover_bg(fg)))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.state.vcs_palette = false;
@@ -1600,8 +1521,7 @@ impl AppView {
                     .gap_2()
                     .child(
                         Button::new("prompt-cancel")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .label(tr("Cancel", "取消"))
                             .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
                     )
@@ -1628,8 +1548,7 @@ impl AppView {
                         .gap_2()
                         .child(
                             Button::new("prompt-cancel")
-                                .secondary()
-                                .outline()
+                                .ghost()
                                 .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.cancel_prompt(cx)
@@ -1694,7 +1613,7 @@ impl AppView {
             div()
                 .absolute()
                 .inset_0()
-                .bg(hsla(0.0, 0.0, 0.0, 0.45))
+                .bg(theme::overlay_bg())
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1702,7 +1621,7 @@ impl AppView {
                 .child(
                     div()
                         .w(px(440.))
-                        .rounded(px(8.))
+                        .rounded(px(theme::RADIUS_LG))
                         .border_1()
                         .border_color(border)
                         .bg(cx.theme().background)
@@ -1710,7 +1629,12 @@ impl AppView {
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(div().text_sm().child(SharedString::from(title)))
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(SharedString::from(title)),
+                        )
                         .child(
                             div()
                                 .text_xs()

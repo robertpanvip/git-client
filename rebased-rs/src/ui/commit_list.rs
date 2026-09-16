@@ -8,13 +8,15 @@ use gpui_kit::component::{
     ActiveTheme,
 };
 use gpui::{
-    div, hsla, px, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement,
+    div, px, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use rebased_rs::git::{build_graph, filter_commits, Commit, Graph};
 
 use crate::ui::app::{AppView, ConfirmAction, PromptKind};
-use crate::ui::graph_view::{lane_canvas, lane_color, ROW_HEIGHT};
+use crate::ui::components::{badge, empty_state, ref_style};
+use crate::ui::i18n::tr;
+use crate::ui::graph_view::{lane_canvas, ROW_HEIGHT};
 
 pub struct LogData {
     pub commits: Vec<Commit>,
@@ -155,11 +157,15 @@ impl ListDelegate for LogDelegate {
         let graph_row = data.graph.rows.get(ix.row).cloned();
         row = row.child(lane_canvas(graph_row, data.graph.lane_count));
 
+        let mut refs_col = div().flex_none().flex().flex_row().items_center().gap_1();
         for (i, ref_name) in commit.refs.iter().enumerate() {
             let badge_id = SharedString::from(format!("ref-badge-{}-{}", ix.row, i));
-            row = row.child(ref_badge(&badge_id, ref_name, app.clone()));
+            refs_col = refs_col.child(ref_badge(&badge_id, ref_name, app.clone()));
         }
+        row = row.child(refs_col);
 
+        // 列式布局：graph | refs | subject(flex) | author(固定列) | date(固定列)，
+        // 与原版对齐——多行提交时 author/date 始终纵向对齐。
         row = row
             .child(
                 div()
@@ -174,7 +180,7 @@ impl ListDelegate for LogDelegate {
             .child(
                 div()
                     .flex_none()
-                    .max_w(px(110.))
+                    .w(px(96.))
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_xs()
@@ -184,6 +190,7 @@ impl ListDelegate for LogDelegate {
             .child(
                 div()
                     .flex_none()
+                    .w(px(72.))
                     .text_xs()
                     .text_color(muted)
                     .child(format_time(commit.time)),
@@ -213,39 +220,18 @@ impl ListDelegate for LogDelegate {
         _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .text_sm()
-            .text_color(cx.theme().muted_foreground.opacity(0.6))
-            .child("No commits")
+        empty_state(
+            tr("No commits", "没有提交"),
+            cx.theme().muted_foreground.opacity(0.6),
+        )
     }
 }
 
 fn ref_badge(id: &str, name: &str, app: Option<WeakEntity<AppView>>) -> impl IntoElement {
-    let (label, color) = if let Some(tag) = name.strip_prefix("tag: ") {
-        (tag.to_string(), lane_color(2))
-    } else if let Some(branch) = name.strip_prefix("HEAD -> ") {
-        (branch.to_string(), lane_color(0))
-    } else if name == "HEAD" {
-        ("HEAD".to_string(), lane_color(0))
-    } else {
-        (name.to_string(), lane_color(5))
-    };
+    let (label, color) = ref_style(name);
 
     let name = name.to_string();
-    div()
-        .id(SharedString::from(id.to_string()))
-        .flex_none()
-        .px_1()
-        .rounded(px(4.))
-        .bg(hsla(color.h, color.s, color.l, 0.18))
-        .text_xs()
-        .text_color(color)
-        .child(label)
+    badge(SharedString::from(id.to_string()), label, color)
         .context_menu(move |menu, _window, cx| match &app {
             Some(app) => build_ref_menu(menu, &name, app, cx),
             None => menu,

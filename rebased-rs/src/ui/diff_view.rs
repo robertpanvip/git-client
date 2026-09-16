@@ -1,50 +1,35 @@
 use std::sync::Arc;
 
-use gpui::{div, hsla, px, App, Div, Hsla, ParentElement, SharedString, Styled};
+use gpui::{div, px, App, Div, Hsla, ParentElement, SharedString, Styled};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::ActiveTheme;
 use rebased_rs::git::{DiffLine, DiffLineKind, FileDiff, Hunk};
 
+use crate::ui::theme::{
+    added_color, added_line_bg, binary_color, deleted_color, deleted_line_bg, empty_half_bg,
+    hunk_bg, stripe_bg, transparent,
+};
+
 /// hunk 级暂存回调：(file_index, hunk_index, app)。
 pub type HunkAction = Arc<dyn Fn(usize, usize, &mut App)>;
 
-fn added_line_bg() -> Hsla {
-    hsla(0.31, 0.6, 0.42, 0.14)
-}
-
-fn deleted_line_bg() -> Hsla {
-    hsla(0.0, 0.65, 0.5, 0.13)
-}
-
-fn empty_half_bg() -> Hsla {
-    hsla(0.0, 0.0, 0.5, 0.05)
-}
-
-fn transparent_bg() -> Hsla {
-    hsla(0.0, 0.0, 0.5, 0.0)
-}
-
-fn hunk_bg() -> Hsla {
-    hsla(0.58, 0.7, 0.55, 0.1)
-}
-
 fn line_fg(kind: DiffLineKind, base: Hsla) -> Hsla {
     match kind {
-        DiffLineKind::Added => hsla(0.31, 0.6, 0.45, 1.0),
-        DiffLineKind::Deleted => hsla(0.0, 0.7, 0.55, 1.0),
+        DiffLineKind::Added => added_color(),
+        DiffLineKind::Deleted => deleted_color(),
         DiffLineKind::Context | DiffLineKind::HunkHeader => base,
     }
 }
 
 fn status_badge(file: &FileDiff) -> (&'static str, Hsla) {
     if file.is_new {
-        ("A", hsla(0.31, 0.6, 0.45, 1.0))
+        ("A", added_color())
     } else if file.is_deleted {
-        ("D", hsla(0.0, 0.7, 0.55, 1.0))
+        ("D", deleted_color())
     } else if file.is_binary {
-        ("B", hsla(0.58, 0.7, 0.55, 1.0))
+        ("B", binary_color())
     } else {
-        ("M", hsla(0.11, 0.8, 0.55, 1.0))
+        ("M", crate::ui::theme::modified_color())
     }
 }
 
@@ -126,7 +111,7 @@ fn sbs_half(
     let bg = match line.kind {
         DiffLineKind::Added if !old_side => added_line_bg(),
         DiffLineKind::Deleted if old_side => deleted_line_bg(),
-        _ => transparent_bg(),
+        _ => transparent(),
     };
     let no = if old_side { line.old_no } else { line.new_no };
     let no_str = no
@@ -187,7 +172,7 @@ pub fn render_diff_files(
         let (badge, badge_color) = status_badge(file);
         let mut block = div()
             .flex_none()
-            .rounded(px(6.))
+            .rounded(px(crate::ui::theme::RADIUS_LG))
             .border_1()
             .border_color(border)
             .overflow_hidden()
@@ -200,7 +185,7 @@ pub fn render_diff_files(
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .bg(hsla(fg.h, fg.s, fg.l, 0.05))
+                    .bg(stripe_bg(fg))
                     .child(
                         div()
                             .text_xs()
@@ -259,7 +244,7 @@ pub fn render_diff_files(
                     let bg = match line.kind {
                         DiffLineKind::Added => added_line_bg(),
                         DiffLineKind::Deleted => deleted_line_bg(),
-                        DiffLineKind::Context | DiffLineKind::HunkHeader => transparent_bg(),
+                        DiffLineKind::Context | DiffLineKind::HunkHeader => transparent(),
                     };
                     let color = line_fg(line.kind, fg);
                     let old_no = line
