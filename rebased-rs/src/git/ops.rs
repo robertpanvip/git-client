@@ -93,7 +93,7 @@ pub fn drop_head_commit(cmd: &GitCommand) -> Result<()> {
 }
 
 pub fn pull(cmd: &GitCommand, remote: &str, branch: &str) -> Result<()> {
-    cmd.run_ok(&["pull", remote, branch])
+    cmd.run_ok(&["pull", "--no-rebase", remote, branch])
 }
 
 pub fn fetch(cmd: &GitCommand, remote: Option<&str>) -> Result<()> {
@@ -127,7 +127,11 @@ pub fn pull_progress(
     progress: ProgressHandle,
     cancel: CancelToken,
 ) -> Result<()> {
-    cmd.run_with_control(&["pull", "--progress", remote, branch], progress, cancel)
+    cmd.run_with_control(
+        &["pull", "--no-rebase", "--progress", remote, branch],
+        progress,
+        cancel,
+    )
 }
 
 pub fn fetch_progress(

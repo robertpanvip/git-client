@@ -29,7 +29,7 @@ mod toolbar;
 mod use_cases;
 
 pub(crate) use state::{AppState, ConfirmAction, DiffSource, PromptKind, RebaseFlow, SidebarMode};
-use use_cases::sync_repo_state;
+use use_cases::{reload_conflict_state, sync_repo_state};
 
 struct Loaded {
     repo: Arc<dyn GitBackend>,
@@ -234,8 +234,7 @@ impl AppView {
                         this.refresh(cx);
                     }
                     Err(e) => {
-                        this.state.error = Some(e.to_string());
-                        cx.notify();
+                        this.handle_op_failure(e, cx);
                     }
                 }
             });
@@ -312,8 +311,7 @@ impl AppView {
                                         this.refresh(cx);
                                     }
                                     Err(e) => {
-                                        this.state.error = Some(e.to_string());
-                                        cx.notify();
+                                        this.handle_op_failure(e, cx);
                                     }
                                 }
                                 false
@@ -328,6 +326,32 @@ impl AppView {
             }
         })
         .detach();
+    }
+
+    /// 操作失败后的统一处理：pull/merge 因分支冲突失败时，仓库其实已进入
+    /// 冲突状态——识别后把报错换成友好提示、自动打开冲突面板并刷新仓库视图；
+    /// 无冲突则原样展示 git 错误。
+    fn handle_op_failure(&mut self, error: GitError, cx: &mut Context<Self>) {
+        if let Some(repo) = self.repo.clone() {
+            let conflicts = repo.as_ref().conflicted_files().unwrap_or_default();
+            if !conflicts.is_empty() {
+                let n = conflicts.len();
+                let _ = reload_conflict_state(repo.as_ref(), &mut self.state);
+                self.state.error = Some(format!(
+                    "{} ({}): {}",
+                    tr(
+                        "Sync stopped by branch conflicts, resolve them in the Conflicts panel",
+                        "同步因分支冲突停止，请在冲突面板解决后提交",
+                    ),
+                    n,
+                    error
+                ));
+                self.refresh(cx);
+                return;
+            }
+        }
+        self.state.error = Some(error.to_string());
+        cx.notify();
     }
 }
 
