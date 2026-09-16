@@ -1,6 +1,6 @@
 use super::backend::GitBackend;
 use super::error::Result;
-use super::graph::{build_graph, Graph};
+use super::graph::{Graph, build_graph};
 use super::types::{Branch, Commit, RepoStatus, Tag};
 
 pub const DEFAULT_LOG_LIMIT: usize = 500;
@@ -80,14 +80,20 @@ mod tests {
 
     #[test]
     fn empty_query_returns_all() {
-        let commits = vec![commit("a1", "feat: one", "alice"), commit("b2", "fix: two", "bob")];
+        let commits = vec![
+            commit("a1", "feat: one", "alice"),
+            commit("b2", "fix: two", "bob"),
+        ];
         assert_eq!(filter_commits(&commits, "  ").len(), 2);
         assert_eq!(filter_commits(&commits, "").len(), 2);
     }
 
     #[test]
     fn filters_by_subject_case_insensitive() {
-        let commits = vec![commit("a1", "Feat: Add Button", "alice"), commit("b2", "fix bug", "bob")];
+        let commits = vec![
+            commit("a1", "Feat: Add Button", "alice"),
+            commit("b2", "fix bug", "bob"),
+        ];
         let hits = filter_commits(&commits, "button");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id.as_str(), "a1");
@@ -95,7 +101,10 @@ mod tests {
 
     #[test]
     fn filters_by_author_and_id() {
-        let commits = vec![commit("abc123", "one", "alice"), commit("def456", "two", "bob")];
+        let commits = vec![
+            commit("abc123", "one", "alice"),
+            commit("def456", "two", "bob"),
+        ];
         assert_eq!(filter_commits(&commits, "BOB").len(), 1);
         assert_eq!(filter_commits(&commits, "DEF").len(), 1);
         assert_eq!(filter_commits(&commits, "zzz").len(), 0);

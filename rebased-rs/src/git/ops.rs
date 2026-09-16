@@ -244,7 +244,10 @@ pub fn stash_pop(cmd: &GitCommand) -> Result<()> {
 pub fn stash_list(cmd: &GitCommand) -> Result<Vec<StashEntry>> {
     let output = cmd.execute(&["stash", "list", "--format=%gd%x1f%gs"])?;
     if !output.success {
-        return Err(GitError::with_stderr("git stash list failed", output.stderr));
+        return Err(GitError::with_stderr(
+            "git stash list failed",
+            output.stderr,
+        ));
     }
     Ok(parse_stash_list(&output.stdout))
 }
@@ -517,7 +520,10 @@ mod tests {
         let entries = parse_reflog(out);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].selector, "HEAD@{0}");
-        assert_eq!(entries[0].commit_id, "0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(
+            entries[0].commit_id,
+            "0123456789abcdef0123456789abcdef01234567"
+        );
         assert_eq!(entries[0].short_id, "0123456");
         assert_eq!(entries[0].message, "commit: fix bug");
         assert_eq!(entries[1].message, "checkout: moving from main to dev");

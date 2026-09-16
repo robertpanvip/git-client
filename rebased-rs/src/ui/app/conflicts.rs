@@ -2,7 +2,7 @@ use gpui::Context;
 
 use rebased_rs::git::HunkChoice;
 
-use super::{use_cases, AppView, SidebarMode};
+use super::{AppView, SidebarMode, use_cases};
 
 impl AppView {
     pub(crate) fn open_conflicts(&mut self, cx: &mut Context<Self>) {

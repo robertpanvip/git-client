@@ -199,7 +199,8 @@ pub fn resolve_markers(content: &str, choices: &[HunkChoice]) -> Option<String> 
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = "top\n<<<<<<< HEAD\nours one\nours two\n=======\ntheirs one\n>>>>>>> branch\nbottom\n";
+    const SAMPLE: &str =
+        "top\n<<<<<<< HEAD\nours one\nours two\n=======\ntheirs one\n>>>>>>> branch\nbottom\n";
 
     #[test]
     fn parse_conflicted_status_codes() {

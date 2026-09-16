@@ -83,13 +83,7 @@ fn parse_track(track: &str) -> (u32, u32) {
 mod tests {
     use super::*;
 
-    fn line(
-        full_name: &str,
-        sha: &str,
-        head: &str,
-        upstream: &str,
-        track: &str,
-    ) -> String {
+    fn line(full_name: &str, sha: &str, head: &str, upstream: &str, track: &str) -> String {
         format!("{full_name}\t{sha}\t{head}\t{upstream}\t{track}")
     }
 

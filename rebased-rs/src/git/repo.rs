@@ -5,7 +5,9 @@ use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
 use super::ops;
 use super::status::STATUS_ARGS;
-use super::types::{Branch, Change, Commit, FileDiff, ReflogEntry, Remote, RepoStatus, StashEntry, Tag};
+use super::types::{
+    Branch, Change, Commit, FileDiff, ReflogEntry, Remote, RepoStatus, StashEntry, Tag,
+};
 use super::{blame, conflict, diff, merge, rebase};
 use conflict::{ConflictFile, HunkChoice};
 use rebase::RebaseAction;
@@ -114,7 +116,13 @@ impl Repository {
         let dirty = self
             .cmd
             .execute(&["status", "--porcelain"])
-            .map(|o| if o.success { o.stdout.lines().count() } else { 0 })
+            .map(|o| {
+                if o.success {
+                    o.stdout.lines().count()
+                } else {
+                    0
+                }
+            })
             .unwrap_or(0);
         Ok(format!("{head}:{dirty}"))
     }
@@ -124,7 +132,10 @@ impl Repository {
         let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = self.cmd.execute(&args)?;
         if !output.success {
-            return Err(GitError::with_stderr("git for-each-ref failed", output.stderr));
+            return Err(GitError::with_stderr(
+                "git for-each-ref failed",
+                output.stderr,
+            ));
         }
         Ok(branches::parse_refs(&output.stdout))
     }
@@ -139,7 +150,9 @@ impl Repository {
     }
 
     pub fn branches_containing(&self, commit: &str) -> Result<Vec<String>> {
-        let output = self.cmd.execute(&["branch", "--format=%(refname:short)", "--contains", commit])?;
+        let output =
+            self.cmd
+                .execute(&["branch", "--format=%(refname:short)", "--contains", commit])?;
         if !output.success {
             return Err(GitError::with_stderr(
                 "git branch --contains failed",
@@ -229,11 +242,7 @@ impl Repository {
         ops::pull_progress(&self.cmd, "origin", branch, progress, cancel)
     }
 
-    pub fn fetch_with_control(
-        &self,
-        progress: ProgressHandle,
-        cancel: CancelToken,
-    ) -> Result<()> {
+    pub fn fetch_with_control(&self, progress: ProgressHandle, cancel: CancelToken) -> Result<()> {
         ops::fetch_progress(&self.cmd, None, progress, cancel)
     }
 
@@ -328,7 +337,10 @@ impl Repository {
         ];
         let output = self.cmd.execute(&args)?;
         if !output.success {
-            return Err(GitError::with_stderr("git for-each-ref failed", output.stderr));
+            return Err(GitError::with_stderr(
+                "git for-each-ref failed",
+                output.stderr,
+            ));
         }
         Ok(ops::parse_tags(&output.stdout))
     }
@@ -366,12 +378,7 @@ impl Repository {
         diff::diff_head(&self.cmd, path, ignore_ws)
     }
 
-    pub fn show_diff(
-        &self,
-        commit: &str,
-        path: Option<&str>,
-        ignore_ws: bool,
-    ) -> Result<String> {
+    pub fn show_diff(&self, commit: &str, path: Option<&str>, ignore_ws: bool) -> Result<String> {
         diff::show_diff(&self.cmd, commit, path, ignore_ws)
     }
 
@@ -542,8 +549,8 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or_default();
-            let path =
-                std::env::temp_dir().join(format!("rebased-rs-repo-{}-{nanos}", std::process::id()));
+            let path = std::env::temp_dir()
+                .join(format!("rebased-rs-repo-{}-{nanos}", std::process::id()));
             std::fs::create_dir_all(&path).unwrap();
             git(&path, &["init", "-b", "main"]);
             git(&path, &["config", "user.name", "Test"]);
@@ -686,8 +693,7 @@ mod tests {
         let content = repo.worktree_file_content("a.txt").unwrap();
         assert_eq!(content, "original");
 
-        repo.write_worktree_file("a.txt", "edited content")
-            .unwrap();
+        repo.write_worktree_file("a.txt", "edited content").unwrap();
         let edited = std::fs::read_to_string(dir.path.join("a.txt")).unwrap();
         assert_eq!(edited, "edited content");
 

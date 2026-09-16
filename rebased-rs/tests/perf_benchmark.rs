@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use rebased_rs::git::{load_repo_data, Repository, DEFAULT_LOG_LIMIT};
+use rebased_rs::git::{DEFAULT_LOG_LIMIT, Repository, load_repo_data};
 
 struct TempRepo {
     path: PathBuf,

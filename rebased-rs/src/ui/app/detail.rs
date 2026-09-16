@@ -6,7 +6,7 @@ use rebased_rs::git::{Commit, MergeMode, RebaseActionKind, ResetMode};
 use crate::ui::commit_list::LogDelegate;
 use crate::ui::i18n::tr;
 
-use super::{use_cases, AppView, DiffSource, PromptKind, SidebarMode};
+use super::{AppView, DiffSource, PromptKind, SidebarMode, use_cases};
 
 impl AppView {
     pub(crate) fn load_commit_detail(&mut self, commit: Commit, cx: &mut Context<Self>) {
@@ -134,11 +134,7 @@ impl AppView {
     }
 
     /// Amend 开启时，把当前 HEAD 的完整提交消息预填到消息输入框。
-    pub(crate) fn prefill_amend_message(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn prefill_amend_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
@@ -210,8 +206,7 @@ impl AppView {
                 self.state.diff_editing = true;
             }
             Err(e) => {
-                self.state.error =
-                    Some(format!("{} {path}: {e}", tr("Cannot edit", "无法编辑")));
+                self.state.error = Some(format!("{} {path}: {e}", tr("Cannot edit", "无法编辑")));
             }
         }
         cx.notify();
@@ -224,9 +219,11 @@ impl AppView {
         let content = self.diff_edit_input.read(cx).value().to_string();
         self.state.diff_editing = false;
         let message = format!("{} {path}", tr("Saved", "已保存"));
-        self.run_op(&message, move |repo| {
-            repo.write_worktree_file(&path, &content)
-        }, cx);
+        self.run_op(
+            &message,
+            move |repo| repo.write_worktree_file(&path, &content),
+            cx,
+        );
     }
 
     pub(crate) fn cancel_diff_edit(&mut self, cx: &mut Context<Self>) {
@@ -262,8 +259,7 @@ impl AppView {
         match kind {
             PromptKind::NewBranch { start_point } => {
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Branch name is empty", "分支名称为空").to_string());
+                    self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
                     let message = format!("{} {input}", tr("Created branch", "已创建分支"));
                     self.run_op(
@@ -278,8 +274,7 @@ impl AppView {
             }
             PromptKind::NewTag { commit_id } => {
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Tag name is empty", "标签名称为空").to_string());
+                    self.state.error = Some(tr("Tag name is empty", "标签名称为空").to_string());
                 } else {
                     let message = format!("{} {input}", tr("Created tag", "已创建标签"));
                     self.run_op(
@@ -291,8 +286,7 @@ impl AppView {
             }
             PromptKind::EditTag { name, commit_id } => {
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Tag message is empty", "标签消息为空").to_string());
+                    self.state.error = Some(tr("Tag message is empty", "标签消息为空").to_string());
                 } else {
                     let message = format!("{} {name}", tr("Updated tag", "已更新标签"));
                     self.run_op(
@@ -329,14 +323,12 @@ impl AppView {
             }
             PromptKind::RenameBranch => {
                 let Some(old) = self.state.current_branch.clone() else {
-                    self.state.error =
-                        Some(tr("No current branch", "没有当前分支").to_string());
+                    self.state.error = Some(tr("No current branch", "没有当前分支").to_string());
                     cx.notify();
                     return;
                 };
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Branch name is empty", "分支名称为空").to_string());
+                    self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
                     let message = format!("{} {old} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
@@ -344,8 +336,7 @@ impl AppView {
             }
             PromptKind::RenameBranchByName { name } => {
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Branch name is empty", "分支名称为空").to_string());
+                    self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
                 } else {
                     let message = format!("{} {name} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&name, &input), cx);
@@ -369,8 +360,7 @@ impl AppView {
             }
             PromptKind::GoTo => {
                 if input.is_empty() {
-                    self.state.error =
-                        Some(tr("Revision is empty", "修订版本为空").to_string());
+                    self.state.error = Some(tr("Revision is empty", "修订版本为空").to_string());
                 } else {
                     self.goto_revision(input, cx);
                 }

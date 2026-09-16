@@ -25,7 +25,12 @@ impl GitError {
 impl fmt::Display for GitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)?;
-        if let Some(stderr) = self.stderr.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(stderr) = self
+            .stderr
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             write!(f, ": {}", stderr.trim_end())?;
         }
         Ok(())

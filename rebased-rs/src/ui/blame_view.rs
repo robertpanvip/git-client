@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, App, Div, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled,
+    App, Div, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled, div, px,
 };
 use gpui_kit::component::ActiveTheme;
 use rebased_rs::git::BlameGroup;
@@ -46,11 +46,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                     .text_color(meta_color)
                     .child(short),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .child(group.author.clone()),
-            )
+            .child(div().text_xs().child(group.author.clone()))
             .child(
                 div()
                     .text_xs()
@@ -70,11 +66,9 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
         if let Some(jump) = on_commit {
             let id = group.commit_id.clone();
             let jump = jump.clone();
-            meta = meta
-                .cursor_pointer()
-                .on_click(move |_, _, app| {
-                    jump(id.clone(), app);
-                });
+            meta = meta.cursor_pointer().on_click(move |_, _, app| {
+                jump(id.clone(), app);
+            });
         }
 
         container = container.children([meta]).children(

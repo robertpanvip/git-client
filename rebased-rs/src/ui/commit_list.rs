@@ -1,22 +1,22 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Local};
+use gpui::{
+    App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Task, WeakEntity, Window, div, px,
+};
 use gpui_kit::base::IndexPath;
 use gpui_kit::component::{
+    ActiveTheme,
     list::{ListDelegate, ListItem, ListState},
     menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
-    ActiveTheme,
 };
-use gpui::{
-    div, px, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
-};
-use rebased_rs::git::{build_graph, filter_commits, Commit, Graph};
+use rebased_rs::git::{Commit, Graph, build_graph, filter_commits};
 
 use crate::ui::app::{AppView, ConfirmAction, PromptKind};
 use crate::ui::components::{badge, empty_state, ref_style};
+use crate::ui::graph_view::{ROW_HEIGHT, lane_canvas};
 use crate::ui::i18n::tr;
-use crate::ui::graph_view::{lane_canvas, ROW_HEIGHT};
 
 pub struct LogData {
     pub commits: Vec<Commit>,
@@ -106,9 +106,7 @@ impl ListDelegate for LogDelegate {
     type Item = ListItem;
 
     fn items_count(&self, _section: usize, _cx: &App) -> usize {
-        self.visible
-            .as_ref()
-            .map_or(0, |data| data.commits.len())
+        self.visible.as_ref().map_or(0, |data| data.commits.len())
     }
 
     fn perform_search(
@@ -231,11 +229,12 @@ fn ref_badge(id: &str, name: &str, app: Option<WeakEntity<AppView>>) -> impl Int
     let (label, color) = ref_style(name);
 
     let name = name.to_string();
-    badge(SharedString::from(id.to_string()), label, color)
-        .context_menu(move |menu, _window, cx| match &app {
+    badge(SharedString::from(id.to_string()), label, color).context_menu(
+        move |menu, _window, cx| match &app {
             Some(app) => build_ref_menu(menu, &name, app, cx),
             None => menu,
-        })
+        },
+    )
 }
 
 /// ref 徽章的右键菜单：tag 可删除；分支按本地/远程给出对应操作
@@ -243,17 +242,19 @@ fn ref_badge(id: &str, name: &str, app: Option<WeakEntity<AppView>>) -> impl Int
 fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &App) -> PopupMenu {
     if let Some(tag) = name.strip_prefix("tag: ") {
         let tag = tag.to_string();
-        return menu.item(PopupMenuItem::new(format!("✕ Delete tag {tag}…")).on_click({
-            let app = app.clone();
-            move |_, _, cx| {
-                let _ = app.update(cx, |this, cx| {
-                    this.open_prompt(
-                        PromptKind::Confirm(ConfirmAction::DeleteTag { name: tag.clone() }),
-                        cx,
-                    )
-                });
-            }
-        }));
+        return menu.item(
+            PopupMenuItem::new(format!("✕ Delete tag {tag}…")).on_click({
+                let app = app.clone();
+                move |_, _, cx| {
+                    let _ = app.update(cx, |this, cx| {
+                        this.open_prompt(
+                            PromptKind::Confirm(ConfirmAction::DeleteTag { name: tag.clone() }),
+                            cx,
+                        )
+                    });
+                }
+            }),
+        );
     }
 
     let branch = name.strip_prefix("HEAD -> ").unwrap_or(name).to_string();
@@ -275,24 +276,26 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
                 }
             }),
         )
-        .item(PopupMenuItem::new(format!("⇄ Pull {branch} into current")).on_click({
-            let app = app.clone();
-            let branch = branch.clone();
-            move |_, _, cx| {
-                let _ = app.update(cx, |this, cx| {
-                    this.pull_branch_into_current(branch.clone(), cx)
-                });
-            }
-        }))
-        .item(PopupMenuItem::new(format!("⇋ Compare {branch} with current")).on_click({
-            let app = app.clone();
-            let branch = branch.clone();
-            move |_, _, cx| {
-                let _ = app.update(cx, |this, cx| {
-                    this.open_branch_compare(branch.clone(), cx)
-                });
-            }
-        }))
+        .item(
+            PopupMenuItem::new(format!("⇄ Pull {branch} into current")).on_click({
+                let app = app.clone();
+                let branch = branch.clone();
+                move |_, _, cx| {
+                    let _ = app.update(cx, |this, cx| {
+                        this.pull_branch_into_current(branch.clone(), cx)
+                    });
+                }
+            }),
+        )
+        .item(
+            PopupMenuItem::new(format!("⇋ Compare {branch} with current")).on_click({
+                let app = app.clone();
+                let branch = branch.clone();
+                move |_, _, cx| {
+                    let _ = app.update(cx, |this, cx| this.open_branch_compare(branch.clone(), cx));
+                }
+            }),
+        )
     } else {
         let is_current = entry.as_ref().is_some_and(|b| b.is_current());
         let has_upstream = entry.as_ref().is_none_or(|b| b.upstream.is_some());
@@ -331,7 +334,9 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             move |_, _, cx| {
                 let _ = app.update(cx, |this, cx| {
                     this.open_prompt(
-                        PromptKind::Confirm(ConfirmAction::DeleteBranch { name: branch.clone() }),
+                        PromptKind::Confirm(ConfirmAction::DeleteBranch {
+                            name: branch.clone(),
+                        }),
                         cx,
                     )
                 });
@@ -342,10 +347,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
 
 pub(crate) fn format_time(secs: i64) -> String {
     match DateTime::from_timestamp(secs, 0) {
-        Some(time) => time
-            .with_timezone(&Local)
-            .format("%m-%d %H:%M")
-            .to_string(),
+        Some(time) => time.with_timezone(&Local).format("%m-%d %H:%M").to_string(),
         None => String::new(),
     }
 }

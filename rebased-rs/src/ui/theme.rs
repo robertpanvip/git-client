@@ -4,7 +4,7 @@
 // tokens 为设计系统预留项，未即时引用属预期。
 #![allow(dead_code)]
 
-use gpui::{hsla, Hsla};
+use gpui::{Hsla, hsla};
 use rebased_rs::git::{ChangeStatus, MAX_COLORS};
 
 // ---------- 密度（IntelliJ 风格紧凑行） ----------

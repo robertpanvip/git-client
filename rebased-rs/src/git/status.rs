@@ -1,11 +1,6 @@
 use super::types::{Change, ChangeStatus, RepoStatus};
 
-pub const STATUS_ARGS: [&str; 4] = [
-    "status",
-    "--porcelain",
-    "--branch",
-    "--untracked-files=all",
-];
+pub const STATUS_ARGS: [&str; 4] = ["status", "--porcelain", "--branch", "--untracked-files=all"];
 
 fn status_code(x: char, y: char) -> Option<(ChangeStatus, bool)> {
     match x {
@@ -130,10 +125,7 @@ UU conflict.txt
         assert_eq!(renamed.status, ChangeStatus::Renamed);
         assert_eq!(renamed.original_path.as_deref(), Some("renamed_old.txt"));
         assert_eq!(renamed.path, "renamed_new.txt");
-        assert_eq!(
-            renamed.display_path(),
-            "renamed_old.txt -> renamed_new.txt"
-        );
+        assert_eq!(renamed.display_path(), "renamed_old.txt -> renamed_new.txt");
 
         assert_eq!(status.changes[5].status, ChangeStatus::Untracked);
         assert_eq!(status.changes[5].path, "target/");

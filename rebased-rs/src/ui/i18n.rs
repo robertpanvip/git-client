@@ -63,10 +63,13 @@ pub fn load_persisted() {
             _ => resolved,
         };
     }
-    LANG.store(match resolved {
-        Language::Zh => 1,
-        Language::En => 0,
-    }, Ordering::Relaxed);
+    LANG.store(
+        match resolved {
+            Language::Zh => 1,
+            Language::En => 0,
+        },
+        Ordering::Relaxed,
+    );
 }
 
 fn persist(lang: Language) {

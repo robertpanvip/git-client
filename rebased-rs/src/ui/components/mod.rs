@@ -1,9 +1,7 @@
 //! rebased 风格基础组件：徽章、分隔线、分组标题、空态。
 //! 只做视觉标准化，业务交互（菜单/动作）留在各 panel。
 
-use gpui::{
-    div, px, Div, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled,
-};
+use gpui::{Div, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, px};
 
 pub use gpui_kit::component::checkbox::Checkbox;
 
@@ -23,11 +21,7 @@ pub fn ref_style(name: &str) -> (String, Hsla) {
 }
 
 /// 圆角小徽章（分支/标签/状态）。
-pub fn badge(
-    id: SharedString,
-    label: impl Into<SharedString>,
-    color: Hsla,
-) -> Stateful<Div> {
+pub fn badge(id: SharedString, label: impl Into<SharedString>, color: Hsla) -> Stateful<Div> {
     div()
         .id(id)
         .flex_none()

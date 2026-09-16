@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    conflict_hunks, parse_unified_diff, Commit, GitBackend, GitError, Graph, HunkChoice, RepoData,
+    Commit, GitBackend, GitError, Graph, HunkChoice, RepoData, conflict_hunks, parse_unified_diff,
 };
 #[cfg(test)]
-use rebased_rs::git::{load_repo_data, open_backend, DEFAULT_LOG_LIMIT};
+use rebased_rs::git::{DEFAULT_LOG_LIMIT, load_repo_data, open_backend};
 
 use super::state::{AppState, DiffSource, RebaseFlow, SidebarMode};
 
@@ -319,10 +319,7 @@ pub(crate) fn take_conflict_side(
     reload_conflict_state(repo, state)
 }
 
-pub(crate) fn reload_shelves(
-    repo: &dyn GitBackend,
-    state: &mut AppState,
-) -> Result<(), GitError> {
+pub(crate) fn reload_shelves(repo: &dyn GitBackend, state: &mut AppState) -> Result<(), GitError> {
     state.shelves = repo.stash_list()?;
     Ok(())
 }
@@ -344,7 +341,8 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or_default();
-            let path = std::env::temp_dir().join(format!("rebased-rs-uc-{}-{nanos}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("rebased-rs-uc-{}-{nanos}", std::process::id()));
             std::fs::create_dir_all(&path).unwrap();
             git(&path, &["init", "-b", "main"]);
             git(&path, &["config", "user.name", "Test"]);
@@ -391,7 +389,10 @@ mod tests {
     #[test]
     fn sync_repo_state_maps_repo_data() {
         let repo_dir = TempRepo::new();
-        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        git(
+            &repo_dir.path,
+            &["commit", "--allow-empty", "-m", "initial"],
+        );
         let repo = open_backend(&repo_dir.path).unwrap();
         let data = load_repo_data(repo.as_ref(), DEFAULT_LOG_LIMIT).unwrap();
         let mut state = AppState {
@@ -414,7 +415,10 @@ mod tests {
     #[test]
     fn commit_selected_commits_only_chosen_paths() {
         let repo_dir = TempRepo::new();
-        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        git(
+            &repo_dir.path,
+            &["commit", "--allow-empty", "-m", "initial"],
+        );
         let repo = open_backend(&repo_dir.path).unwrap();
         std::fs::write(repo_dir.path.join("a.txt"), "a").unwrap();
         std::fs::write(repo_dir.path.join("b.txt"), "b").unwrap();
@@ -464,7 +468,10 @@ mod tests {
     #[test]
     fn staged_and_unstaged_diffs_open() {
         let repo_dir = TempRepo::new();
-        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        git(
+            &repo_dir.path,
+            &["commit", "--allow-empty", "-m", "initial"],
+        );
         let repo = open_backend(&repo_dir.path).unwrap();
         std::fs::write(repo_dir.path.join("a.txt"), "hello").unwrap();
         let mut state = AppState::default();
@@ -482,7 +489,10 @@ mod tests {
     #[test]
     fn hunk_stage_and_unstage_roundtrip() {
         let repo_dir = TempRepo::new();
-        git(&repo_dir.path, &["commit", "--allow-empty", "-m", "initial"]);
+        git(
+            &repo_dir.path,
+            &["commit", "--allow-empty", "-m", "initial"],
+        );
         let repo = open_backend(&repo_dir.path).unwrap();
         std::fs::write(
             repo_dir.path.join("a.txt"),

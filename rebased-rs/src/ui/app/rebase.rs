@@ -46,7 +46,12 @@ impl AppView {
         }
     }
 
-    pub(crate) fn move_rebase_action(&mut self, index: usize, delta: isize, cx: &mut Context<Self>) {
+    pub(crate) fn move_rebase_action(
+        &mut self,
+        index: usize,
+        delta: isize,
+        cx: &mut Context<Self>,
+    ) {
         let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase else {
             return;
         };
@@ -59,12 +64,7 @@ impl AppView {
     }
 
     /// 把拖拽的项移动到目标位置（drop 目标行）。
-    pub(crate) fn move_rebase_action_to(
-        &mut self,
-        from: usize,
-        to: usize,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn move_rebase_action_to(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
         let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase else {
             return;
         };
@@ -80,9 +80,7 @@ impl AppView {
     /// 操作幂等，取消勾选保留已重排的结果。
     pub(crate) fn toggle_rebase_autosquash(&mut self, on: bool, cx: &mut Context<Self>) {
         self.state.rebase_autosquash = on;
-        if on
-            && let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase
-        {
+        if on && let RebaseFlow::Planning { plan, .. } = &mut self.state.rebase {
             *plan = autosquash_plan(std::mem::take(plan));
         }
         cx.notify();
@@ -103,7 +101,11 @@ impl AppView {
         }) else {
             return;
         };
-        let prefill = if existing.is_empty() { subject } else { existing };
+        let prefill = if existing.is_empty() {
+            subject
+        } else {
+            existing
+        };
         self.prompt_input
             .update(cx, |state, cx| state.set_value(&prefill, window, cx));
         self.state.prompt = Some(PromptKind::RebaseEdit { index });

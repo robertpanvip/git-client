@@ -64,10 +64,7 @@ impl LaneSet {
     }
 
     fn place(&mut self, index: usize, waiting_for: CommitId, color: usize) {
-        self.lanes[index] = Some(Lane {
-            waiting_for,
-            color,
-        });
+        self.lanes[index] = Some(Lane { waiting_for, color });
     }
 }
 

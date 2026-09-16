@@ -112,7 +112,9 @@ mod tests {
         let mut s = String::new();
         s.push_str("1111111111111111111111111111111111111111");
         s.push('\u{1f}');
-        s.push_str("2222222222222222222222222222222222222222 3333333333333333333333333333333333333333");
+        s.push_str(
+            "2222222222222222222222222222222222222222 3333333333333333333333333333333333333333",
+        );
         s.push('\u{1f}');
         s.push_str("Alice");
         s.push('\u{1f}');
@@ -150,7 +152,10 @@ mod tests {
         assert_eq!(commits.len(), 2);
 
         let first = &commits[0];
-        assert_eq!(first.id.as_str(), "1111111111111111111111111111111111111111");
+        assert_eq!(
+            first.id.as_str(),
+            "1111111111111111111111111111111111111111"
+        );
         assert_eq!(first.parents.len(), 2);
         assert!(first.is_merge());
         assert_eq!(first.author.name, "Alice");

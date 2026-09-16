@@ -125,7 +125,11 @@ pub fn autosquash_plan(plan: Vec<RebaseAction>) -> Vec<RebaseAction> {
         let kind = autosquash_kind(&action.subject);
         let target = kind.as_ref().and_then(|_| {
             let root = autosquash_target(&action.subject).unwrap_or_default();
-            heads.iter().rev().find(|(s, _)| *s == root).map(|(_, i)| *i)
+            heads
+                .iter()
+                .rev()
+                .find(|(s, _)| *s == root)
+                .map(|(_, i)| *i)
         });
         match (kind, target) {
             (Some(kind), Some(at)) => {
@@ -348,10 +352,8 @@ pub fn reword(cmd: &GitCommand, commit: &str, message: &str) -> Result<()> {
         todo.push_str(&format!("{keyword} {short} {}\n", action.subject));
     }
     let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-    let tmp_todo = std::env::temp_dir()
-        .join(format!("rebased-rs-reword-todo-{}", unique));
-    let tmp_msg = std::env::temp_dir()
-        .join(format!("rebased-rs-reword-msg-{}", unique));
+    let tmp_todo = std::env::temp_dir().join(format!("rebased-rs-reword-todo-{}", unique));
+    let tmp_msg = std::env::temp_dir().join(format!("rebased-rs-reword-msg-{}", unique));
     std::fs::write(&tmp_todo, todo)
         .map_err(|e| GitError::with_stderr("failed to write reword todo", e.to_string()))?;
     std::fs::write(&tmp_msg, message)
@@ -424,10 +426,7 @@ mod tests {
             },
         ];
         let todo = render_todo(&plan);
-        assert_eq!(
-            todo,
-            "pick 1234567890 first\nsquash fedcba0987 second\n"
-        );
+        assert_eq!(todo, "pick 1234567890 first\nsquash fedcba0987 second\n");
     }
 
     #[test]

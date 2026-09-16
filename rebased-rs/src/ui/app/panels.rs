@@ -1,21 +1,21 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, AppContext, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Window,
+    AnyElement, AppContext, Context, Div, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
+    px,
 };
 use gpui_kit::component::{
+    ActiveTheme,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     input::Textarea,
-    ActiveTheme,
 };
 
 use rebased_rs::git::{HunkChoice, ResetMode};
 
-use crate::ui::blame_view::{render_blame, BlameJump};
+use crate::ui::blame_view::{BlameJump, render_blame};
 use crate::ui::components::{empty_state, group_header};
-use crate::ui::diff_view::{render_diff_files, HunkAction};
+use crate::ui::diff_view::{HunkAction, render_diff_files};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -78,12 +78,10 @@ impl AppView {
             );
 
         if plan.is_empty() {
-            panel = panel.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(tr("No commits between base and HEAD.", "基点与 HEAD 之间没有提交。")),
-            );
+            panel = panel.child(div().text_xs().text_color(muted).child(tr(
+                "No commits between base and HEAD.",
+                "基点与 HEAD 之间没有提交。",
+            )));
         }
 
         for (index, action) in plan.iter().enumerate() {
@@ -95,8 +93,7 @@ impl AppView {
                 _ => format!("{short} {}", action.subject),
             };
             // on_drag 的 constructor 是 Fn，可能被多次调用，label 按次克隆。
-            let drag_label: SharedString =
-                format!("{} {short}", tr("Move", "移动")).into();
+            let drag_label: SharedString = format!("{} {short}", tr("Move", "移动")).into();
             panel = panel.child(
                 div()
                     .id(("rebase-row", index))
@@ -216,24 +213,19 @@ impl AppView {
             .size_full()
             .overflow_y_scroll()
             .child(group_header(tr("Conflicts", "冲突"), muted))
-            .child(
-                div()
-                    .flex_none()
-                    .px_2()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(if self.state.merge_in_progress {
-                        tr(
-                            "Merge is paused. Resolve conflicts, then continue the merge.",
-                            "合并已暂停。解决冲突后继续合并。",
-                        )
-                    } else {
-                        tr(
-                            "Rebase is paused. Resolve conflicts, then continue the rebase.",
-                            "变基已暂停。解决冲突后继续变基。",
-                        )
-                    }),
-            );
+            .child(div().flex_none().px_2().text_xs().text_color(muted).child(
+                if self.state.merge_in_progress {
+                    tr(
+                        "Merge is paused. Resolve conflicts, then continue the merge.",
+                        "合并已暂停。解决冲突后继续合并。",
+                    )
+                } else {
+                    tr(
+                        "Rebase is paused. Resolve conflicts, then continue the rebase.",
+                        "变基已暂停。解决冲突后继续变基。",
+                    )
+                },
+            ));
 
         if self.state.conflict_files.is_empty() {
             let message = if let Some(sha) = self.state.rebase.stopped_commit() {
@@ -304,17 +296,10 @@ impl AppView {
 
         if let Some(path) = self.state.conflict_path.clone() {
             if self.state.conflict_hunks.is_empty() {
-                panel = panel.child(
-                    div()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(
-                            tr(
-                                "No textual hunks in this file. Use the buttons above to take one side.",
-                                "该文件没有文本冲突块。使用上方按钮选择一侧。",
-                            ),
-                        ),
-                );
+                panel = panel.child(div().text_xs().text_color(muted).child(tr(
+                    "No textual hunks in this file. Use the buttons above to take one side.",
+                    "该文件没有文本冲突块。使用上方按钮选择一侧。",
+                )));
             }
             for (index, hunk) in self.state.conflict_hunks.iter().enumerate() {
                 let ours_text = if hunk.ours.is_empty() {
@@ -371,21 +356,15 @@ impl AppView {
                     tr("— unresolved —", "— 未解决 —").to_string()
                 };
                 let result_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Ours)) => format!(
-                        "{} · {}",
-                        tr("Result", "结果"),
-                        tr("ours", "我们的")
-                    ),
-                    Some(Some(HunkChoice::Theirs)) => format!(
-                        "{} · {}",
-                        tr("Result", "结果"),
-                        tr("theirs", "他们的")
-                    ),
-                    Some(Some(HunkChoice::Both)) => format!(
-                        "{} · {}",
-                        tr("Result", "结果"),
-                        tr("both", "两者")
-                    ),
+                    Some(Some(HunkChoice::Ours)) => {
+                        format!("{} · {}", tr("Result", "结果"), tr("ours", "我们的"))
+                    }
+                    Some(Some(HunkChoice::Theirs)) => {
+                        format!("{} · {}", tr("Result", "结果"), tr("theirs", "他们的"))
+                    }
+                    Some(Some(HunkChoice::Both)) => {
+                        format!("{} · {}", tr("Result", "结果"), tr("both", "两者"))
+                    }
                     _ => tr("Result", "结果").to_string(),
                 };
                 panel = panel.child(
@@ -518,9 +497,9 @@ impl AppView {
                         .primary()
                         .compact()
                         .label(tr("Apply Resolutions", "应用解决结果"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.apply_conflict_resolutions(cx)
-                        })),
+                        .on_click(
+                            cx.listener(|this, _, _, cx| this.apply_conflict_resolutions(cx)),
+                        ),
                 );
             }
         }
@@ -540,17 +519,10 @@ impl AppView {
             .child(group_header(tr("Shelves", "搁置"), muted));
 
         if self.state.shelves.is_empty() {
-            panel = panel.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(
-                        tr(
-                            "Nothing on the shelf. Use Shelve in the commit composer.",
-                            "搁置区为空。在提交区使用“搁置”。",
-                        ),
-                    ),
-            );
+            panel = panel.child(div().text_xs().text_color(muted).child(tr(
+                "Nothing on the shelf. Use Shelve in the commit composer.",
+                "搁置区为空。在提交区使用“搁置”。",
+            )));
         }
 
         for entry in &self.state.shelves {
@@ -575,18 +547,18 @@ impl AppView {
                             .ghost()
                             .compact()
                             .label(tr("Unshelve", "恢复搁置"))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.unshelve_at(index, cx)
-                            })),
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.unshelve_at(index, cx)),
+                            ),
                     )
                     .child(
                         Button::new(("shelve-drop", index))
                             .ghost()
                             .compact()
                             .label(tr("Drop", "丢弃"))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.drop_shelve_at(index, cx)
-                            })),
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.drop_shelve_at(index, cx)),
+                            ),
                     ),
             );
         }
@@ -606,40 +578,31 @@ impl AppView {
         let mine = self.state.compare_mine.clone();
         let theirs = self.state.compare_theirs.clone();
 
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .size_full()
-            .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .flex_none()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(format!(
-                                "{} · {mine} ←→ {theirs}",
-                                tr("Compare", "比较")
-                            )),
-                    )
-                    .child(
-                        Button::new("compare-close")
-                            .ghost()
-                            .compact()
-                            .icon(Ic::Close)
-                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
-                    ),
-            );
+        let mut panel = div().flex().flex_col().gap_2().size_full().min_h_0().child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .flex_none()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(format!("{} · {mine} ←→ {theirs}", tr("Compare", "比较"))),
+                )
+                .child(
+                    Button::new("compare-close")
+                        .ghost()
+                        .compact()
+                        .icon(Ic::Close)
+                        .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                ),
+        );
 
         let sections = [
             (
@@ -689,10 +652,16 @@ impl AppView {
                         .rounded(px(theme::RADIUS))
                         .cursor_pointer()
                         .hover(move |style| style.bg(theme::hover_bg(fg)))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.select_commit_by_id(&id, cx)
-                        }))
-                        .child(div().flex_none().text_xs().text_color(muted_fg).child(short))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.select_commit_by_id(&id, cx)),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted_fg)
+                                .child(short),
+                        )
                         .child(
                             div()
                                 .flex_1()
@@ -702,13 +671,7 @@ impl AppView {
                                 .text_sm()
                                 .child(subject),
                         )
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted_fg)
-                                .child(time),
-                        ),
+                        .child(div().flex_none().text_xs().text_color(muted_fg).child(time)),
                 );
             }
         }
@@ -743,14 +706,16 @@ impl AppView {
             SidebarMode::Blame => base.child(self.render_blame_panel(cx)).into_any_element(),
             SidebarMode::Compare => base.child(self.render_compare_panel(cx)).into_any_element(),
             SidebarMode::Rebase => base.child(self.render_rebase_panel(cx)).into_any_element(),
-            SidebarMode::Conflicts => {
-                base.child(self.render_conflicts_panel(cx)).into_any_element()
-            }
+            SidebarMode::Conflicts => base
+                .child(self.render_conflicts_panel(cx))
+                .into_any_element(),
             SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
             SidebarMode::History => base.child(self.render_history_panel(cx)).into_any_element(),
             SidebarMode::Reflog => base.child(self.render_reflog_panel(cx)).into_any_element(),
             SidebarMode::Detail => match &self.state.selected {
-                Some(commit) => base.child(self.render_detail(commit, cx)).into_any_element(),
+                Some(commit) => base
+                    .child(self.render_detail(commit, cx))
+                    .into_any_element(),
                 None => base.child(self.render_workspace(cx)).into_any_element(),
             },
             SidebarMode::Workspace => base.child(self.render_workspace(cx)).into_any_element(),
@@ -761,114 +726,104 @@ impl AppView {
         let muted = cx.theme().muted_foreground;
         let title = self.state.diff_title.clone();
 
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .flex_none()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(title),
-                    )
-                    .when(!self.state.diff_files.is_empty(), |header| {
-                        header
-                            .child(
-                                Button::new("diff-ignore-ws")
-                                    .ghost()
-                                    .compact()
-                                    .label(if self.state.ignore_whitespace {
-                                        format!("✓ {}", tr("Ignore whitespace", "忽略空白"))
-                                    } else {
-                                        tr("Ignore whitespace", "忽略空白").to_string()
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.toggle_ignore_whitespace(cx)
-                                    })),
-                            )
-                            .child(
-                                Button::new("diff-view-mode")
-                                    .ghost()
-                                    .compact()
-                                    .label(if self.state.diff_side_by_side {
-                                        tr("⇔ Side-by-side", "⇔ 并排对比")
-                                    } else {
-                                        tr("≡ Unified", "≡ 统一视图")
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.state.diff_side_by_side =
-                                            !this.state.diff_side_by_side;
-                                        cx.notify();
-                                    })),
-                            )
-                    })
-                    .when(self.state.diff_path.is_some(), |header| {
-                        header.child(
-                            Button::new("diff-blame")
+        let mut panel = div().flex().flex_col().gap_2().min_h_0().child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .flex_none()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(title),
+                )
+                .when(!self.state.diff_files.is_empty(), |header| {
+                    header
+                        .child(
+                            Button::new("diff-ignore-ws")
                                 .ghost()
                                 .compact()
-                                .label(tr("Blame", "追溯"))
+                                .label(if self.state.ignore_whitespace {
+                                    format!("✓ {}", tr("Ignore whitespace", "忽略空白"))
+                                } else {
+                                    tr("Ignore whitespace", "忽略空白").to_string()
+                                })
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.toggle_ignore_whitespace(cx)),
+                                ),
+                        )
+                        .child(
+                            Button::new("diff-view-mode")
+                                .ghost()
+                                .compact()
+                                .label(if self.state.diff_side_by_side {
+                                    tr("⇔ Side-by-side", "⇔ 并排对比")
+                                } else {
+                                    tr("≡ Unified", "≡ 统一视图")
+                                })
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    let path = this.state.diff_path.clone().unwrap_or_default();
-                                    this.open_blame(path, cx);
+                                    this.state.diff_side_by_side = !this.state.diff_side_by_side;
+                                    cx.notify();
                                 })),
                         )
-                    })
-                    .when(
-                        self.state.diff_path.is_some() && !self.state.diff_editing,
-                        |header| {
-                            header.child(
-                                Button::new("diff-edit")
-                                    .ghost()
-                                    .compact()
-                                    .icon(Ic::Edit)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.open_diff_edit(window, cx)
-                                    })),
-                            )
-                        },
-                    )
-                    .when(self.state.diff_editing, |header| {
-                        header
-                            .child(
-                                Button::new("diff-save")
-                                    .ghost()
-                                    .compact()
-                                    .label(tr("Save", "保存"))
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.save_diff_edit(cx)),
-                                    ),
-                            )
-                            .child(
-                                Button::new("diff-cancel")
-                                    .ghost()
-                                    .compact()
-                                    .label(tr("Cancel", "取消"))
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx)),
-                                    ),
-                            )
-                    })
-                    .child(
-                        Button::new("diff-close")
+                })
+                .when(self.state.diff_path.is_some(), |header| {
+                    header.child(
+                        Button::new("diff-blame")
                             .ghost()
                             .compact()
-                            .icon(Ic::Close)
-                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
-                    ),
-            );
+                            .label(tr("Blame", "追溯"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let path = this.state.diff_path.clone().unwrap_or_default();
+                                this.open_blame(path, cx);
+                            })),
+                    )
+                })
+                .when(
+                    self.state.diff_path.is_some() && !self.state.diff_editing,
+                    |header| {
+                        header.child(
+                            Button::new("diff-edit")
+                                .ghost()
+                                .compact()
+                                .icon(Ic::Edit)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_diff_edit(window, cx)
+                                })),
+                        )
+                    },
+                )
+                .when(self.state.diff_editing, |header| {
+                    header
+                        .child(
+                            Button::new("diff-save")
+                                .ghost()
+                                .compact()
+                                .label(tr("Save", "保存"))
+                                .on_click(cx.listener(|this, _, _, cx| this.save_diff_edit(cx))),
+                        )
+                        .child(
+                            Button::new("diff-cancel")
+                                .ghost()
+                                .compact()
+                                .label(tr("Cancel", "取消"))
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx))),
+                        )
+                })
+                .child(
+                    Button::new("diff-close")
+                        .ghost()
+                        .compact()
+                        .icon(Ic::Close)
+                        .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                ),
+        );
 
         if self.state.diff_editing {
             panel = panel.child(
@@ -883,28 +838,25 @@ impl AppView {
         } else if self.state.diff_files.is_empty() {
             panel = panel.child(empty_state(tr("No changes", "无更改"), muted));
         } else {
-            let hunk_controls: Option<(&'static str, HunkAction)> =
-                match self.state.diff_source {
-                    Some(source @ (DiffSource::Staged | DiffSource::Unstaged)) => {
-                        let label = if source == DiffSource::Staged {
-                            tr("Unstage", "取消暂存")
-                        } else {
-                            tr("Stage", "暂存")
-                        };
-                        let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
-                        Some((
-                            label,
-                            std::sync::Arc::new(
-                                move |file_index, hunk_index, app: &mut gpui::App| {
-                                    let _ = weak.update(app, |this, cx| {
-                                        this.toggle_hunk_stage(file_index, hunk_index, cx)
-                                    });
-                                },
-                            ),
-                        ))
-                    }
-                    _ => None,
-                };
+            let hunk_controls: Option<(&'static str, HunkAction)> = match self.state.diff_source {
+                Some(source @ (DiffSource::Staged | DiffSource::Unstaged)) => {
+                    let label = if source == DiffSource::Staged {
+                        tr("Unstage", "取消暂存")
+                    } else {
+                        tr("Stage", "暂存")
+                    };
+                    let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                    Some((
+                        label,
+                        std::sync::Arc::new(move |file_index, hunk_index, app: &mut gpui::App| {
+                            let _ = weak.update(app, |this, cx| {
+                                this.toggle_hunk_stage(file_index, hunk_index, cx)
+                            });
+                        }),
+                    ))
+                }
+                _ => None,
+            };
             panel = panel.child(
                 div()
                     .id("diff-content")
@@ -914,7 +866,9 @@ impl AppView {
                     .child(render_diff_files(
                         &self.state.diff_files,
                         self.state.diff_side_by_side,
-                        hunk_controls.as_ref().map(|(label, action)| (*label, action)),
+                        hunk_controls
+                            .as_ref()
+                            .map(|(label, action)| (*label, action)),
                         cx,
                     )),
             );
@@ -926,36 +880,31 @@ impl AppView {
         let muted = cx.theme().muted_foreground;
         let path = self.state.blame_path.clone();
 
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .flex_none()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(format!("{} · {path}", tr("Blame", "追溯"))),
-                    )
-                    .child(
-                        Button::new("blame-close")
-                            .ghost()
-                            .compact()
-                            .icon(Ic::Close)
-                            .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
-                    ),
-            );
+        let mut panel = div().flex().flex_col().gap_2().min_h_0().child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .flex_none()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(format!("{} · {path}", tr("Blame", "追溯"))),
+                )
+                .child(
+                    Button::new("blame-close")
+                        .ghost()
+                        .compact()
+                        .icon(Ic::Close)
+                        .on_click(cx.listener(|this, _, _, cx| this.sidebar_back(cx))),
+                ),
+        );
 
         if self.state.blame_groups.is_empty() {
             panel = panel.child(empty_state(tr("Nothing to blame", "无追溯信息"), muted));
@@ -963,9 +912,8 @@ impl AppView {
             let on_commit: BlameJump = {
                 let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
                 std::sync::Arc::new(move |id, app| {
-                    let _ = weak.update(app, |this, cx| {
-                        this.open_commit_diff(id.clone(), None, cx)
-                    });
+                    let _ =
+                        weak.update(app, |this, cx| this.open_commit_diff(id.clone(), None, cx));
                 })
             };
             panel = panel.child(
@@ -1044,7 +992,13 @@ impl AppView {
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.open_commit_diff(id.clone(), None, cx)
                         }))
-                        .child(div().flex_none().text_xs().text_color(muted_fg).child(short))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted_fg)
+                                .child(short),
+                        )
                         .child(
                             div()
                                 .flex_1()
@@ -1054,13 +1008,7 @@ impl AppView {
                                 .text_xs()
                                 .child(commit.subject.clone()),
                         )
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted_fg)
-                                .child(time),
-                        ),
+                        .child(div().flex_none().text_xs().text_color(muted_fg).child(time)),
                 );
             }
         }
@@ -1178,21 +1126,39 @@ impl AppView {
 
         let mut items: Vec<AnyElement> = Vec::new();
         items.push(
-            self.palette_item("pal-commit", tr("Commit changes…", "提交更改…"), "Ctrl+K", cx, |this, window, cx| {
-                this.on_focus_composer(&FocusComposer, window, cx);
-            })
+            self.palette_item(
+                "pal-commit",
+                tr("Commit changes…", "提交更改…"),
+                "Ctrl+K",
+                cx,
+                |this, window, cx| {
+                    this.on_focus_composer(&FocusComposer, window, cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-push", tr("Push", "推送"), "Ctrl+Shift+K", cx, |this, _, cx| {
-                this.do_push(cx);
-            })
+            self.palette_item(
+                "pal-push",
+                tr("Push", "推送"),
+                "Ctrl+Shift+K",
+                cx,
+                |this, _, cx| {
+                    this.do_push(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-pull", tr("Pull", "拉取"), "Ctrl+T", cx, |this, _, cx| {
-                this.do_pull(cx);
-            })
+            self.palette_item(
+                "pal-pull",
+                tr("Pull", "拉取"),
+                "Ctrl+T",
+                cx,
+                |this, _, cx| {
+                    this.do_pull(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
@@ -1207,73 +1173,130 @@ impl AppView {
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-stash", tr("Stash changes…", "贮藏更改…"), "", cx, |this, _, cx| {
-                this.open_prompt(super::PromptKind::Stash, cx);
-            })
+            self.palette_item(
+                "pal-stash",
+                tr("Stash changes…", "贮藏更改…"),
+                "",
+                cx,
+                |this, _, cx| {
+                    this.open_prompt(super::PromptKind::Stash, cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-unstash", tr("Unstash latest", "恢复最近的贮藏"), "", cx, |this, _, cx| {
-                this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx);
-            })
+            self.palette_item(
+                "pal-unstash",
+                tr("Unstash latest", "恢复最近的贮藏"),
+                "",
+                cx,
+                |this, _, cx| {
+                    this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-branch", tr("New branch…", "新建分支…"), "", cx, |this, _, cx| {
-                this.open_prompt(
-                    super::PromptKind::NewBranch { start_point: None },
-                    cx,
-                );
-            })
+            self.palette_item(
+                "pal-branch",
+                tr("New branch…", "新建分支…"),
+                "",
+                cx,
+                |this, _, cx| {
+                    this.open_prompt(super::PromptKind::NewBranch { start_point: None }, cx);
+                },
+            )
             .into_any_element(),
         );
         if let Some(head) = head {
             items.push(
-                self.palette_item("pal-tag", tr("New tag on HEAD…", "在 HEAD 上新建标签…"), "", cx, move |this, _, cx| {
-                    this.open_prompt(
-                        super::PromptKind::NewTag {
-                            commit_id: head.clone(),
-                        },
-                        cx,
-                    );
-                })
+                self.palette_item(
+                    "pal-tag",
+                    tr("New tag on HEAD…", "在 HEAD 上新建标签…"),
+                    "",
+                    cx,
+                    move |this, _, cx| {
+                        this.open_prompt(
+                            super::PromptKind::NewTag {
+                                commit_id: head.clone(),
+                            },
+                            cx,
+                        );
+                    },
+                )
                 .into_any_element(),
             );
         }
         items.push(
-            self.palette_item("pal-goto", tr("Go to commit…", "跳转到提交…"), "", cx, |this, _, cx| {
-                this.open_prompt(super::PromptKind::GoTo, cx);
-            })
+            self.palette_item(
+                "pal-goto",
+                tr("Go to commit…", "跳转到提交…"),
+                "",
+                cx,
+                |this, _, cx| {
+                    this.open_prompt(super::PromptKind::GoTo, cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-blame", tr("Blame current file", "追溯当前文件"), "Ctrl+Alt+B", cx, |this, _, cx| {
-                this.blame_current_file(cx);
-            })
+            self.palette_item(
+                "pal-blame",
+                tr("Blame current file", "追溯当前文件"),
+                "Ctrl+Alt+B",
+                cx,
+                |this, _, cx| {
+                    this.blame_current_file(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-reflog", tr("Show reflog", "显示引用日志"), "", cx, |this, _, cx| {
-                this.open_reflog(cx);
-            })
+            self.palette_item(
+                "pal-reflog",
+                tr("Show reflog", "显示引用日志"),
+                "",
+                cx,
+                |this, _, cx| {
+                    this.open_reflog(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-conflicts", tr("Show conflicts", "显示冲突"), "Ctrl+Alt+8", cx, |this, _, cx| {
-                this.open_conflicts(cx);
-            })
+            self.palette_item(
+                "pal-conflicts",
+                tr("Show conflicts", "显示冲突"),
+                "Ctrl+Alt+8",
+                cx,
+                |this, _, cx| {
+                    this.open_conflicts(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-shelves", tr("Show shelves", "显示搁置"), "Ctrl+Alt+6", cx, |this, _, cx| {
-                this.open_shelves(cx);
-            })
+            self.palette_item(
+                "pal-shelves",
+                tr("Show shelves", "显示搁置"),
+                "Ctrl+Alt+6",
+                cx,
+                |this, _, cx| {
+                    this.open_shelves(cx);
+                },
+            )
             .into_any_element(),
         );
         items.push(
-            self.palette_item("pal-refresh", tr("Refresh repository", "刷新仓库"), "F5", cx, |this, _, cx| {
-                this.refresh(cx);
-            })
+            self.palette_item(
+                "pal-refresh",
+                tr("Refresh repository", "刷新仓库"),
+                "F5",
+                cx,
+                |this, _, cx| {
+                    this.refresh(cx);
+                },
+            )
             .into_any_element(),
         );
 
@@ -1306,10 +1329,7 @@ impl AppView {
                                 .pb_1()
                                 .text_xs()
                                 .text_color(muted)
-                                .child(tr(
-                                    "Alt+` toggle · Esc to close",
-                                    "Alt+` 切换 · Esc 关闭",
-                                )),
+                                .child(tr("Alt+` toggle · Esc to close", "Alt+` 切换 · Esc 关闭")),
                         )
                         .child(div().flex().flex_col().gap_0p5().children(items)),
                 )
@@ -1346,7 +1366,12 @@ impl AppView {
             }))
             .child(SharedString::from(label))
             .when(!keys.is_empty(), |row| {
-                row.child(div().text_xs().text_color(muted).child(SharedString::from(keys)))
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(SharedString::from(keys)),
+                )
             })
     }
 
@@ -1484,7 +1509,10 @@ impl AppView {
                     .child(
                         Button::new("reset-soft")
                             .primary()
-                            .label(tr("Soft — keep all changes staged", "Soft — 保留全部更改并暂存"))
+                            .label(tr(
+                                "Soft — keep all changes staged",
+                                "Soft — 保留全部更改并暂存",
+                            ))
                             .on_click(cx.listener({
                                 let target = target.clone();
                                 move |this, _, _, cx| {
@@ -1494,7 +1522,10 @@ impl AppView {
                     )
                     .child(
                         Button::new("reset-mixed")
-                            .label(tr("Mixed — keep changes unstaged", "Mixed — 保留更改但不暂存"))
+                            .label(tr(
+                                "Mixed — keep changes unstaged",
+                                "Mixed — 保留更改但不暂存",
+                            ))
                             .on_click(cx.listener({
                                 let target = target.clone();
                                 move |this, _, _, cx| {
@@ -1550,9 +1581,7 @@ impl AppView {
                             Button::new("prompt-cancel")
                                 .ghost()
                                 .label(tr("Cancel", "取消"))
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.cancel_prompt(cx)
-                                })),
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
                         )
                         .child(
                             Button::new("prompt-ok")
@@ -1593,18 +1622,11 @@ impl AppView {
                                 Button::new("prompt-cancel")
                                     .ghost()
                                     .label(tr("Cancel", "取消"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.cancel_prompt(cx)
-                                    })),
+                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
                             )
-                            .child(
-                                Button::new("prompt-ok")
-                                    .primary()
-                                    .label(ok_label)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.confirm_prompt(window, cx)
-                                    })),
-                            ),
+                            .child(Button::new("prompt-ok").primary().label(ok_label).on_click(
+                                cx.listener(|this, _, window, cx| this.confirm_prompt(window, cx)),
+                            )),
                     )
             }
         };

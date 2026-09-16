@@ -19,18 +19,18 @@ pub use backend::{GitBackend, open_backend};
 pub use blame::parse_blame;
 pub use command::{CancelToken, GitCommand, ProgressHandle};
 pub use conflict::{
-    conflict_hunks, parse_conflict_markers, resolve_markers, ConflictFile, ConflictHunk,
-    ConflictKind, ConflictSection, HunkChoice,
+    ConflictFile, ConflictHunk, ConflictKind, ConflictSection, HunkChoice, conflict_hunks,
+    parse_conflict_markers, resolve_markers,
 };
 pub use diff::{hunk_patch, parse_unified_diff};
 pub use error::{GitError, Result};
-pub use graph::{build_graph, Graph, GraphRow, RowEdge, MAX_COLORS};
+pub use graph::{Graph, GraphRow, MAX_COLORS, RowEdge, build_graph};
 pub use merge::MergeMode;
 pub use ops::ResetMode;
 pub use rebase::{RebaseAction, RebaseActionKind, autosquash_plan};
 pub use repo::Repository;
 pub use repo_data::{
-    filter_commits, load_repo_data, load_repo_data_filtered, RepoData, DEFAULT_LOG_LIMIT,
+    DEFAULT_LOG_LIMIT, RepoData, filter_commits, load_repo_data, load_repo_data_filtered,
 };
 pub use types::{
     Author, BlameGroup, BlameLine, Branch, Change, ChangeStatus, Commit, CommitId, DiffLine,

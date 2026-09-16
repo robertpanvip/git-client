@@ -1,9 +1,12 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, Context, Div, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled,
+    AnyElement, Context, Div, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, div, px,
 };
-use gpui_kit::component::{button::{Button, ButtonVariants}, ActiveTheme};
+use gpui_kit::component::{
+    ActiveTheme,
+    button::{Button, ButtonVariants},
+};
 
 use rebased_rs::git::{Change, Commit, Tag};
 
@@ -109,9 +112,7 @@ impl AppView {
             .detail_files
             .iter()
             .enumerate()
-            .map(|(index, change)| {
-                self.render_detail_file_row(index, change, &commit_id, fg, cx)
-            })
+            .map(|(index, change)| self.render_detail_file_row(index, change, &commit_id, fg, cx))
             .collect();
 
         div()
@@ -157,19 +158,13 @@ impl AppView {
                             .on_click(cx.listener(|this, _, _, cx| this.clear_detail(cx))),
                     ),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!(
-                        "{} · {} · {} · {}",
-                        &commit.id.0[..commit.id.0.len().min(7)],
-                        commit.author.name,
-                        format_full_time(commit.time),
-                        commit.author.email
-                    )),
-            )
+            .child(div().flex_none().text_xs().text_color(muted).child(format!(
+                "{} · {} · {} · {}",
+                &commit.id.0[..commit.id.0.len().min(7)],
+                commit.author.name,
+                format_full_time(commit.time),
+                commit.author.email
+            )))
             .when(!commit.body.is_empty(), |detail| {
                 detail.child(
                     div()
@@ -339,8 +334,7 @@ impl AppView {
                                 };
                                 let id = commit.id.0.clone();
                                 let short = &id[..id.len().min(7)];
-                                let message =
-                                    format!("{} {short}", tr("Checked out", "已检出"));
+                                let message = format!("{} {short}", tr("Checked out", "已检出"));
                                 this.run_op(&message, move |repo| repo.checkout(&id), cx);
                             })),
                     )
@@ -351,7 +345,8 @@ impl AppView {
                             .compact()
                             .label(tr("Branch…", "新建分支…"))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                let start_point = this.state.selected.as_ref().map(|c| c.id.0.clone());
+                                let start_point =
+                                    this.state.selected.as_ref().map(|c| c.id.0.clone());
                                 this.open_prompt(PromptKind::NewBranch { start_point }, cx);
                             })),
                     )

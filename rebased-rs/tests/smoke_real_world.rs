@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    autosquash_plan, conflict_hunks, load_repo_data, parse_unified_diff, ChangeStatus,
-    ConflictKind, HunkChoice, MergeMode, RebaseActionKind, Repository, DEFAULT_LOG_LIMIT,
+    ChangeStatus, ConflictKind, DEFAULT_LOG_LIMIT, HunkChoice, MergeMode, RebaseActionKind,
+    Repository, autosquash_plan, conflict_hunks, load_repo_data, parse_unified_diff,
 };
 
 struct TempRepo {
@@ -70,10 +70,8 @@ impl Drop for TempRepo {
 }
 
 fn bare_repo(prefix: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "rebased-rs-smoke-{prefix}-{}",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("rebased-rs-smoke-{prefix}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&path);
     Command::new("git")
         .arg("init")
@@ -134,7 +132,10 @@ fn smoke_project_lifecycle_branches_tags_remote() {
         .iter()
         .find(|c| c.id.0 == head)
         .expect("HEAD in log");
-    assert!(merge.is_merge(), "HEAD after no-ff merge must be a merge commit");
+    assert!(
+        merge.is_merge(),
+        "HEAD after no-ff merge must be a merge commit"
+    );
 
     // 3. annotated tag + 列表 + 推送
     repo.create_tag("v1.0", None, Some("release 1.0"))
@@ -158,12 +159,15 @@ fn smoke_project_lifecycle_branches_tags_remote() {
     );
 
     // 5. 分支 rename + checkout + delete
-    repo.create_branch("experiment", None).expect("create branch");
-    repo.rename_branch("experiment", "experiment2").expect("rename branch");
+    repo.create_branch("experiment", None)
+        .expect("create branch");
+    repo.rename_branch("experiment", "experiment2")
+        .expect("rename branch");
     repo.checkout("experiment2").expect("checkout renamed");
     assert_eq!(repo.current_branch_name().expect("current"), "experiment2");
     repo.checkout("main").expect("back to main");
-    repo.delete_branch("experiment2", false).expect("delete branch");
+    repo.delete_branch("experiment2", false)
+        .expect("delete branch");
 
     // 6. reflog：合并 + checkout 等操作历史可见
     let reflog = repo.reflog(10).expect("reflog");
@@ -171,7 +175,10 @@ fn smoke_project_lifecycle_branches_tags_remote() {
     assert!(
         reflog.iter().any(|e| e.message.contains("merge")),
         "merge operation visible in reflog: {:?}",
-        reflog.iter().map(|e| e.message.as_str()).collect::<Vec<_>>()
+        reflog
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect::<Vec<_>>()
     );
 
     // 7. commit 级 compare（复用 rev-range 语义）
@@ -196,15 +203,24 @@ fn smoke_working_tree_status_diff_stash_commit() {
     temp.write("notes.txt", "scratch\n");
 
     let status = repo.status().expect("status");
-    assert!(status.changes.iter().any(|c| c.path == "src/lib.rs" && c.staged));
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.path == "src/main.rs" && !c.staged));
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.path == "notes.txt" && c.status == ChangeStatus::Untracked));
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "src/lib.rs" && c.staged)
+    );
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "src/main.rs" && !c.staged)
+    );
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "notes.txt" && c.status == ChangeStatus::Untracked)
+    );
 
     // 2. staged / unstaged diff 解析
     let staged = parse_unified_diff(&repo.diff_staged(None, false).expect("staged diff"));
@@ -213,7 +229,8 @@ fn smoke_working_tree_status_diff_stash_commit() {
     assert!(unstaged.iter().any(|f| f.path == "src/main.rs"));
 
     // 3. stash push（含未跟踪）→ 列表 → 恢复
-    repo.stash_push(Some("wip scratch"), true).expect("stash push");
+    repo.stash_push(Some("wip scratch"), true)
+        .expect("stash push");
     let stash = repo.stash_list().expect("stash list");
     assert_eq!(stash.len(), 1);
     assert!(status.changes.iter().all(|_| true)); // status 已捕获
@@ -227,7 +244,10 @@ fn smoke_working_tree_status_diff_stash_commit() {
     temp.commit_all("first real commit");
     let first_msg = repo.head_message().expect("head message");
     assert!(first_msg.contains("first real commit"));
-    temp.write("src/lib.rs", "pub fn helper() {}\npub fn changed() {}\npub fn more() {}\n");
+    temp.write(
+        "src/lib.rs",
+        "pub fn helper() {}\npub fn changed() {}\npub fn more() {}\n",
+    );
     repo.add_all().expect("add all");
     repo.commit("amended message", true).expect("amend");
     let amended_msg = repo.head_message().expect("head after amend");
@@ -236,8 +256,11 @@ fn smoke_working_tree_status_diff_stash_commit() {
     // 5. ignore-whitespace：纯空白改动在 -w 下不产生 hunk
     temp.write("src/main.rs", "fn main() { println!(\"hi\");  }\n");
     repo.add_all().expect("add whitespace");
-    let ws_ignored =
-        parse_unified_diff(&repo.diff_staged(None, true).expect("ws ignored staged diff"));
+    let ws_ignored = parse_unified_diff(
+        &repo
+            .diff_staged(None, true)
+            .expect("ws ignored staged diff"),
+    );
     assert!(ws_ignored.iter().all(|f| f.hunks.is_empty()));
 }
 
@@ -264,7 +287,9 @@ fn smoke_rebase_autosquash_and_conflict_resolution() {
     let base = repo.rev_parse("HEAD~2").expect("base");
     let plan = repo.rebase_todos(&base).expect("todos");
     let squashed = autosquash_plan(plan);
-    let fixup_pos = squashed.iter().position(|a| a.kind == RebaseActionKind::Fixup);
+    let fixup_pos = squashed
+        .iter()
+        .position(|a| a.kind == RebaseActionKind::Fixup);
     assert!(fixup_pos.is_some(), "fixup action present");
     assert_eq!(
         squashed[fixup_pos.unwrap() - 1].subject,
@@ -283,7 +308,9 @@ fn smoke_rebase_autosquash_and_conflict_resolution() {
     temp.commit_all("main edit");
 
     assert!(
-        !repo.merge_branch_with("conflict-side", MergeMode::Default).is_ok()
+        !repo
+            .merge_branch_with("conflict-side", MergeMode::Default)
+            .is_ok()
             || repo.is_merge_in_progress(),
         "merge should conflict"
     );
@@ -291,7 +318,9 @@ fn smoke_rebase_autosquash_and_conflict_resolution() {
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].kind, ConflictKind::BothModified);
 
-    let raw = repo.conflict_file_content("a.txt").expect("conflict content");
+    let raw = repo
+        .conflict_file_content("a.txt")
+        .expect("conflict content");
     let hunks = conflict_hunks(&raw);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].ours, vec!["main"]);
@@ -332,7 +361,9 @@ fn smoke_inspection_blame_history_compare_files() {
     let content = repo.worktree_file_content("src/main.rs").expect("read");
     repo.write_worktree_file("src/main.rs", &format!("{content}// touched\n"))
         .expect("write");
-    let after = repo.worktree_file_content("src/main.rs").expect("read again");
+    let after = repo
+        .worktree_file_content("src/main.rs")
+        .expect("read again");
     assert!(after.contains("// touched"));
 }
 

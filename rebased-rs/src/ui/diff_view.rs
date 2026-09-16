@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use gpui::{div, px, App, Div, Hsla, ParentElement, SharedString, Styled};
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui::{App, Div, Hsla, ParentElement, SharedString, Styled, div, px};
 use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use rebased_rs::git::{DiffLine, DiffLineKind, FileDiff, Hunk};
 
 use crate::ui::theme::{
@@ -146,7 +146,13 @@ fn sbs_half(
     half
 }
 
-fn sbs_row(left: Option<&DiffLine>, right: Option<&DiffLine>, mono: &SharedString, fg: Hsla, muted: Hsla) -> Div {
+fn sbs_row(
+    left: Option<&DiffLine>,
+    right: Option<&DiffLine>,
+    mono: &SharedString,
+    fg: Hsla,
+    muted: Hsla,
+) -> Div {
     div()
         .flex_none()
         .flex()
@@ -186,12 +192,7 @@ pub fn render_diff_files(
                     .items_center()
                     .gap_2()
                     .bg(stripe_bg(fg))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(badge_color)
-                            .child(badge),
-                    )
+                    .child(div().text_xs().text_color(badge_color).child(badge))
                     .child(
                         div()
                             .min_w_0()
@@ -225,12 +226,14 @@ pub fn render_diff_files(
             if let Some((label, action)) = hunk_controls {
                 let action = Arc::clone(action);
                 header_row = header_row.child(
-                    Button::new(SharedString::from(format!("hunk-{file_index}-{hunk_index}")))
-                        .ghost()
-                        .compact()
-                        .text_xs()
-                        .label(label)
-                        .on_click(move |_, _, app| action(file_index, hunk_index, app)),
+                    Button::new(SharedString::from(format!(
+                        "hunk-{file_index}-{hunk_index}"
+                    )))
+                    .ghost()
+                    .compact()
+                    .text_xs()
+                    .label(label)
+                    .on_click(move |_, _, app| action(file_index, hunk_index, app)),
                 );
             }
             block = block.child(header_row);

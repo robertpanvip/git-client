@@ -33,23 +33,42 @@ pub(crate) enum DiffSource {
 
 #[derive(Clone)]
 pub(crate) enum PromptKind {
-    NewBranch { start_point: Option<String> },
-    NewTag { commit_id: String },
+    NewBranch {
+        start_point: Option<String>,
+    },
+    NewTag {
+        commit_id: String,
+    },
     /// 编辑已存在 tag 的 annotated 消息（git 以同 commit `-f` 重建实现）。
-    EditTag { name: String, commit_id: String },
+    EditTag {
+        name: String,
+        commit_id: String,
+    },
     Stash,
-    Reword { commit_id: String },
+    Reword {
+        commit_id: String,
+    },
     RenameBranch,
-    RenameBranchByName { name: String },
-    MergeMessage { name: String },
-    Reset { commit_id: String },
-    RebaseEdit { index: usize },
+    RenameBranchByName {
+        name: String,
+    },
+    MergeMessage {
+        name: String,
+    },
+    Reset {
+        commit_id: String,
+    },
+    RebaseEdit {
+        index: usize,
+    },
     GoTo,
     FilterAuthor,
     /// 添加远程仓库：两个输入框分别为 remote 名字与 URL。
     AddRemote,
     /// 为指定分支设置上游：输入形如 `origin/main`。
-    SetUpstream { branch: String },
+    SetUpstream {
+        branch: String,
+    },
     Confirm(ConfirmAction),
 }
 
@@ -120,9 +139,7 @@ impl ConfirmAction {
     pub(crate) fn confirm_label(&self) -> String {
         match self {
             Self::ForcePush => tr("Force push", "强制推送").to_string(),
-            Self::DeleteBranch { .. } | Self::DeleteTag { .. } => {
-                tr("Delete", "删除").to_string()
-            }
+            Self::DeleteBranch { .. } | Self::DeleteTag { .. } => tr("Delete", "删除").to_string(),
             Self::RemoveRemote { .. } => tr("Remove", "移除").to_string(),
             Self::DropHeadCommit => tr("Drop", "丢弃").to_string(),
             Self::UndoHeadCommit => tr("Undo", "撤销").to_string(),
@@ -169,9 +186,7 @@ impl RebaseFlow {
 
     pub(crate) fn plan_view(&self) -> Option<(&str, &[RebaseAction])> {
         match self {
-            Self::Planning { base, plan } | Self::Failed { base, plan, .. } => {
-                Some((base, plan))
-            }
+            Self::Planning { base, plan } | Self::Failed { base, plan, .. } => Some((base, plan)),
             _ => None,
         }
     }

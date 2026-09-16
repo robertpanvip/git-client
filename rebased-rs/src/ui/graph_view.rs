@@ -1,6 +1,6 @@
 use gpui::{
-    canvas, div, fill, point, px, size, Bounds, IntoElement, ParentElement, PathBuilder, Pixels,
-    Styled, Window,
+    Bounds, IntoElement, ParentElement, PathBuilder, Pixels, Styled, Window, canvas, div, fill,
+    point, px, size,
 };
 use rebased_rs::git::GraphRow;
 

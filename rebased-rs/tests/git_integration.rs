@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use rebased_rs::git::{
-    autosquash_plan, conflict_hunks, filter_commits, load_repo_data, parse_unified_diff,
-    ChangeStatus, ConflictKind, DiffLineKind, HunkChoice, RebaseActionKind, Repository,
-    DEFAULT_LOG_LIMIT,
+    ChangeStatus, ConflictKind, DEFAULT_LOG_LIMIT, DiffLineKind, HunkChoice, RebaseActionKind,
+    Repository, autosquash_plan, conflict_hunks, filter_commits, load_repo_data,
+    parse_unified_diff,
 };
 
 struct TempRepo {
@@ -79,21 +79,27 @@ fn full_workflow() {
 
     let status = repo.status().expect("status");
     assert_eq!(status.changes.len(), 2);
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.status == ChangeStatus::Untracked && c.path == "new_file.txt"));
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.status == ChangeStatus::Modified && c.path == "hello.txt"));
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.status == ChangeStatus::Untracked && c.path == "new_file.txt")
+    );
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.status == ChangeStatus::Modified && c.path == "hello.txt")
+    );
 
     repo.add(&["hello.txt"]).expect("add");
     let status = repo.status().expect("status");
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.path == "hello.txt" && c.staged));
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "hello.txt" && c.staged)
+    );
 
     repo.commit_paths("update hello", &["hello.txt"], false)
         .expect("commit paths");
@@ -115,7 +121,8 @@ fn full_workflow() {
     assert!(branches[0].is_current());
     assert_eq!(branches[0].commit_id, log[0].id);
 
-    repo.create_branch("feature", Some("main")).expect("create branch");
+    repo.create_branch("feature", Some("main"))
+        .expect("create branch");
     repo.checkout("feature").expect("checkout");
 
     let status = repo.status().expect("status");
@@ -123,7 +130,10 @@ fn full_workflow() {
 
     let branches = repo.branches().expect("branches");
     assert_eq!(branches.len(), 2);
-    let feature = branches.iter().find(|b| b.name == "feature").expect("feature");
+    let feature = branches
+        .iter()
+        .find(|b| b.name == "feature")
+        .expect("feature");
     assert!(feature.is_current());
     let main = branches.iter().find(|b| b.name == "main").expect("main");
     assert!(!main.is_current());
@@ -151,10 +161,12 @@ fn full_workflow() {
     temp.write("hello.txt", "even more\n");
     repo.add(&["hello.txt"]).expect("add");
     let status = repo.status().expect("status");
-    assert!(status
-        .changes
-        .iter()
-        .any(|c| c.path == "hello.txt" && c.staged));
+    assert!(
+        status
+            .changes
+            .iter()
+            .any(|c| c.path == "hello.txt" && c.staged)
+    );
 
     repo.reset(&["hello.txt"]).expect("reset");
     let status = repo.status().expect("status");
@@ -228,12 +240,19 @@ fn branches_containing_resolves_commits() {
     let first = log.iter().find(|c| c.subject == "initial").expect("first");
     let second = log.iter().find(|c| c.subject == "second").expect("second");
 
-    let containing_second = repo.branches_containing(second.id.as_str()).expect("contains second");
+    let containing_second = repo
+        .branches_containing(second.id.as_str())
+        .expect("contains second");
     assert_eq!(containing_second, vec!["main".to_string()]);
 
-    let mut containing_first = repo.branches_containing(first.id.as_str()).expect("contains first");
+    let mut containing_first = repo
+        .branches_containing(first.id.as_str())
+        .expect("contains first");
     containing_first.sort();
-    assert_eq!(containing_first, vec!["feature".to_string(), "main".to_string()]);
+    assert_eq!(
+        containing_first,
+        vec!["feature".to_string(), "main".to_string()]
+    );
 
     assert!(repo.branches_containing("deadbeefdeadbeef").is_err());
 }
@@ -258,7 +277,8 @@ fn tag_workflow() {
     let head = repo.log(5).expect("log")[0].id.clone();
     let head_id = head.as_str().to_string();
 
-    repo.create_tag("v1.0", None, None).expect("lightweight tag");
+    repo.create_tag("v1.0", None, None)
+        .expect("lightweight tag");
     repo.create_tag("v2.0", Some("HEAD"), Some("release two"))
         .expect("annotated tag");
 
@@ -298,7 +318,10 @@ fn remote_and_upstream_workflow() {
 
     let repo = Repository::open(&temp.path).expect("open repo");
     let url = origin_path.to_string_lossy().to_string();
-    assert!(repo.remotes().expect("remotes").is_empty(), "no remotes yet");
+    assert!(
+        repo.remotes().expect("remotes").is_empty(),
+        "no remotes yet"
+    );
 
     repo.remote_add("origin", &url).expect("add remote");
     let remotes = repo.remotes().expect("remotes after add");
@@ -317,7 +340,8 @@ fn remote_and_upstream_workflow() {
     let branches = repo.branches().expect("branches after unset");
     let main = branches.iter().find(|b| b.name == "main").expect("main");
     assert_eq!(main.upstream, None);
-    repo.set_upstream("main", "origin/main").expect("set upstream");
+    repo.set_upstream("main", "origin/main")
+        .expect("set upstream");
     let branches = repo.branches().expect("branches after set");
     let main = branches.iter().find(|b| b.name == "main").expect("main");
     assert_eq!(main.upstream.as_deref(), Some("origin/main"));
@@ -383,16 +407,23 @@ fn cherry_pick_and_revert() {
     };
 
     std::thread::sleep(std::time::Duration::from_millis(1100));
-    repo.cherry_pick(feature_commit.as_str()).expect("cherry-pick");
+    repo.cherry_pick(feature_commit.as_str())
+        .expect("cherry-pick");
     let log = repo.log(10).expect("log after cherry-pick");
-    let picked = log.iter().find(|c| c.subject == "feature work").expect("picked");
+    let picked = log
+        .iter()
+        .find(|c| c.subject == "feature work")
+        .expect("picked");
     assert_ne!(picked.id, feature_commit, "new sha after cherry-pick");
     assert!(temp.path.join("feature.txt").exists());
 
     repo.revert(picked.id.as_str()).expect("revert");
     let log = repo.log(10).expect("log after revert");
     assert_eq!(log[0].subject, "Revert \"feature work\"");
-    assert!(!temp.path.join("feature.txt").exists(), "revert removed the file");
+    assert!(
+        !temp.path.join("feature.txt").exists(),
+        "revert removed the file"
+    );
 }
 
 #[test]
@@ -467,11 +498,13 @@ fn diff_parsing() {
     let staged = repo.diff_staged(None, false).expect("diff staged");
     let files = parse_unified_diff(&staged);
     assert_eq!(files.len(), 1);
-    assert!(files[0]
-        .hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO"));
+    assert!(
+        files[0]
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO")
+    );
 
     repo.commit("update file", false).expect("commit");
     let after = repo.diff_head(None, false).expect("diff head after commit");
@@ -481,16 +514,20 @@ fn diff_parsing() {
     let files = parse_unified_diff(&shown);
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, "file.txt");
-    assert!(files[0]
-        .hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .any(|l| l.kind == DiffLineKind::Context && l.content == "one"));
-    assert!(files[0]
-        .hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO"));
+    assert!(
+        files[0]
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.kind == DiffLineKind::Context && l.content == "one")
+    );
+    assert!(
+        files[0]
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.kind == DiffLineKind::Added && l.content == "TWO")
+    );
 }
 
 #[test]
@@ -502,7 +539,9 @@ fn new_file_diff_marks_added() {
     temp.write("brand_new.txt", "brand\nnew\n");
 
     let repo = Repository::open(&temp.path).expect("open repo");
-    let out = repo.diff_unstaged(Some("brand_new.txt"), false).expect("diff");
+    let out = repo
+        .diff_unstaged(Some("brand_new.txt"), false)
+        .expect("diff");
     let files = parse_unified_diff(&out);
     assert_eq!(files.len(), 1);
     assert!(files[0].is_new);
@@ -640,7 +679,8 @@ fn reword_head_commit_via_amend() {
     let repo = Repository::open(&temp.path).expect("open repo");
     let head = repo.log(10).expect("log")[0].id.0.clone();
 
-    repo.reword_commit(&head, "reworded message").expect("reword");
+    repo.reword_commit(&head, "reworded message")
+        .expect("reword");
 
     let log = repo.log(10).expect("log");
     assert_eq!(log.len(), 1);
@@ -670,7 +710,8 @@ fn reword_middle_commit_via_rebase() {
     assert_eq!(log[0].subject, "third");
     let target = log[1].id.0.clone();
 
-    repo.reword_commit(&target, "renamed second").expect("reword");
+    repo.reword_commit(&target, "renamed second")
+        .expect("reword");
 
     let log = repo.log(10).expect("log");
     assert_eq!(log.len(), 3);
@@ -691,7 +732,8 @@ fn shelve_stash_roundtrip() {
     let repo = Repository::open(&temp.path).expect("open repo");
     temp.write("a.txt", "shelved work\n");
 
-    repo.stash_push(Some("my shelve"), false).expect("stash push");
+    repo.stash_push(Some("my shelve"), false)
+        .expect("stash push");
     let entries = repo.stash_list().expect("stash list");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].index, 0);
@@ -852,10 +894,7 @@ fn undo_head_commit_keeps_changes() {
     assert_ne!(log[0].id.0, head_before);
     let status = repo.status().expect("status");
     assert!(
-        status
-            .changes
-            .iter()
-            .any(|c| c.path == "b.txt" && c.staged),
+        status.changes.iter().any(|c| c.path == "b.txt" && c.staged),
         "undo keeps changes staged"
     );
 
@@ -882,7 +921,10 @@ fn drop_head_commit_discards() {
     repo.drop_head_commit().expect("drop head");
     let log = repo.log(10).expect("log after drop");
     assert_eq!(log.len(), 1);
-    assert!(!temp.path.join("b.txt").exists(), "drop discards the commit");
+    assert!(
+        !temp.path.join("b.txt").exists(),
+        "drop discards the commit"
+    );
     assert!(repo.status().expect("status").changes.is_empty());
 
     let root = TempRepo::new();
@@ -926,7 +968,11 @@ fn rebase_edit_stops_and_continues() {
         .expect("rev-list count");
     assert_eq!(head_count, 2, "HEAD is detached on the replayed second");
     let head_subject = temp.git(&["log", "-1", "--format=%s", "HEAD"]);
-    assert_eq!(head_subject.trim(), "second", "stopped on the edited commit");
+    assert_eq!(
+        head_subject.trim(),
+        "second",
+        "stopped on the edited commit"
+    );
 
     temp.write("a.txt", "edited\n");
     repo.add(&["a.txt"]).expect("add edit");
@@ -957,7 +1003,8 @@ fn rename_branch_repoints() {
     let repo = Repository::open(&temp.path).expect("open repo");
     let topic_head = repo.log(10).expect("log")[0].id.0.clone();
 
-    repo.rename_branch("topic", "renamed-topic").expect("rename");
+    repo.rename_branch("topic", "renamed-topic")
+        .expect("rename");
 
     let branches = repo.branches().expect("branches");
     assert!(
@@ -1110,7 +1157,9 @@ fn reflog_lists_head_operations() {
     assert_eq!(entries[0].message, "commit: second");
     assert_eq!(entries[0].commit_id.len(), 40);
     assert!(
-        entries.iter().any(|e| e.message == "commit (initial): initial"),
+        entries
+            .iter()
+            .any(|e| e.message == "commit (initial): initial"),
         "the root commit's reflog message marks it as initial"
     );
 }
@@ -1137,7 +1186,10 @@ fn interactive_rebase_squash_merges_messages() {
 
     let log = repo.log(10).expect("log after rebase");
     assert_eq!(log.len(), 2);
-    assert_eq!(log[0].subject, "second", "squash keeps first message as subject");
+    assert_eq!(
+        log[0].subject, "second",
+        "squash keeps first message as subject"
+    );
     assert!(
         log[0].body.contains("third"),
         "squash keeps second message in body, got {:?}",
@@ -1215,7 +1267,10 @@ fn ignored_files_excluded_from_status() {
     assert!(status.changes.is_empty(), "ignored entries must not appear");
 
     let data = load_repo_data(&repo, DEFAULT_LOG_LIMIT).expect("load");
-    assert!(data.status.changes.is_empty(), "snapshot must hide ignored files");
+    assert!(
+        data.status.changes.is_empty(),
+        "snapshot must hide ignored files"
+    );
 }
 
 #[test]
@@ -1307,7 +1362,10 @@ fn rebase_squash_injects_custom_message() {
 
     let log = repo.log(10).expect("log after rebase");
     assert_eq!(log.len(), 2);
-    assert_eq!(log[0].subject, "squashed into one", "squash custom message applied");
+    assert_eq!(
+        log[0].subject, "squashed into one",
+        "squash custom message applied"
+    );
     assert!(log[0].body.contains("combined body"));
     assert!(temp.path.join("b.txt").exists());
     assert!(temp.path.join("c.txt").exists());
@@ -1375,7 +1433,12 @@ fn fetch_updates_remote_refs() {
     let bare = std::env::temp_dir().join(format!("rebased-rs-fetch-bare-{suffix}"));
     let clone = std::env::temp_dir().join(format!("rebased-rs-fetch-clone-{suffix}"));
 
-    temp.git(&["init", "--bare", "--initial-branch=main", bare.to_str().expect("utf8 path")]);
+    temp.git(&[
+        "init",
+        "--bare",
+        "--initial-branch=main",
+        bare.to_str().expect("utf8 path"),
+    ]);
     temp.git(&["remote", "add", "origin", bare.to_str().expect("utf8 path")]);
 
     let repo = Repository::open(&temp.path).expect("open repo");
@@ -1427,7 +1490,9 @@ fn fetch_updates_remote_refs() {
         .args(["rev-parse", "HEAD"])
         .output()
         .expect("clone head");
-    let clone_head = String::from_utf8_lossy(&clone_head.stdout).trim().to_string();
+    let clone_head = String::from_utf8_lossy(&clone_head.stdout)
+        .trim()
+        .to_string();
 
     repo.fetch().expect("fetch");
 
@@ -1464,14 +1529,18 @@ fn diff_ignore_whitespace_suppresses_whitespace_only_changes() {
     temp.write("ws.txt", "  alpha   line\n\tbeta line\n");
     temp.git(&["add", "ws.txt"]);
 
-    let normal = repo.diff_staged(Some("ws.txt"), false).expect("normal diff");
+    let normal = repo
+        .diff_staged(Some("ws.txt"), false)
+        .expect("normal diff");
     let normal_files = parse_unified_diff(&normal);
     assert!(
         !normal_files.iter().all(|f| f.hunks.is_empty()),
         "normal diff should show whitespace-only change"
     );
 
-    let ignored = repo.diff_staged(Some("ws.txt"), true).expect("ignored diff");
+    let ignored = repo
+        .diff_staged(Some("ws.txt"), true)
+        .expect("ignored diff");
     let ignored_files = parse_unified_diff(&ignored);
     assert!(
         ignored_files.iter().all(|f| f.hunks.is_empty()),

@@ -2,7 +2,7 @@ use gpui::Context;
 
 use crate::ui::i18n::tr;
 
-use super::{use_cases, AppView, SidebarMode};
+use super::{AppView, SidebarMode, use_cases};
 
 impl AppView {
     pub(crate) fn open_shelves(&mut self, cx: &mut Context<Self>) {

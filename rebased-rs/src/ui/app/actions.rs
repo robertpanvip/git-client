@@ -1,9 +1,9 @@
-use gpui::{actions, Action, App, AppContext, ClipboardItem, Context, KeyBinding, Window};
+use gpui::{Action, App, AppContext, ClipboardItem, Context, KeyBinding, Window, actions};
 use gpui_kit::base::IndexPath;
 
-use rebased_rs::git::{Change, MergeMode, DEFAULT_LOG_LIMIT};
+use rebased_rs::git::{Change, DEFAULT_LOG_LIMIT, MergeMode};
 
-use super::{use_cases::commit_selected, AppView, ConfirmAction, DiffSource, SidebarMode};
+use super::{AppView, ConfirmAction, DiffSource, SidebarMode, use_cases::commit_selected};
 
 actions!(
     rebased_rs,
@@ -146,12 +146,7 @@ impl AppView {
     }
 
     /// 推送任意本地分支；无 upstream 时附带 --set-upstream。
-    pub(crate) fn push_branch(
-        &mut self,
-        name: String,
-        set_upstream: bool,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn push_branch(&mut self, name: String, set_upstream: bool, cx: &mut Context<Self>) {
         let message = if set_upstream {
             format!("Pushed {name} (set upstream)")
         } else {
@@ -350,14 +345,14 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         let message = format!("Set upstream of {branch} to {upstream}");
-        self.run_op(&message, move |repo| repo.set_upstream(&branch, &upstream), cx);
+        self.run_op(
+            &message,
+            move |repo| repo.set_upstream(&branch, &upstream),
+            cx,
+        );
     }
 
-    pub(crate) fn unset_branch_upstream(
-        &mut self,
-        branch: String,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn unset_branch_upstream(&mut self, branch: String, cx: &mut Context<Self>) {
         let message = format!("Unset upstream of {branch}");
         self.run_op(&message, move |repo| repo.unset_upstream(&branch), cx);
     }
@@ -374,9 +369,11 @@ impl AppView {
             MergeMode::NoFastForward => format!("Merged {name} (no ff)"),
             MergeMode::FastForwardOnly => format!("Fast-forwarded {name}"),
         };
-        self.run_op(&op_message, move |repo| {
-            repo.merge_branch_with_message(&name, mode, message.as_deref())
-        }, cx);
+        self.run_op(
+            &op_message,
+            move |repo| repo.merge_branch_with_message(&name, mode, message.as_deref()),
+            cx,
+        );
     }
 
     pub(crate) fn abort_merge(&mut self, cx: &mut Context<Self>) {
@@ -612,12 +609,7 @@ impl AppView {
     }
 
     /// 沿提交历史移动键盘选择（↑↓），并联动 Detail 视图。
-    fn move_commit_selection(
-        &mut self,
-        delta: isize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn move_commit_selection(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
         let count = self.list.read(cx).delegate().visible_count();
         if count == 0 {
             return;
