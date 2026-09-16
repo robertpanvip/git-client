@@ -62,7 +62,8 @@ jobs:
             bin="${bin}.exe"
             cp target/release/rebased-rs.exe "$bin"
             7z a "${bin%.exe}.zip" "$bin"
-            sha256sum "$bin" "${bin%.exe}.zip" > "${bin%.exe}.sha256"
+            sha256sum "${bin%.exe}.zip" > "${bin%.exe}.zip.sha256"
+            rm "$bin"
           else
             cp target/release/rebased-rs "$bin"
             tar -czf "$bin.tar.gz" "$bin"
