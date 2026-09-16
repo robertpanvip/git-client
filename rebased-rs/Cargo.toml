@@ -1,6 +1,6 @@
 [package]
 name = "rebased-rs"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 description = "A git client UI inspired by Rebased, built with Rust + GPUI"
 
@@ -30,3 +30,9 @@ strip = "symbols"
 # abort 而非 unwind：去掉解包代码与 unwind 表显著减小体积。
 # panic hook 在 abort 前仍会被调用，panic.log 崩溃兜底保持有效。
 panic = "abort"
+
+# 本地补丁：上游 destination_list.rs 使用 windows crate 的 u_strlen，
+# 该符号静态链接系统 icuuc.dll（Windows 10 1803 起随系统分发），
+# 导致 Windows 10 1709 等旧系统加载即失败。改为纯 Rust 查找 NUL 终止符。
+[patch.crates-io]
+gpui-pre-windows = { path = "patches/gpui-pre-windows-0.3.3" }
