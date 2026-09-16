@@ -42,6 +42,11 @@ jobs:
         with:
           target: ${{ matrix.target == 'darwin-x86_64' && 'x86_64-apple-darwin' || '' }}
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rebased-rs
+
       - name: Configure Tencent cargo mirror (rsproxy)
         run: printf '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > ~/.cargo/config.toml
 
