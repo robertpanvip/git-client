@@ -228,21 +228,24 @@ impl AppView {
                     .flex_none()
                     .child(
                         Button::new("detail-cherry-pick")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Cherry-pick", "摘取提交"))
                             .on_click(cx.listener(|this, _, _, cx| this.cherry_pick_selected(cx))),
                     )
                     .child(
                         Button::new("detail-revert")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Revert", "回滚"))
                             .on_click(cx.listener(|this, _, _, cx| this.revert_selected(cx))),
                     )
                     .child(
                         Button::new("detail-rebase")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Rebase from here", "从这里变基"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -257,7 +260,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-reset")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Reset…", "重置…"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -272,7 +276,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-reword")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Reword…", "改写…"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -287,7 +292,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-diff")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Diff", "查看差异"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -302,7 +308,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-branch")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Branch…", "新建分支…"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -312,7 +319,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-tag")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Tag…", "新建标签…"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -327,7 +335,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-checkout")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Checkout", "检出"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -343,7 +352,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("detail-copy-sha")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .icon(Ic::Copy)
                             .label(tr("Copy SHA", "复制 SHA"))
@@ -352,7 +362,8 @@ impl AppView {
                     .when(is_head, |row| {
                         row.child(
                             Button::new("detail-undo-commit")
-                                .ghost()
+                                .secondary()
+                                .outline()
                                 .compact()
                                 .icon(Ic::Undo)
                                 .label(tr("Undo Commit", "撤销提交"))
@@ -380,7 +391,8 @@ impl AppView {
                     .when(!is_head, |row| {
                         row.child(
                             Button::new("detail-compare")
-                                .ghost()
+                                .secondary()
+                                .outline()
                                 .compact()
                                 .icon(Ic::Compare)
                                 .label(tr("Compare", "比较"))

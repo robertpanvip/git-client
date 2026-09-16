@@ -75,7 +75,8 @@ impl AppView {
                 DropdownButton::new("branch-menu")
                     .button(
                         Button::new("branch-button")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .icon(Ic::Branch)
                             .label(branch_label),
                     )
@@ -448,7 +449,8 @@ impl AppView {
                 DropdownButton::new("tag-menu")
                     .button(
                         Button::new("tag-button")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .icon(Ic::Tag)
                             .label(tr("Tags", "标签")),
                     )
@@ -568,7 +570,8 @@ impl AppView {
                 DropdownButton::new("branch-filter-menu")
                     .button(
                         Button::new("branch-filter-button")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .icon(Ic::Filter)
                             .label(format!(
                                 "{}",
@@ -609,7 +612,8 @@ impl AppView {
             )
             .child(
                 Button::new("author-filter")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::User)
                     .label(format!(
                         "{}",
@@ -627,7 +631,8 @@ impl AppView {
                 DropdownButton::new("date-filter-menu")
                     .button(
                         Button::new("date-filter-button")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .icon(Ic::History)
                             .label(format!(
                                 "{}",
@@ -678,14 +683,16 @@ impl AppView {
             )
             .child(
                 Button::new("goto")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Search)
                     .label(tr("Go to…", "跳转到…"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::GoTo, cx))),
             )
             .child(
                 Button::new("fetch")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Fetch)
                     .label(tr("Fetch", "抓取"))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -699,21 +706,24 @@ impl AppView {
             )
             .child(
                 Button::new("pull")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Pull)
                     .label(tr("Pull", "拉取"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_pull(cx))),
             )
             .child(
                 Button::new("push")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Push)
                     .label(tr("Push", "推送"))
                     .on_click(cx.listener(|this, _, _, cx| this.do_push(cx))),
             )
             .child(
                 Button::new("stash")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Shelve)
                     .label(tr("Stash", "贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -722,7 +732,8 @@ impl AppView {
             )
             .child(
                 Button::new("unstash")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Unshelve)
                     .label(tr("Unstash", "恢复贮藏"))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -731,28 +742,32 @@ impl AppView {
             )
             .child(
                 Button::new("refresh")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Refresh)
                     .label(tr("Refresh", "刷新"))
                     .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
             )
             .child(
                 Button::new("conflicts")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Conflict)
                     .label(tr("Conflicts", "冲突"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_conflicts(cx))),
             )
             .child(
                 Button::new("shelves")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Changes)
                     .label(tr("Shelves", "搁置"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
             )
             .child(
                 Button::new("language-toggle")
-                    .ghost()
+                    .secondary()
+                    .outline()
                     .icon(Ic::Language)
                     .label(i18n::current().other().label())
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -1205,7 +1220,8 @@ impl AppView {
                     .gap_2()
                     .child(
                         Button::new("shelve")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .label(tr("Shelve…", "搁置…"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.open_prompt(PromptKind::Stash, cx)
@@ -1213,7 +1229,8 @@ impl AppView {
                     )
                     .child(
                         Button::new("amend")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .label(amend_label)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let enabling = !this.state.amend;
@@ -1273,7 +1290,8 @@ impl AppView {
                         if let Some(token) = self.state.cancel_token.clone() {
                             busy_row = busy_row.child(
                                 Button::new("cancel-op")
-                                    .ghost()
+                                    .secondary()
+                                    .outline()
                                     .text_xs()
                                     .label(tr("Cancel", "取消"))
                                     .on_click(move |_, _, _| {

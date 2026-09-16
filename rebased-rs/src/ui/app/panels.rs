@@ -203,7 +203,8 @@ impl AppView {
                         )
                         .child(
                             Button::new("rebase-cancel")
-                                .ghost()
+                                .secondary()
+                                .outline()
                                 .compact()
                                 .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_rebase(cx))),
@@ -293,7 +294,8 @@ impl AppView {
                     )
                     .child(
                         Button::new(("take-ours", index))
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Take ours", "采用我们的"))
                             .on_click(cx.listener({
@@ -305,7 +307,8 @@ impl AppView {
                     )
                     .child(
                         Button::new(("take-theirs", index))
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Take theirs", "采用他们的"))
                             .on_click(cx.listener({
@@ -431,7 +434,8 @@ impl AppView {
                                 .gap_1()
                                 .child(
                                     Button::new(("hunk-ours", index))
-                                        .ghost()
+                                        .secondary()
+                                        .outline()
                                         .compact()
                                         .label(ours_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -440,7 +444,8 @@ impl AppView {
                                 )
                                 .child(
                                     Button::new(("hunk-theirs", index))
-                                        .ghost()
+                                        .secondary()
+                                        .outline()
                                         .compact()
                                         .label(theirs_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -449,7 +454,8 @@ impl AppView {
                                 )
                                 .child(
                                     Button::new(("hunk-both", index))
-                                        .ghost()
+                                        .secondary()
+                                        .outline()
                                         .compact()
                                         .label(both_label)
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -608,7 +614,8 @@ impl AppView {
                     )
                     .child(
                         Button::new(("shelve-apply", index))
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Unshelve", "恢复搁置"))
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -617,7 +624,8 @@ impl AppView {
                     )
                     .child(
                         Button::new(("shelve-drop", index))
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .compact()
                             .label(tr("Drop", "丢弃"))
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -629,7 +637,8 @@ impl AppView {
 
         panel.child(
             Button::new("shelve-reload")
-                .ghost()
+                .secondary()
+                .outline()
                 .compact()
                 .label(tr("Reload", "刷新"))
                 .on_click(cx.listener(|this, _, _, cx| this.reload_shelves(cx))),
@@ -827,7 +836,8 @@ impl AppView {
                         header
                             .child(
                                 Button::new("diff-ignore-ws")
-                                    .ghost()
+                                    .secondary()
+                                    .outline()
                                     .label(if self.state.ignore_whitespace {
                                         format!("✓ {}", tr("Ignore whitespace", "忽略空白"))
                                     } else {
@@ -839,7 +849,8 @@ impl AppView {
                             )
                             .child(
                                 Button::new("diff-view-mode")
-                                    .ghost()
+                                    .secondary()
+                                    .outline()
                                     .label(if self.state.diff_side_by_side {
                                         tr("⇔ Side-by-side", "⇔ 并排对比")
                                     } else {
@@ -855,7 +866,8 @@ impl AppView {
                     .when(self.state.diff_path.is_some(), |header| {
                         header.child(
                             Button::new("diff-blame")
-                                .ghost()
+                                .secondary()
+                                .outline()
                                 .label(tr("Blame", "追溯"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     let path = this.state.diff_path.clone().unwrap_or_default();
@@ -880,7 +892,8 @@ impl AppView {
                         header
                             .child(
                                 Button::new("diff-save")
-                                    .ghost()
+                                    .secondary()
+                                    .outline()
                                     .label(tr("Save", "保存"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.save_diff_edit(cx)),
@@ -888,7 +901,8 @@ impl AppView {
                             )
                             .child(
                                 Button::new("diff-cancel")
-                                    .ghost()
+                                    .secondary()
+                                    .outline()
                                     .label(tr("Cancel", "取消"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.cancel_diff_edit(cx)),
@@ -1586,7 +1600,8 @@ impl AppView {
                     .gap_2()
                     .child(
                         Button::new("prompt-cancel")
-                            .ghost()
+                            .secondary()
+                            .outline()
                             .label(tr("Cancel", "取消"))
                             .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
                     )
@@ -1613,7 +1628,8 @@ impl AppView {
                         .gap_2()
                         .child(
                             Button::new("prompt-cancel")
-                                .ghost()
+                                .secondary()
+                                .outline()
                                 .label(tr("Cancel", "取消"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.cancel_prompt(cx)
