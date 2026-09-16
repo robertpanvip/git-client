@@ -7,7 +7,9 @@ use gpui::{
     div, px, size, AppContext, Bounds, Context, Entity, IntoElement, InteractiveElement,
     ParentElement, Render, Styled, Subscription, Window, WindowBounds, WindowOptions,
 };
-use gpui_kit::component::{input::TextareaState, list::ListState, ActiveTheme, Root};
+use gpui_kit::component::{
+    input::TextareaState, list::ListState, theme::Theme, ActiveTheme, Root,
+};
 use rebased_rs::git::{
     load_repo_data_filtered, open_backend, CancelToken, GitBackend, GitError, ProgressHandle,
     RepoData, DEFAULT_LOG_LIMIT,
@@ -16,6 +18,7 @@ use rebased_rs::git::{
 use crate::ui::commit_list::{LogData, LogDelegate};
 use crate::ui::i18n::{self, tr};
 use crate::ui::icons;
+use crate::ui::settings;
 
 mod actions;
 mod conflicts;
@@ -400,6 +403,9 @@ pub fn run(repo_path: PathBuf) {
         .run(move |cx| {
             gpui_kit::init(cx);
             actions::register_keybindings(cx);
+            if let Some(mode) = settings::load_theme_mode() {
+                Theme::change(mode, None, cx);
+            }
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),

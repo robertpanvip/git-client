@@ -6,5 +6,6 @@ mod diff_view;
 mod graph_view;
 pub(crate) mod i18n;
 pub(crate) mod icons;
+pub(crate) mod settings;
 pub(crate) mod theme;
 pub use app::run;

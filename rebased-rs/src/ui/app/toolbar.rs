@@ -2,14 +2,15 @@ use std::sync::atomic::Ordering;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    div, px, Anchor, AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, WeakEntity,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants, DropdownButton},
     input::Textarea,
     list::List,
-    menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
+    menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
+    theme::{Theme, ThemeMode},
     Sizable, Size, ActiveTheme,
 };
 
@@ -17,8 +18,9 @@ use rebased_rs::git::{Branch, Change, ChangeStatus, MergeMode};
 
 use crate::ui::components::{empty_state, group_header, v_separator, Checkbox};
 use crate::ui::graph_view::status_color;
-use crate::ui::i18n::{self, tr};
+use crate::ui::i18n::{self, Language, tr};
 use crate::ui::icons::Ic;
+use crate::ui::settings;
 use crate::ui::theme;
 
 use super::{AppView, ConfirmAction, PromptKind};
@@ -780,16 +782,54 @@ impl AppView {
             )
             .child(v_separator(fg))
             .child(
-                Button::new("language-toggle")
+                Button::new("settings")
                     .ghost()
                     .compact()
-                    .label(i18n::current().other().label())
-                    .tooltip(tr("Switch Language", "切换语言"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        i18n::toggle();
-                        cx.notify();
-                        this.refresh(cx);
-                    })),
+                    .icon(Ic::Settings)
+                    .tooltip(tr("Settings", "设置"))
+                    .dropdown_menu_with_anchor(Anchor::TopRight, |menu, _window, cx| {
+                        let is_zh = i18n::current() == Language::Zh;
+                        let is_dark = cx.theme().is_dark();
+                        menu.item(
+                            PopupMenuItem::new("English")
+                                .checked(!is_zh)
+                                .on_click(|_, _, cx| {
+                                    if i18n::current() != Language::En {
+                                        i18n::set_current(Language::En);
+                                        cx.refresh_windows();
+                                    }
+                                }),
+                        )
+                        .item(
+                            PopupMenuItem::new("中文")
+                                .checked(is_zh)
+                                .on_click(|_, _, cx| {
+                                    if i18n::current() != Language::Zh {
+                                        i18n::set_current(Language::Zh);
+                                        cx.refresh_windows();
+                                    }
+                                }),
+                        )
+                        .separator()
+                        .item(
+                            PopupMenuItem::new(tr("Light Theme", "浅色主题"))
+                                .checked(!is_dark)
+                                .on_click(|_, window, cx| {
+                                    Theme::change(ThemeMode::Light, Some(window), cx);
+                                    settings::persist_theme_mode(ThemeMode::Light);
+                                    cx.refresh_windows();
+                                }),
+                        )
+                        .item(
+                            PopupMenuItem::new(tr("Dark Theme", "深色主题"))
+                                .checked(is_dark)
+                                .on_click(|_, window, cx| {
+                                    Theme::change(ThemeMode::Dark, Some(window), cx);
+                                    settings::persist_theme_mode(ThemeMode::Dark);
+                                    cx.refresh_windows();
+                                }),
+                        )
+                    }),
             )
             .when(self.state.rebase.in_progress(), |bar| {
                 bar.child(
