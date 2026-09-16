@@ -13,6 +13,9 @@ jobs:
   build-linux:
     name: Build Linux x86_64
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rebased-rs
     steps:
       - uses: actions/checkout@v4
 
