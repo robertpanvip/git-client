@@ -822,6 +822,13 @@ impl AppView {
                         )
                 })
                 .child(
+                    Button::new("diff-new-window")
+                        .ghost()
+                        .compact()
+                        .icon(Ic::Changes)
+                        .on_click(cx.listener(|this, _, _, cx| this.open_diff_in_new_window(cx))),
+                )
+                .child(
                     Button::new("diff-close")
                         .ghost()
                         .compact()

@@ -31,6 +31,7 @@ mod actions;
 mod conflicts;
 mod detail;
 mod detail_view;
+mod diff_window;
 mod panels;
 mod rebase;
 mod shelves;

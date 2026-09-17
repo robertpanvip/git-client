@@ -103,6 +103,32 @@ impl AppView {
         }
     }
 
+    /// 把当前的 diff（staged/unstaged/commit）在独立新窗口中打开，与主窗口解耦。
+    pub(crate) fn open_diff_in_new_window(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let Some(source) = self.state.diff_source else {
+            return;
+        };
+        if self.state.diff_files.is_empty() {
+            cx.notify();
+            return;
+        }
+        crate::ui::app::diff_window::open_diff_window(
+            self.state.diff_files.clone(),
+            self.state.diff_title.clone(),
+            source,
+            self.state.diff_path.clone(),
+            self.state.diff_commit.clone().unwrap_or_default(),
+            self.state.ignore_whitespace,
+            self.state.diff_side_by_side,
+            repo,
+            cx,
+        );
+        cx.notify();
+    }
+
     pub(crate) fn open_blame(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
