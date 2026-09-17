@@ -6,9 +6,9 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, div, px,
 };
 use gpui_kit::component::{
-    ActiveTheme, Sizable, Size,
+    ActiveTheme, Icon, Sizable, Size,
     button::{Button, ButtonVariants, DropdownButton},
-    input::Textarea,
+    input::{Input, Textarea},
     list::List,
     menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
     theme::{Theme, ThemeMode},
@@ -42,7 +42,6 @@ impl AppView {
     }
 
     pub(crate) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = cx.theme().border;
         let fg = cx.theme().foreground;
         let branch_entries = self.state.branch_entries.clone();
         let tags = self.state.tags.clone();
@@ -67,8 +66,7 @@ impl AppView {
         div()
             .h(px(theme::TOOLBAR_HEIGHT))
             .flex_none()
-            .border_b_1()
-            .border_color(border)
+            .bg(theme::bg_chrome())
             .flex()
             .flex_row()
             .items_center()
@@ -825,6 +823,7 @@ impl AppView {
                                 .checked(is_dark)
                                 .on_click(|_, window, cx| {
                                     Theme::change(ThemeMode::Dark, Some(window), cx);
+                                    theme::apply_jetbrains_palette(cx);
                                     settings::persist_theme_mode(ThemeMode::Dark);
                                     cx.refresh_windows();
                                 }),
@@ -881,9 +880,8 @@ impl AppView {
             .into_any_element()
     }
 
-    /// Log 主区标题行：“Log: <分支>” + 激活过滤摘要（作者/日期）。
+    /// Log 主区标题行（对齐原版 41px）：折叠指示 + “Log: <分支>” 蓝底白字标签。
     fn render_log_header(&self, cx: &mut Context<Self>) -> Div {
-        let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         let branch = self
             .state
@@ -894,6 +892,59 @@ impl AppView {
         div()
             .h(px(theme::LOG_HEADER_HEIGHT))
             .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .child(div().flex_none().text_sm().text_color(muted).child("›"))
+            .child(
+                div()
+                    .flex_none()
+                    .px_2()
+                    .py_0p5()
+                    .rounded(px(theme::RADIUS_SM))
+                    .bg(theme::log_tag_bg())
+                    .text_sm()
+                    .text_color(theme::rgb(0xFFFFFF))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(format!("{}: {branch}", tr("Log", "日志"))),
+            )
+            .child(div().flex_1())
+    }
+
+    /// 蓝字过滤 chip（对齐原版 “Branch: HEAD ×”），点击清除对应过滤。
+    fn render_filter_chip(
+        &self,
+        id: &'static str,
+        label: String,
+        on_clear: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let link = theme::link_blue();
+        div()
+            .id(id)
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_1()
+            .rounded(px(theme::RADIUS_SM))
+            .text_xs()
+            .text_color(link)
+            .cursor_pointer()
+            .hover(move |s| s.bg(theme::hover_bg(link)))
+            .on_click(cx.listener(move |this, _, _, cx| on_clear(this, cx)))
+            .child(label)
+            .child(Icon::new(Ic::Close).with_size(Size::Small))
+    }
+
+    /// Log 过滤行（对齐原版 37px）：“Text or hash” 搜索框 + 激活的过滤 chips。
+    fn render_log_filter_row(&self, cx: &mut Context<Self>) -> Div {
+        div()
+            .h(px(theme::LOG_FILTER_HEIGHT))
+            .flex_none()
             .border_b_1()
             .border_color(cx.theme().border)
             .flex()
@@ -902,46 +953,47 @@ impl AppView {
             .gap_2()
             .px_2()
             .child(
-                div()
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(format!("{}: {branch}", tr("Log", "日志"))),
+                div().w(px(200.0)).flex_none().child(
+                    Input::new(&self.log_query)
+                        .with_size(Size::Small)
+                        .prefix(Icon::new(Ic::Search).text_color(cx.theme().muted_foreground))
+                        .cleanable(true)
+                        .appearance(false),
+                ),
             )
-            .child(div().flex_1())
-            .when(!self.state.filter_author.is_empty(), |header| {
-                header.child(
-                    div()
-                        .px_1()
-                        .rounded(px(theme::RADIUS_SM))
-                        .bg(theme::badge_bg(muted))
-                        .text_xs()
-                        .text_color(fg)
-                        .child(format!(
-                            "{}: {}",
-                            tr("User", "用户"),
-                            self.state.filter_author
-                        )),
-                )
+            .when(self.state.filter_branch.is_some(), |row| {
+                let branch = self.state.filter_branch.clone().unwrap_or_default();
+                row.child(self.render_filter_chip(
+                    "branch-chip",
+                    format!("{}: {branch}", tr("Branch", "分支")),
+                    |this, cx| this.set_branch_filter(None, cx),
+                    cx,
+                ))
             })
-            .when(self.state.filter_since.is_some(), |header| {
+            .when(!self.state.filter_author.is_empty(), |row| {
+                let author = self.state.filter_author.clone();
+                row.child(self.render_filter_chip(
+                    "author-chip",
+                    format!("{}: {author}", tr("User", "用户")),
+                    |this, cx| this.set_author_filter(String::new(), cx),
+                    cx,
+                ))
+            })
+            .when(self.state.filter_since.is_some(), |row| {
                 let label = self
                     .state
                     .filter_since
                     .as_ref()
                     .map(|(label, _)| label.clone())
                     .unwrap_or_default();
-                header.child(
-                    div()
-                        .px_1()
-                        .rounded(px(theme::RADIUS_SM))
-                        .bg(theme::badge_bg(muted))
-                        .text_xs()
-                        .text_color(fg)
-                        .child(label),
-                )
+                row.child(self.render_filter_chip(
+                    "date-chip",
+                    label,
+                    |this, cx| this.set_date_filter(None, cx),
+                    cx,
+                ))
             })
+            .child(div().flex_1())
     }
 
     pub(crate) fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -967,6 +1019,7 @@ impl AppView {
             .flex_col()
             .overflow_hidden()
             .child(self.render_log_header(cx))
+            .child(self.render_log_filter_row(cx))
             .child(
                 div()
                     .flex_1()

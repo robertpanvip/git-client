@@ -682,11 +682,12 @@ impl AppView {
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let border = cx.theme().border;
         let width = match self.state.sidebar {
-            SidebarMode::Workspace | SidebarMode::Detail => 420.,
+            // 详情/搁置面板对齐原版实测 389px。
+            SidebarMode::Workspace | SidebarMode::Detail => theme::DETAIL_PANEL_WIDTH,
             SidebarMode::Diff | SidebarMode::Blame | SidebarMode::Compare => 680.,
             SidebarMode::Rebase => 480.,
             SidebarMode::Conflicts => 680.,
-            SidebarMode::Shelve => 420.,
+            SidebarMode::Shelve => theme::DETAIL_PANEL_WIDTH,
             SidebarMode::History | SidebarMode::Reflog => 680.,
         };
         let base = div()

@@ -3,11 +3,19 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    Styled, Subscription, Window, WindowBounds, WindowOptions, div, px, size,
+    AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement,
+    Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowBounds, WindowOptions,
+    div, px, size,
 };
-use gpui_kit::component::{ActiveTheme, Root, input::TextareaState, list::ListState, theme::Theme};
+use gpui_kit::component::{
+    ActiveTheme, Icon, Root,
+    input::{InputEvent, InputState, TextareaState},
+    list::ListState,
+    theme::Theme,
+    theme::ThemeMode,
+};
 use rebased_rs::git::{
     CancelToken, DEFAULT_LOG_LIMIT, GitBackend, GitError, ProgressHandle, RepoData,
     load_repo_data_filtered, open_backend,
@@ -17,6 +25,7 @@ use crate::ui::commit_list::{LogData, LogDelegate};
 use crate::ui::i18n::{self, tr};
 use crate::ui::icons;
 use crate::ui::settings;
+use crate::ui::theme;
 
 mod actions;
 mod conflicts;
@@ -57,6 +66,8 @@ pub struct AppView {
     repo_digest: String,
     pub(crate) state: AppState,
     list: Entity<ListState<LogDelegate>>,
+    /// Log 过滤行搜索输入（“Text or hash”），变化时转发 ListState::set_query。
+    log_query: Entity<InputState>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
     /// AddRemote 对话框的第二个输入框（remote URL）。
@@ -67,7 +78,11 @@ pub struct AppView {
 
 impl AppView {
     fn new(repo_path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let list = cx.new(|cx| ListState::new(LogDelegate::new(), window, cx).searchable(true));
+        // 搜索框由过滤行自绘（对齐原版 37px 行高），ListState 关闭内置搜索 UI；
+        // set_query 仍会触发 perform_search，delegate 的过滤逻辑不变。
+        let list = cx.new(|cx| ListState::new(LogDelegate::new(), window, cx).searchable(false));
+        let log_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("Text or hash", "文本或哈希")));
         let message_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .placeholder(tr("Commit message", "提交信息"))
@@ -88,7 +103,10 @@ impl AppView {
                 .placeholder(tr("File content", "文件内容"))
                 .soft_wrap(true)
         });
-        let subscriptions = vec![cx.subscribe_in(&list, window, Self::on_list_event)];
+        let subscriptions = vec![
+            cx.subscribe_in(&list, window, Self::on_list_event),
+            cx.subscribe_in(&log_query, window, Self::on_log_query_changed),
+        ];
         list.update(cx, |list, cx| list.focus(window, cx));
 
         let this = Self {
@@ -97,6 +115,7 @@ impl AppView {
             repo_digest: String::new(),
             state: AppState::default(),
             list,
+            log_query,
             message_input,
             prompt_input,
             prompt_input2,
@@ -160,6 +179,21 @@ impl AppView {
         })
         .detach();
         this
+    }
+
+    /// Log 过滤行输入变化：转发给 ListState 触发 delegate 的 perform_search。
+    fn on_log_query_changed(
+        &mut self,
+        _entity: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(event, InputEvent::Change) {
+            let query = self.log_query.read(cx).value().to_string();
+            self.list
+                .update(cx, |list, cx| list.set_query(&query, window, cx));
+        }
     }
 
     fn apply_data(&mut self, data: RepoData, cx: &mut Context<Self>) {
@@ -363,6 +397,85 @@ impl AppView {
         self.state.error = Some(error.to_string());
         cx.notify();
     }
+
+    /// 左侧 40px 图标条（对齐原版 New UI 竖条）：Git / History / Shelve 快捷入口。
+    fn render_icon_strip(&self, cx: &mut Context<Self>) -> Div {
+        div()
+            .w(px(theme::ICON_STRIP_WIDTH))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .pt_2()
+            .bg(theme::bg_chrome())
+            .border_r_1()
+            .border_color(theme::separator())
+            .child(self.render_strip_button(
+                "strip-git",
+                icons::Ic::Changes,
+                matches!(
+                    self.state.sidebar,
+                    SidebarMode::Workspace | SidebarMode::Detail
+                ),
+                |this, cx| {
+                    this.state.sidebar = SidebarMode::Detail;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(self.render_strip_button(
+                "strip-history",
+                icons::Ic::History,
+                matches!(self.state.sidebar, SidebarMode::History),
+                |this, cx| {
+                    this.state.sidebar = SidebarMode::History;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(self.render_strip_button(
+                "strip-shelve",
+                icons::Ic::Shelve,
+                matches!(self.state.sidebar, SidebarMode::Shelve),
+                |this, cx| {
+                    this.state.sidebar = SidebarMode::Shelve;
+                    cx.notify();
+                },
+                cx,
+            ))
+    }
+
+    /// 图标条单按钮：选中态蓝底白字，未选中悬停淡入。
+    fn render_strip_button(
+        &self,
+        id: &'static str,
+        icon: icons::Ic,
+        active: bool,
+        on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let fg = if active {
+            theme::rgb(0xFFFFFF)
+        } else {
+            theme::text_muted()
+        };
+        div()
+            .id(id)
+            .size(px(32.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_SM))
+            .text_color(fg)
+            .cursor_pointer()
+            .when(active, |b| b.bg(theme::selection_bg()))
+            .when(!active, |b| b.hover(move |s| s.bg(theme::hover_bg(fg))))
+            .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
+            .child(Icon::new(icon))
+    }
 }
 
 impl Render for AppView {
@@ -393,6 +506,7 @@ impl Render for AppView {
                     .flex()
                     .flex_row()
                     .overflow_hidden()
+                    .child(self.render_icon_strip(cx))
                     .child(self.render_commit_sidebar(cx))
                     .child(self.render_commit_panel(cx))
                     .child(self.render_sidebar(cx)),
@@ -414,10 +528,11 @@ pub fn run(repo_path: PathBuf) {
             if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_some() {
                 settings::log_event("GPUI_DISABLE_DIRECT_COMPOSITION is set");
             }
-            if let Some(mode) = settings::load_theme_mode() {
-                settings::log_event(&format!("restoring theme mode: {}", mode.name()));
-                Theme::change(mode, None, cx);
-            }
+            // 像素级对齐原版：默认 JetBrains New UI Dark；用户显式保存过则用保存值。
+            let mode = settings::load_theme_mode().unwrap_or(ThemeMode::Dark);
+            settings::log_event(&format!("theme mode: {}", mode.name()));
+            Theme::change(mode, None, cx);
+            theme::apply_jetbrains_palette(cx);
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
