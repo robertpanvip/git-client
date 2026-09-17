@@ -782,6 +782,14 @@ impl AppView {
             )
             .child(v_separator(fg))
             .child(
+                Button::new("open")
+                    .ghost()
+                    .compact()
+                    .icon(Ic::FolderOpen)
+                    .tooltip(tr("Open Project", "打开项目"))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_repo_dialog(window, cx))),
+            )
+            .child(
                 Button::new("settings")
                     .ghost()
                     .compact()
@@ -1006,6 +1014,34 @@ impl AppView {
                 .justify_center()
                 .text_color(cx.theme().muted_foreground)
                 .child(tr("Loading repository...", "正在加载仓库..."))
+                .into_any_element();
+        }
+        // 仓库尚未打开（启动路径无效或首次加载失败）：给出明确的错误态与重开入口。
+        if self.repo.is_none() {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_3()
+                .child(
+                    div()
+                        .max_w(px(560.))
+                        .text_center()
+                        .text_color(theme::error_color())
+                        .child(self.state.error.clone().unwrap_or_else(|| {
+                            tr("No repository is open", "尚未打开仓库").to_string()
+                        })),
+                )
+                .child(
+                    Button::new("open-project-error")
+                        .label(tr("Open Project...", "打开项目..."))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_repo_dialog(window, cx)),
+                        ),
+                )
                 .into_any_element();
         }
         let list = self.list.clone();

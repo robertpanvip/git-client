@@ -250,6 +250,72 @@ impl AppView {
         .detach();
     }
 
+    /// 弹出系统“选择文件夹”对话框，把窗口切换到用户选中的本地 Git 仓库。
+    fn open_repo_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // 有后台写操作时忽略，避免切换仓库与进行中的操作互相踩踏。
+        if self.state.busy.is_some() {
+            return;
+        }
+        // 切换仓库后旧的文本/哈希过滤不再适用：清空搜索框。
+        // InputState::set_value 内部关闭了事件发射，不会触发 Change，
+        // 因此还需手动 set_query 让 delegate 立即回到全量列表。
+        self.log_query
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.list
+            .update(cx, |list, cx| list.set_query("", window, cx));
+        // set_parent 只借用 window 句柄（内部立即转为可 Copy 的 RawWindowHandle），
+        // 对话框可以安全地移到后台线程 await。
+        let dialog = rfd::AsyncFileDialog::new()
+            .set_title(tr("Open Project", "打开项目"))
+            .set_parent(&*window);
+        let task = cx.background_spawn(async move {
+            dialog
+                .pick_folder()
+                .await
+                .map(|handle| handle.path().to_path_buf())
+        });
+        cx.spawn(async move |this, cx| {
+            let Some(path) = task.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| this.switch_repo(path, cx));
+        })
+        .detach();
+    }
+
+    /// 切换到新的仓库：整体重置应用状态（过滤器/选中/面板），后台重载全部数据。
+    fn switch_repo(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.state.busy.is_some() || path == self.repo_path {
+            return;
+        }
+        self.repo_path = path;
+        self.repo = None;
+        self.repo_digest = String::new();
+        self.state = AppState::default();
+        cx.notify();
+        let task = cx.background_spawn({
+            let repo_path = self.repo_path.clone();
+            async move { open_and_load(&repo_path) }
+        });
+        cx.spawn(async move |this, cx| {
+            let loaded = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.state.loading = false;
+                match loaded {
+                    Ok(loaded) => {
+                        this.repo = Some(loaded.repo);
+                        this.apply_data(loaded.data, cx);
+                    }
+                    Err(e) => {
+                        this.state.error = Some(e.to_string());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
     fn run_op(
         &mut self,
         message: &str,

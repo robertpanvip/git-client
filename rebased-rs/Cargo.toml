@@ -14,6 +14,8 @@ gpui-pre-platform = { version = "=0.3.3", features = [
     "runtime_shaders",
 ] }
 chrono = "0.4"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
+async-channel = "2"
 rust-embed = "8"
 sys-locale = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
