@@ -16,7 +16,10 @@
 //!
 //! 扁平 re-export 是设计系统的**公开面**：部分原语当前尚未被面板引用，
 //! 属于为后续面板（Phase 7 次要 Git 表面）预留的接口，因此允许未被导入。
+//! dead_code 同理：lib target 中它们是 pub API，仅 bin target 的死代码
+//! 分析会误报（与 `icons.rs` 对图标枚举的处理一致）。
 
+#![allow(dead_code)]
 #![allow(unused_imports)]
 
 pub mod badge;
