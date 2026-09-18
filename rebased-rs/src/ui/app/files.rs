@@ -36,85 +36,46 @@ fn auto_expand_toplevel_dirs(expanded: &mut std::collections::HashSet<String>, f
         }
     }
     for dir in toplevel_dirs {
-        eprintln!("[diag] auto-expanded toplevel dir: {}", dir);
         expanded.insert(dir);
     }
 }
 
 impl AppView {
     /// 进入文件视图；首次进入（或仓库切换后）在后台装载文件清单。
-    ///
-    /// 即使仓库还在后台加载（`self.repo == None`），也会标记「正在加载」，
-    /// 避免 `apply_data` 仓库就绪后遗漏本次装载。`apply_data` 会在
-    /// `MainView::Files` 时自动补调 `load_files`。
     pub(crate) fn open_files_view(&mut self, cx: &mut Context<Self>) {
-        eprintln!(
-            "[diag] open_files_view files={} loading={} repo={}",
-            self.state.files.len(),
-            self.state.files_loading,
-            self.repo.is_some()
-        );
         self.state.main_view = MainView::Files;
-        if let Some(repo) = self.repo.clone() {
-            if self.state.files.is_empty() {
-                eprintln!("[diag] open_files_view: repo ready, loading files");
-                self.state.files_loading = true;
-                self.do_load_files(repo, cx);
-            }
-        } else {
-            eprintln!("[diag] open_files_view: repo not ready, will wait for apply_data");
-            self.state.files_loading = true;
+        if self.state.files.is_empty() && !self.state.files_loading {
+            self.load_files(cx);
         }
         cx.notify();
     }
 
     /// 后台装载工作区文件清单（tracked + untracked，遵循 .gitignore）。
     pub(crate) fn load_files(&mut self, cx: &mut Context<Self>) {
-        eprintln!(
-            "[diag] load_files called: files={} loading={} repo={}",
-            self.state.files.len(),
-            self.state.files_loading,
-            self.repo.is_some()
-        );
         let Some(repo) = self.repo.clone() else {
-            eprintln!("[diag] load_files early return: repo is None");
             return;
         };
         self.state.files_loading = true;
-        eprintln!("[diag] load_files calling do_load_files");
         self.do_load_files(repo, cx);
     }
 
     /// 实际执行后台文件装载（调用方保证 `repo` 非 None 且已置位 `files_loading`）。
     fn do_load_files(&mut self, repo: Arc<dyn GitBackend>, cx: &mut Context<Self>) {
-        eprintln!("[diag] do_load_files: starting background task");
         let task =
             cx.background_spawn(async move { use_cases::load_worktree_files(repo.as_ref()) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
-            eprintln!(
-                "[diag] do_load_files background task completed: ok={} err={}",
-                result.is_ok(),
-                result.as_ref().err().map(|e| e.to_string()).unwrap_or_default()
-            );
             let _ = this.update(cx, |this, cx| {
                 this.state.files_loading = false;
                 match result {
                     Ok(files) => {
-                        eprintln!(
-                            "[diag] do_load_files: loaded {} files",
-                            files.len()
-                        );
                         if !files.is_empty() {
                             auto_expand_toplevel_dirs(&mut this.state.files_expanded, &files);
                         }
                         this.state.files = Arc::new(files);
                         this.rebuild_rows();
                     }
-                    Err(e) => {
-                        eprintln!("[diag] do_load_files error: {}", e);
-                        this.state.error = Some(e.to_string())
-                    }
+                    Err(e) => this.state.error = Some(e.to_string()),
                 }
                 cx.notify();
             });
