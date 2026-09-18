@@ -108,6 +108,7 @@ impl AppView {
             .flex()
             .flex_col()
             .gap(px(theme::SPACE_MD))
+            .flex_1()
             .min_h_0()
             .child(panel_header(title, muted, actions));
 
