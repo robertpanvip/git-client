@@ -217,13 +217,15 @@ fn sbs_row(
         .child(sbs_side(right, false, mono, fg, muted))
 }
 
+/// 渲染 diff 内容（统一 / 并排两栏）。
+/// - `hunk_controls`: Stage/Unstage 按钮（Staged/Unstaged 来源）
+/// - `sync_action`: 「左栏内容同步到右栏」箭头（对齐 IntelliJ change marker 的 revert
+///   箭头），点击后把右栏（当前版本）该 hunk 还原成左栏（基线）内容。仅 Unstaged 来源
+///   提供——Staged 的等价操作是 Unstage，Commit 只读。
 pub fn render_diff_files(
     files: &[FileDiff],
     side_by_side: bool,
     hunk_controls: Option<(&'static str, &HunkAction)>,
-    /// 「左栏内容同步到右栏」箭头（对齐 IntelliJ change marker 的 revert
-    /// 箭头）：点击后把右栏（当前版本）该 hunk 还原成左栏（基线）内容。
-    /// 仅 Unstaged 来源提供（Staged 的等价操作是 Unstage；Commit 只读）。
     sync_action: Option<&HunkAction>,
     cx: &App,
 ) -> Div {

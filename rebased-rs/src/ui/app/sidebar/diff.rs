@@ -144,18 +144,19 @@ impl AppView {
                 _ => None,
             };
             // 「左栏内容同步到右栏」箭头：仅 Unstaged（右栏 = 工作区当前版本）。
-            let sync_action: Option<HunkAction> = if self.state.diff_source == Some(DiffSource::Unstaged) {
-                let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
-                Some(std::sync::Arc::new(
-                    move |file_index, hunk_index, app: &mut gpui::App| {
-                        let _ = weak.update(app, |this, cx| {
-                            this.sync_hunk_from_left(file_index, hunk_index, cx)
-                        });
-                    },
-                ))
-            } else {
-                None
-            };
+            let sync_action: Option<HunkAction> =
+                if self.state.diff_source == Some(DiffSource::Unstaged) {
+                    let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                    Some(std::sync::Arc::new(
+                        move |file_index, hunk_index, app: &mut gpui::App| {
+                            let _ = weak.update(app, |this, cx| {
+                                this.sync_hunk_from_left(file_index, hunk_index, cx)
+                            });
+                        },
+                    ))
+                } else {
+                    None
+                };
             panel = panel.child(
                 div()
                     .id("diff-content")

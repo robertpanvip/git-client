@@ -114,7 +114,12 @@ impl DiffWindowView {
 
     /// 「左栏内容同步到右栏」箭头：仅 Unstaged——把工作区该 hunk 还原成
     /// index 版本（`git apply -R`，不动 index），随后刷新自身。
-    fn sync_hunk_from_left(&mut self, file_index: usize, hunk_index: usize, cx: &mut Context<Self>) {
+    fn sync_hunk_from_left(
+        &mut self,
+        file_index: usize,
+        hunk_index: usize,
+        cx: &mut Context<Self>,
+    ) {
         if self.source != DiffSource::Unstaged {
             return;
         }

@@ -1547,3 +1547,41 @@ fn diff_ignore_whitespace_suppresses_whitespace_only_changes() {
         "-w diff should suppress whitespace-only change: {ignored}"
     );
 }
+
+#[test]
+fn revert_hunk_in_worktree_restores_index_version() {
+    // 场景：index 版本是 "one\ntwo\n"，worktree 版本是 "one\nTWO\nthree\n"。
+    // revert_hunk_in_worktree 应把 worktree 还原为 index 版本（git apply -R），
+    // 且 index 不变（staged 区仍为空）。
+    let temp = TempRepo::new();
+    temp.write("file.txt", "one\ntwo\n");
+    temp.git(&["add", "."]);
+    temp.git(&["commit", "-m", "initial"]);
+
+    let repo = Repository::open(&temp.path).expect("open repo");
+
+    // 修改工作区
+    temp.write("file.txt", "one\nTWO\nthree\n");
+
+    // 确认 unstaged diff 存在
+    let diff = repo.diff_unstaged(None, false).expect("unstaged diff");
+    let files = parse_unified_diff(&diff);
+    assert_eq!(files.len(), 1);
+    let file = &files[0];
+    assert_eq!(file.hunks.len(), 1);
+
+    // 调用新能力
+    repo.revert_hunk_in_worktree(file, 0).expect("revert hunk");
+
+    // worktree 应回到 index 版本
+    let content = std::fs::read_to_string(temp.path.join("file.txt")).expect("read");
+    assert_eq!(content, "one\ntwo\n");
+
+    // unstaged diff 应清空
+    let after = repo.diff_unstaged(None, false).expect("unstaged diff");
+    assert!(parse_unified_diff(&after).is_empty());
+
+    // staged diff 也应保持空（revert_hunk_in_worktree 不动 index）
+    let staged = repo.diff_staged(None, false).expect("staged diff");
+    assert!(parse_unified_diff(&staged).is_empty());
+}
