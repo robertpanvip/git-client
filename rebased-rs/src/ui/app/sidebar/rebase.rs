@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     Stateful, StatefulInteractiveElement, Styled, Window, div, px,
@@ -9,7 +10,7 @@ use gpui_kit::component::{
 };
 
 use crate::ui::app::AppView;
-use crate::ui::components::panel_header;
+use crate::ui::components::{empty_state, panel_header};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -75,27 +76,28 @@ impl AppView {
             );
 
         if plan.is_empty() {
-            panel = panel.child(
-                div()
-                    .text_size(px(theme::FONT_SIZE_META))
-                    .text_color(muted)
-                    .child(tr(
-                        "No commits between base and HEAD.",
-                        "基点与 HEAD 之间没有提交。",
-                    )),
-            );
+            panel = panel.child(empty_state(
+                tr(
+                    "No commits between base and HEAD.",
+                    "基点与 HEAD 之间没有提交。",
+                ),
+                muted,
+            ));
         }
 
+        let fg = cx.theme().foreground;
         for (index, action) in plan.iter().enumerate() {
             let kind_label = action.kind.label();
+            let is_drop = action.kind == rebased_rs::git::RebaseActionKind::Drop;
             let short = &action.id[..action.id.len().min(7)];
-            // 已自定义消息时给出提示，并展示自定义内容而非原标题。
+            // 已自定义消息时展示自定义内容（IntelliJ：改写后直接显示新消息）。
             let summary = match action.message.as_deref() {
-                Some(m) if !m.trim().is_empty() => format!("{short} ✎ {m}"),
+                Some(m) if !m.trim().is_empty() => format!("{short} {m}"),
                 _ => format!("{short} {}", action.subject),
             };
             // on_drag 的 constructor 是 Fn，可能被多次调用，label 按次克隆。
             let drag_label: SharedString = format!("{} {short}", tr("Move", "移动")).into();
+            let hover_fg = fg;
             panel = panel.child(
                 div()
                     .id(("rebase-row", index))
@@ -105,8 +107,9 @@ impl AppView {
                     .gap(px(theme::SPACE_SM))
                     .border_b_1()
                     .border_color(border)
-                    .pb(px(theme::SPACE_SM))
+                    .py(px(theme::SPACE_XS))
                     .cursor_move()
+                    .hover(move |style| style.bg(theme::hover_bg(hover_fg)))
                     .drag_over::<RebaseDrag>(|style, _, _, _| {
                         style.border_color(theme::success_color())
                     })
@@ -120,6 +123,9 @@ impl AppView {
                         Button::new(("rebase-kind", index))
                             .ghost()
                             .compact()
+                            .min_w(px(theme::REBASE_KIND_WIDTH))
+                            // Drop 是破坏性操作，与菜单/按钮体系一致用危险色。
+                            .when(is_drop, |b| b.danger())
                             .label(kind_label)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.cycle_rebase_action(index, cx)
@@ -129,7 +135,7 @@ impl AppView {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(theme::FONT_SIZE_META))
+                            .text_size(px(theme::FONT_SIZE_BODY))
                             .text_ellipsis()
                             .overflow_hidden()
                             .child(summary),

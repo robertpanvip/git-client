@@ -633,7 +633,7 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 切换侧栏面板时，右栏宽度回到该面板的默认值（其后用户拖拽可覆盖）。
         if self.last_sidebar_mode != self.state.sidebar {
             self.last_sidebar_mode = self.state.sidebar;
@@ -652,6 +652,7 @@ impl Render for AppView {
             .on_action(cx.listener(Self::on_pull_branch))
             .on_action(cx.listener(Self::on_refresh_repo))
             .on_action(cx.listener(Self::on_close_overlay))
+            .on_action(cx.listener(Self::on_confirm_prompt))
             .on_action(cx.listener(Self::on_select_prev_commit))
             .on_action(cx.listener(Self::on_select_next_commit))
             .on_action(cx.listener(Self::on_focus_composer))
@@ -680,7 +681,7 @@ impl Render for AppView {
                 None
             })
             .children(self.render_vcs_palette(cx))
-            .children(self.render_prompt_overlay(cx))
+            .children(self.render_prompt_overlay(window, cx))
     }
 }
 

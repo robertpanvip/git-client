@@ -236,6 +236,7 @@ impl AppView {
 
     pub(crate) fn open_prompt(&mut self, kind: PromptKind, cx: &mut Context<Self>) {
         self.state.prompt = Some(kind);
+        self.state.prompt_focus_pending = true;
         cx.notify();
     }
 
@@ -248,6 +249,7 @@ impl AppView {
         self.prompt_input
             .update(cx, |state, cx| state.set_value(&name, window, cx));
         self.state.prompt = Some(PromptKind::RenameBranchByName { name });
+        self.state.prompt_focus_pending = true;
         cx.notify();
     }
 
@@ -267,6 +269,7 @@ impl AppView {
         self.prompt_input
             .update(cx, |state, cx| state.set_value(&prefill, window, cx));
         self.state.prompt = Some(PromptKind::MergeMessage { name });
+        self.state.prompt_focus_pending = true;
         cx.notify();
     }
 

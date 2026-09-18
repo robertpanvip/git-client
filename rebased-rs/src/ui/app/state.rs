@@ -295,6 +295,8 @@ pub(crate) struct AppState {
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
+    /// 对话框刚打开、等待首帧聚焦输入框（渲染一次后清除，避免每帧抢焦点）。
+    pub(crate) prompt_focus_pending: bool,
     /// Stash 对话框选项：保留暂存区（--keep-index）。
     pub(crate) prompt_stash_keep_index: bool,
     /// Stash 对话框选项：包含未跟踪文件（--include-untracked）。
@@ -367,6 +369,7 @@ impl Default for AppState {
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
+            prompt_focus_pending: false,
             prompt_stash_keep_index: false,
             prompt_stash_include_untracked: true,
             prompt_merge_mode: MergeMode::NoFastForward,

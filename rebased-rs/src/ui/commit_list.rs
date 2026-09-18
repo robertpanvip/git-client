@@ -302,7 +302,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
         let tag = tag.to_string();
         return menu_width(menu.item(menu_item(
             Ic::Delete,
-            format!("✕ Delete tag {tag}…"),
+            format!("Delete tag {tag}…"),
             None,
             true,
             false,
@@ -333,7 +333,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
         menu_width(
             menu.item(menu_item(
                 Ic::Checkout,
-                format!("⇥ Checkout {branch} (tracking)"),
+                format!("Checkout {branch} (tracking)"),
                 None,
                 false,
                 false,
@@ -347,7 +347,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             ))
             .item(menu_item(
                 Ic::Pull,
-                format!("⇄ Pull {branch} into current"),
+                format!("Pull {branch} into current"),
                 Some(shortcuts::PULL.label),
                 false,
                 false,
@@ -363,7 +363,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             ))
             .item(menu_item(
                 Ic::Compare,
-                format!("⇋ Compare {branch} with current"),
+                format!("Compare {branch} with current"),
                 None,
                 false,
                 false,
@@ -383,7 +383,8 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
         menu_width(
             menu.item(menu_item(
                 Ic::Checkout,
-                format!("✓ Checkout {branch}"),
+                // 当前分支由勾选列表达（checked 参数），不在文案里拼 `✓`。
+                format!("Checkout {branch}"),
                 None,
                 false,
                 is_current,
@@ -397,7 +398,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             ))
             .item(menu_item(
                 Ic::Push,
-                format!("⇪ Push {branch}"),
+                format!("Push {branch}"),
                 Some(shortcuts::PUSH.label),
                 false,
                 false,
@@ -413,7 +414,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             ))
             .item(menu_item(
                 Ic::Edit,
-                format!("✎ Rename {branch}…"),
+                format!("Rename {branch}…"),
                 None,
                 false,
                 false,
@@ -429,7 +430,7 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             ))
             .item(menu_item(
                 Ic::Delete,
-                format!("✕ Delete {branch}…"),
+                format!("Delete {branch}…"),
                 None,
                 true,
                 false,

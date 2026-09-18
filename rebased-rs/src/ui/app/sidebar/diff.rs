@@ -2,6 +2,7 @@ use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, div, px,
 };
+use gpui_kit::base::Selectable;
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants},

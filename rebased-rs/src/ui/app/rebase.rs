@@ -109,6 +109,7 @@ impl AppView {
         self.prompt_input
             .update(cx, |state, cx| state.set_value(&prefill, window, cx));
         self.state.prompt = Some(PromptKind::RebaseEdit { index });
+        self.state.prompt_focus_pending = true;
         cx.notify();
     }
 

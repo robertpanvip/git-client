@@ -4,10 +4,11 @@
 //! 可独立切换「忽略空白 / 并排视图」并执行 hunk 级暂存/取消暂存后再刷新自身。
 
 use gpui::{
-    AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div,
     px, size,
 };
+use gpui_kit::base::Selectable;
 use gpui_kit::component::{
     ActiveTheme, Root,
     button::{Button, ButtonVariants},

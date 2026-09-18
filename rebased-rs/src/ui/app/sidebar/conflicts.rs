@@ -2,6 +2,7 @@ use gpui::{
     Context, Div, FontWeight, InteractiveElement, ParentElement, Stateful,
     StatefulInteractiveElement, Styled, div, px,
 };
+use gpui_kit::base::Selectable;
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
     button::{Button, ButtonVariants},
@@ -141,24 +142,6 @@ impl AppView {
                 } else {
                     hunk.theirs.join("\n")
                 };
-                let ours_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Ours)) => {
-                        format!("✓ {}", tr("Use ours", "采用我们的"))
-                    }
-                    _ => tr("Use ours", "采用我们的").to_string(),
-                };
-                let theirs_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Theirs)) => {
-                        format!("✓ {}", tr("Use theirs", "采用他们的"))
-                    }
-                    _ => tr("Use theirs", "采用他们的").to_string(),
-                };
-                let both_label = match self.state.conflict_choices.get(index) {
-                    Some(Some(HunkChoice::Both)) => {
-                        format!("✓ {}", tr("Use both", "两者都采用"))
-                    }
-                    _ => tr("Use both", "两者都采用").to_string(),
-                };
                 let chose_ours = self
                     .state
                     .conflict_choices
@@ -170,12 +153,13 @@ impl AppView {
                     .get(index)
                     .is_some_and(|c| c == &Some(HunkChoice::Theirs));
                 let last_choice = self.state.conflict_choices.get(index).copied().flatten();
+                let chose_both = last_choice == Some(HunkChoice::Both);
                 // Result 栏实时反映当前所选取舍（Ours / Theirs / Both）。
                 let result_text = if chose_ours {
                     ours_text.clone()
                 } else if chose_theirs {
                     theirs_text.clone()
-                } else if last_choice == Some(HunkChoice::Both) {
+                } else if chose_both {
                     if theirs_text.is_empty() {
                         ours_text.clone()
                     } else {
@@ -225,7 +209,9 @@ impl AppView {
                                     Button::new(("hunk-ours", index))
                                         .ghost()
                                         .compact()
-                                        .label(ours_label)
+                                        // 取舍状态由按钮 selected 呈现，不拼 `✓` 前缀。
+                                        .selected(chose_ours)
+                                        .label(tr("Use ours", "采用我们的"))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.choose_hunk(index, HunkChoice::Ours, cx)
                                         })),
@@ -234,7 +220,8 @@ impl AppView {
                                     Button::new(("hunk-theirs", index))
                                         .ghost()
                                         .compact()
-                                        .label(theirs_label)
+                                        .selected(chose_theirs)
+                                        .label(tr("Use theirs", "采用他们的"))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.choose_hunk(index, HunkChoice::Theirs, cx)
                                         })),
@@ -243,7 +230,8 @@ impl AppView {
                                     Button::new(("hunk-both", index))
                                         .ghost()
                                         .compact()
-                                        .label(both_label)
+                                        .selected(chose_both)
+                                        .label(tr("Use both", "两者都采用"))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.choose_hunk(index, HunkChoice::Both, cx)
                                         })),

@@ -1,7 +1,8 @@
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, div, px,
+    SharedString, Styled, Window, div, px,
 };
+use gpui_kit::base::Disableable;
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants},
@@ -17,8 +18,19 @@ use crate::ui::i18n::tr;
 use crate::ui::theme;
 
 impl AppView {
-    pub(crate) fn render_prompt_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_prompt_overlay(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let kind = self.state.prompt.clone()?;
+        // 对话框打开后的首帧聚焦输入框（IntelliJ 行为）；标志随开框置位、
+        // 此处一次性消费，避免每帧抢走用户在对话框其它控件上的焦点。
+        if self.state.prompt_focus_pending {
+            self.state.prompt_focus_pending = false;
+            self.prompt_input
+                .update(cx, |state, cx| state.focus(window, cx));
+        }
         let muted = cx.theme().muted_foreground;
         let (title, hint): (String, String) = match &kind {
             PromptKind::NewBranch { start_point } => (
@@ -155,6 +167,21 @@ impl AppView {
         // 每个分支产出「正文 + 底部动作区」两部分：
         // 动作区交给 `dialog_footer`，保证全应用的按钮顺序/间距一致，
         // 正文单独滚动（超长内容不再把对话框撑出屏幕）。
+        // 必填类对话框在输入为空时禁用主按钮（IntelliJ 默认按钮语义）；
+        // Stash / Squash / MergeMessage / FilterAuthor 的输入可选，不禁用。
+        let input_empty = self.prompt_input.read(cx).value().trim().is_empty();
+        let input2_empty = self.prompt_input2.read(cx).value().trim().is_empty();
+        let requires_input = matches!(
+            kind,
+            PromptKind::NewBranch { .. }
+                | PromptKind::NewTag { .. }
+                | PromptKind::EditTag { .. }
+                | PromptKind::Reword { .. }
+                | PromptKind::RenameBranch
+                | PromptKind::RenameBranchByName { .. }
+                | PromptKind::GoTo
+                | PromptKind::SetUpstream { .. }
+        );
         let (body, footer): (Div, AnyElement) =
             match &kind {
                 PromptKind::Reset { commit_id } => {
@@ -352,6 +379,8 @@ impl AppView {
                         Button::new("prompt-ok")
                             .primary()
                             .label(tr("Add", "添加"))
+                            // 远程名称与 URL 均必填。
+                            .disabled(input_empty || input2_empty)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.confirm_prompt(window, cx)),
                             ),
@@ -382,9 +411,13 @@ impl AppView {
                             cancel_button("prompt-cancel")
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx)))
                                 .into_any_element(),
-                            Button::new("prompt-ok").primary().label(ok_label).on_click(
-                                cx.listener(|this, _, window, cx| this.confirm_prompt(window, cx)),
-                            ),
+                            Button::new("prompt-ok")
+                                .primary()
+                                .label(ok_label)
+                                .disabled(requires_input && input_empty)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_prompt(window, cx)
+                                })),
                         )
                         .into_any_element(),
                     )

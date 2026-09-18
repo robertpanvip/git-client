@@ -13,6 +13,7 @@ actions!(
         PullBranch,
         RefreshRepo,
         CloseOverlay,
+        ConfirmPrompt,
         SelectPrevCommit,
         SelectNextCommit,
         FocusComposer,
@@ -33,6 +34,9 @@ pub struct SelectSidebarPanel(pub u8);
 pub(crate) fn register_keybindings(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseOverlay, None),
+        // 对话框打开时 Enter 确认（IntelliJ 默认按钮行为）；多行输入内 Enter
+        // 被组件消费为换行，不会传播到这里。
+        KeyBinding::new("enter", ConfirmPrompt, None),
         KeyBinding::new("ctrl-enter", CommitSelected, None),
         KeyBinding::new("ctrl-k", FocusComposer, None),
         KeyBinding::new("ctrl-shift-k", PushBranch, None),
@@ -498,6 +502,18 @@ impl AppView {
             return;
         }
         self.do_commit(window, cx);
+    }
+
+    /// 对话框打开时 Enter 触发主按钮；无对话框时是普通按键，不做任何事。
+    pub(crate) fn on_confirm_prompt(
+        &mut self,
+        _: &ConfirmPrompt,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.prompt.is_some() {
+            self.confirm_prompt(window, cx);
+        }
     }
 
     pub(crate) fn on_push_branch(

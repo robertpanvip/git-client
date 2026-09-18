@@ -43,6 +43,8 @@ pub const DETAIL_PANEL_WIDTH: f32 = 389.0;
 pub const WIDE_PANEL_WIDTH: f32 = 680.0;
 /// Rebase 面板宽度。
 pub const REBASE_PANEL_WIDTH: f32 = 480.0;
+/// Rebase 计划行的操作列（Pick/Squash/… 按钮）宽度，保证各行操作列对齐。
+pub const REBASE_KIND_WIDTH: f32 = 76.0;
 
 // ---------- 分栏拖拽 ----------
 /// 分隔条命中宽度（视觉 1px，命中区域更宽便于拖拽）。

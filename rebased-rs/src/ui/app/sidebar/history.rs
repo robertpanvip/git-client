@@ -69,7 +69,7 @@ impl AppView {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::FONT_SIZE_BODY))
                                 .child(commit.subject.clone()),
                         )
                         .child(
