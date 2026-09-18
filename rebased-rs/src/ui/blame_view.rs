@@ -8,6 +8,7 @@ use rebased_rs::git::BlameGroup;
 
 use crate::ui::commit_list::format_time;
 use crate::ui::graph_view::lane_color;
+use crate::ui::theme;
 use crate::ui::theme::{badge_bg, stripe_bg, transparent};
 
 pub type BlameJump = Arc<dyn Fn(String, &mut App)>;
@@ -31,25 +32,29 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
         let mut meta: gpui::Stateful<Div> = div()
             .id(format!("blame-meta-{index}"))
             .flex_none()
-            .px_2()
-            .pt_1()
-            .py_0p5()
+            .px(px(theme::SPACE_MD))
+            .pt(px(theme::SPACE_SM))
+            .py(px(theme::SPACE_XS))
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
+            .gap(px(theme::SPACE_MD))
             .bg(badge_bg(meta_color))
             .child(
                 div()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .font_family(mono.clone())
                     .text_color(meta_color)
                     .child(short),
             )
-            .child(div().text_xs().child(group.author.clone()))
             .child(
                 div()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
+                    .child(group.author.clone()),
+            )
+            .child(
+                div()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .text_color(muted)
                     .child(format_time(group.time)),
             )
@@ -58,7 +63,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .text_color(muted.opacity(0.8))
                     .child(group.filename.clone()),
             );
@@ -85,13 +90,13 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                         .flex_none()
                         .flex()
                         .flex_row()
-                        .px_2()
+                        .px(px(theme::SPACE_MD))
                         .py(px(1.))
                         .bg(stripe)
                         .child(
                             div()
                                 .flex_none()
-                                .text_xs()
+                                .text_size(px(theme::FONT_SIZE_META))
                                 .text_color(muted.opacity(0.7))
                                 .font_family(mono.clone())
                                 .child(format!("{:>4}  ", line.number)),
@@ -101,7 +106,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_xs()
+                                .text_size(px(theme::FONT_SIZE_META))
                                 .font_family(mono.clone())
                                 .child(content),
                         )

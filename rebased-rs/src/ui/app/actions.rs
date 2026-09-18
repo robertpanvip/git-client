@@ -116,6 +116,30 @@ impl AppView {
         cx.notify();
     }
 
+    /// 批量设置一组变更的勾选状态（分组标题上的"全选"复选框）。
+    pub(crate) fn set_changes_selection(
+        &mut self,
+        paths: &[String],
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) {
+        for path in paths {
+            let pos = self
+                .state
+                .selected_changes
+                .iter()
+                .position(|current| current == path);
+            if selected {
+                if pos.is_none() {
+                    self.state.selected_changes.push(path.clone());
+                }
+            } else if let Some(pos) = pos {
+                self.state.selected_changes.remove(pos);
+            }
+        }
+        cx.notify();
+    }
+
     pub(crate) fn do_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let message = self.message_input.read(cx).value().to_string();
         if message.trim().is_empty() {

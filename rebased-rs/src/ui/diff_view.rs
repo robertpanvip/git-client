@@ -1,3 +1,14 @@
+//! Diff 渲染（统一 / 并排两种视图）。
+//!
+//! 对齐 IntelliJ diff 编辑器的结构：
+//! - **独立行号 gutter**：固定列宽 [`DIFF_GUTTER_COLUMN_WIDTH`]、独立底色、右侧分隔线，
+//!   与正文分离（原实现把行号拼进正文文本里，列宽随内容漂移）；
+//! - 固定行高 [`DIFF_LINE_HEIGHT`]，不是由字号+padding 自动撑开；
+//! - 正文不换行，超宽时整体**横向滚动**（按最长行估算内容宽度）；
+//! - hunk 头独立成行（hunk 底色 + 上下分隔线 + 右侧 Stage/Unstage）。
+//!
+//! 两个 surface（右侧面板 / 独立窗口）共用本模块，保证呈现一致。
+
 use std::sync::Arc;
 
 use gpui::{App, Div, Hsla, ParentElement, SharedString, Styled, div, px};
@@ -5,9 +16,10 @@ use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use rebased_rs::git::{DiffLine, DiffLineKind, FileDiff, Hunk};
 
+use crate::ui::theme;
 use crate::ui::theme::{
     added_color, added_line_bg, binary_color, deleted_color, deleted_line_bg, empty_half_bg,
-    hunk_bg, stripe_bg, transparent,
+    gutter_bg, gutter_border, hunk_bg, stripe_bg, transparent,
 };
 
 /// hunk 级暂存回调：(file_index, hunk_index, app)。
@@ -77,36 +89,81 @@ pub(crate) fn side_by_side_rows(hunk: &Hunk) -> Vec<(Option<&DiffLine>, Option<&
     rows
 }
 
+/// 行号 gutter 单元格：固定列宽、右对齐、独立底色。
+fn gutter_cell(no: Option<u32>, mono: &SharedString, muted: Hsla) -> Div {
+    div()
+        .w(px(crate::ui::theme::DIFF_GUTTER_COLUMN_WIDTH))
+        .h_full()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_end()
+        .pr(px(crate::ui::theme::SPACE_XS))
+        .bg(gutter_bg())
+        .border_r_1()
+        .border_color(gutter_border())
+        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_color(muted.opacity(0.7))
+        .font_family(mono.clone())
+        .child(no.map(|n| n.to_string()).unwrap_or_default())
+}
+
+/// 正文单元格：不换行、不收缩，宽度由 `min_w` 保证横向滚动。
+fn code_cell(content: String, color: Hsla, mono: &SharedString, min_w: f32) -> Div {
+    div()
+        .h_full()
+        .min_w(px(min_w))
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .pl(px(crate::ui::theme::SPACE_SM))
+        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_color(color)
+        .font_family(mono.clone())
+        .child(if content.is_empty() {
+            " ".to_string()
+        } else {
+            content
+        })
+}
+
+/// 估算正文所需最小宽度（按最长行字符数 × 单字符步进）。
+fn code_min_width(max_chars: usize) -> f32 {
+    let chars = max_chars.max(1) as f32;
+    chars * crate::ui::theme::DIFF_CHAR_WIDTH + crate::ui::theme::SPACE_LG
+}
+
+fn max_line_chars(hunk: &Hunk) -> usize {
+    hunk.lines
+        .iter()
+        .map(|line| line.content.chars().count())
+        .max()
+        .unwrap_or(0)
+}
+
 /// 并排视图半行：`old_side = true` 为左半（旧行），否则为右半（新行）。
 fn sbs_half(
     line: Option<&DiffLine>,
     old_side: bool,
-    mono: SharedString,
+    mono: &SharedString,
     fg: Hsla,
     muted: Hsla,
+    min_w: f32,
 ) -> Div {
-    let mut half = div().flex_1().min_w_0().flex().flex_row().px_2().py(px(1.));
+    let mut half = div()
+        .flex_1()
+        .min_w_0()
+        .h(px(crate::ui::theme::DIFF_LINE_HEIGHT))
+        .flex()
+        .flex_row()
+        .items_center();
     let Some(line) = line else {
         return half
             .bg(empty_half_bg())
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted.opacity(0.5))
-                    .font_family(mono.clone())
-                    .child("      "),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_xs()
-                    .font_family(mono)
-                    .child(" "),
-            );
+            .child(gutter_cell(None, mono, muted))
+            .child(code_cell(String::new(), fg, mono, min_w));
     };
     let bg = match line.kind {
         DiffLineKind::Added if !old_side => added_line_bg(),
@@ -114,35 +171,15 @@ fn sbs_half(
         _ => transparent(),
     };
     let no = if old_side { line.old_no } else { line.new_no };
-    let no_str = no
-        .map(|n| format!("{n:>4} "))
-        .unwrap_or_else(|| "     ".to_string());
-    let content = if line.content.is_empty() {
-        " ".to_string()
-    } else {
-        line.content.clone()
-    };
     half = half
         .bg(bg)
-        .child(
-            div()
-                .flex_none()
-                .text_xs()
-                .text_color(muted.opacity(0.7))
-                .font_family(mono.clone())
-                .child(no_str),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_xs()
-                .text_color(line_fg(line.kind, fg))
-                .font_family(mono)
-                .child(content),
-        );
+        .child(gutter_cell(no, mono, muted))
+        .child(code_cell(
+            line.content.clone(),
+            line_fg(line.kind, fg),
+            mono,
+            min_w,
+        ));
     half
 }
 
@@ -152,13 +189,15 @@ fn sbs_row(
     mono: &SharedString,
     fg: Hsla,
     muted: Hsla,
+    min_w: f32,
 ) -> Div {
     div()
         .flex_none()
+        .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w * 2.0))
         .flex()
         .flex_row()
-        .child(sbs_half(left, true, mono.clone(), fg, muted))
-        .child(sbs_half(right, false, mono.clone(), fg, muted))
+        .child(sbs_half(left, true, mono, fg, muted, min_w))
+        .child(sbs_half(right, false, mono, fg, muted, min_w))
 }
 
 pub fn render_diff_files(
@@ -172,49 +211,70 @@ pub fn render_diff_files(
     let muted = cx.theme().muted_foreground;
     let border = cx.theme().border;
 
-    let mut container = div().flex().flex_col().gap_2();
+    let mut container = div().flex().flex_col().gap(px(theme::SPACE_MD));
+    // 内容最小宽度：取所有 hunk 中最宽者。滚动容器据此计算横向可滚动范围。
+    let mut content_min_w: f32 = 0.0;
 
     for (file_index, file) in files.iter().enumerate() {
         let (badge, badge_color) = status_badge(file);
+        // 文件头是**整宽条**（原版 diff 不为每个文件画圆角卡片）：
+        // 无圆角/裁剪，正文超宽时才能横向滚动。
         let mut block = div()
             .flex_none()
-            .rounded(px(crate::ui::theme::RADIUS_LG))
-            .border_1()
+            .flex()
+            .flex_col()
+            .border_b_1()
             .border_color(border)
-            .overflow_hidden()
             .child(
                 div()
                     .flex_none()
-                    .px_2()
-                    .py_1()
+                    .h(px(crate::ui::theme::SECTION_HEADER_HEIGHT))
+                    .px(px(theme::SPACE_MD))
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap_2()
+                    .gap(px(theme::SPACE_MD))
                     .bg(stripe_bg(fg))
-                    .child(div().text_xs().text_color(badge_color).child(badge))
+                    .child(
+                        div()
+                            .text_size(px(crate::ui::theme::FONT_SIZE_META))
+                            .text_color(badge_color)
+                            .child(badge),
+                    )
                     .child(
                         div()
                             .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_xs()
+                            .text_size(px(crate::ui::theme::FONT_SIZE_META))
                             .child(file.path.clone()),
                     ),
             );
 
         for (hunk_index, hunk) in file.hunks.iter().enumerate() {
+            let min_w = code_min_width(max_line_chars(hunk));
+            // 行宽 = 行号 gutter 区 + 正文最窄宽度（并排视图左右各一份）。
+            let row_min_w = if side_by_side {
+                crate::ui::theme::DIFF_GUTTER_WIDTH + min_w * 2.0
+            } else {
+                crate::ui::theme::DIFF_GUTTER_WIDTH + min_w
+            };
+            content_min_w = content_min_w.max(row_min_w);
             let mut header_row = div()
                 .flex_none()
+                .h(px(crate::ui::theme::SECTION_HEADER_HEIGHT))
+                .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
                 .flex()
                 .flex_row()
                 .items_center()
                 .justify_between()
-                .px_2()
-                .py_0p5()
-                .text_xs()
+                .px(px(crate::ui::theme::SPACE_SM))
+                .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
                 .text_color(muted)
                 .bg(hunk_bg())
+                .border_t_1()
+                .border_b_1()
+                .border_color(crate::ui::theme::border_color(fg))
                 .child(
                     div()
                         .min_w_0()
@@ -231,7 +291,6 @@ pub fn render_diff_files(
                     )))
                     .ghost()
                     .compact()
-                    .text_xs()
                     .label(label)
                     .on_click(move |_, _, app| action(file_index, hunk_index, app)),
                 );
@@ -240,7 +299,7 @@ pub fn render_diff_files(
 
             if side_by_side {
                 for (left, right) in side_by_side_rows(hunk) {
-                    block = block.child(sbs_row(left, right, &mono, fg, muted));
+                    block = block.child(sbs_row(left, right, &mono, fg, muted, min_w));
                 }
             } else {
                 for line in &hunk.lines {
@@ -249,46 +308,23 @@ pub fn render_diff_files(
                         DiffLineKind::Deleted => deleted_line_bg(),
                         DiffLineKind::Context | DiffLineKind::HunkHeader => transparent(),
                     };
-                    let color = line_fg(line.kind, fg);
-                    let old_no = line
-                        .old_no
-                        .map(|n| format!("{n:>4}"))
-                        .unwrap_or_else(|| "    ".to_string());
-                    let new_no = line
-                        .new_no
-                        .map(|n| format!("{n:>4}"))
-                        .unwrap_or_else(|| "    ".to_string());
-                    let content = if line.content.is_empty() {
-                        " ".to_string()
-                    } else {
-                        line.content.clone()
-                    };
                     block = block.child(
                         div()
                             .flex_none()
+                            .h(px(crate::ui::theme::DIFF_LINE_HEIGHT))
+                            .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
                             .flex()
                             .flex_row()
-                            .px_2()
-                            .py(px(1.))
+                            .items_center()
                             .bg(bg)
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_xs()
-                                    .text_color(muted.opacity(0.7))
-                                    .font_family(mono.clone())
-                                    .child(format!("{old_no} {new_no}  ")),
-                            )
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .text_xs()
-                                    .text_color(color)
-                                    .font_family(mono.clone())
-                                    .child(content),
-                            ),
+                            .child(gutter_cell(line.old_no, &mono, muted))
+                            .child(gutter_cell(line.new_no, &mono, muted))
+                            .child(code_cell(
+                                line.content.clone(),
+                                line_fg(line.kind, fg),
+                                &mono,
+                                min_w,
+                            )),
                     );
                 }
             }
@@ -297,7 +333,7 @@ pub fn render_diff_files(
         container = container.child(block);
     }
 
-    container
+    container.min_w(px(content_min_w))
 }
 
 #[cfg(test)]
@@ -378,5 +414,24 @@ mod tests {
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|(l, r)| l.is_none() && r.is_some()));
+    }
+
+    #[test]
+    fn code_width_grows_with_longest_line() {
+        let short = Hunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: vec![line(DiffLineKind::Context, Some(1), Some(1), "abc")],
+        };
+        let long = Hunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines: vec![line(
+                DiffLineKind::Context,
+                Some(1),
+                Some(1),
+                &"x".repeat(200),
+            )],
+        };
+        assert!(code_min_width(max_line_chars(&long)) > code_min_width(max_line_chars(&short)));
+        assert_eq!(max_line_chars(&long), 200);
     }
 }

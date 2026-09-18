@@ -40,9 +40,9 @@ impl AppView {
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
-            .px_2()
-            .py_0p5()
+            .gap(px(theme::SPACE_MD))
+            .px(px(theme::SPACE_MD))
+            .py(px(theme::SPACE_XS))
             .rounded(px(theme::RADIUS))
             .cursor_pointer()
             .hover(move |style| style.bg(theme::hover_bg(fg)))
@@ -51,9 +51,9 @@ impl AppView {
             }))
             .child(
                 div()
-                    .w(px(14.))
+                    .w(px(theme::ICON_SIZE_SM))
                     .flex_none()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .text_color(color)
                     .child(change.status.short_label()),
             )
@@ -63,7 +63,7 @@ impl AppView {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .child(path),
             )
             .child(
@@ -118,14 +118,14 @@ impl AppView {
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(theme::SPACE_MD))
             .min_h_0()
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_start()
-                    .gap_2()
+                    .gap(px(theme::SPACE_MD))
                     .child(
                         div()
                             .flex_1()
@@ -134,10 +134,10 @@ impl AppView {
                             .flex_row()
                             .flex_wrap()
                             .items_center()
-                            .gap_1()
+                            .gap(px(theme::SPACE_SM))
                             .child(
                                 div()
-                                    .text_sm()
+                                    .text_size(px(theme::FONT_SIZE_BODY))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(fg)
                                     .child(commit.subject.clone()),
@@ -158,18 +158,24 @@ impl AppView {
                             .on_click(cx.listener(|this, _, _, cx| this.clear_detail(cx))),
                     ),
             )
-            .child(div().flex_none().text_xs().text_color(muted).child(format!(
-                "{} · {} · {} · {}",
-                &commit.id.0[..commit.id.0.len().min(7)],
-                commit.author.name,
-                format_full_time(commit.time),
-                commit.author.email
-            )))
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_color(muted)
+                    .child(format!(
+                        "{} · {} · {} · {}",
+                        &commit.id.0[..commit.id.0.len().min(7)],
+                        commit.author.name,
+                        format_full_time(commit.time),
+                        commit.author.email
+                    )),
+            )
             .when(!commit.body.is_empty(), |detail| {
                 detail.child(
                     div()
                         .flex_none()
-                        .text_xs()
+                        .text_size(px(theme::FONT_SIZE_META))
                         .text_color(muted)
                         .whitespace_normal()
                         .child(commit.body.clone()),
@@ -182,7 +188,7 @@ impl AppView {
                     .flex_row()
                     .flex_wrap()
                     .items_center()
-                    .gap_1()
+                    .gap(px(theme::SPACE_SM))
                     .children(self.state.detail_branches.iter().map(|branch| {
                         let (label, color) = ref_style(branch);
                         badge(
@@ -200,7 +206,7 @@ impl AppView {
                         .flex_row()
                         .flex_wrap()
                         .items_center()
-                        .gap_1()
+                        .gap(px(theme::SPACE_SM))
                         .flex_none()
                         .children(commit_tags.into_iter().map(|tag| {
                             let name = tag.name;
@@ -233,7 +239,7 @@ impl AppView {
                     .flex_row()
                     .flex_wrap()
                     .items_center()
-                    .gap_1()
+                    .gap(px(theme::SPACE_SM))
                     .flex_none()
                     .child(
                         Button::new("detail-cherry-pick")

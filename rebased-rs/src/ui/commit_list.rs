@@ -9,14 +9,18 @@ use gpui_kit::base::IndexPath;
 use gpui_kit::component::{
     ActiveTheme,
     list::{ListDelegate, ListItem, ListState},
-    menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
+    menu::{ContextMenuExt, PopupMenu},
 };
 use rebased_rs::git::{Commit, Graph, build_graph, filter_commits};
 
 use crate::ui::app::{AppView, ConfirmAction, PromptKind};
-use crate::ui::components::{badge, empty_state, ref_style};
+use crate::ui::components::{
+    chip, empty_state, menu_item, menu_width, ref_style_with_remotes, shortcuts,
+};
 use crate::ui::graph_view::{ROW_HEIGHT, lane_canvas};
 use crate::ui::i18n::tr;
+use crate::ui::icons::Ic;
+use crate::ui::theme;
 
 pub struct LogData {
     pub commits: Vec<Commit>,
@@ -83,6 +87,13 @@ impl LogDelegate {
         self.visible.as_ref().map_or(0, |data| data.commits.len())
     }
 
+    /// 当前可见数据的泳道数（Log 表头列宽对齐用）。
+    pub fn lane_count(&self) -> usize {
+        self.visible
+            .as_ref()
+            .map_or(1, |data| data.graph.lane_count)
+    }
+
     fn rebuild(&mut self, query: &str) {
         let Some(data) = self.data.clone() else {
             return;
@@ -142,6 +153,20 @@ impl ListDelegate for LogDelegate {
         let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
         let app = self.app.clone();
+        // 精确区分本地/远程分支：本地分支名可能含 `/`（如 `feature/x`），
+        // 只靠名字启发式会误判，这里读仓库的 remote 列表。
+        let remotes: Vec<String> = app
+            .as_ref()
+            .and_then(|app| app.upgrade())
+            .map(|view| {
+                view.read(cx)
+                    .state
+                    .remotes
+                    .iter()
+                    .map(|remote| remote.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let mut row = div()
             .id(SharedString::from(format!("commit-row-{}", ix.row)))
@@ -149,47 +174,67 @@ impl ListDelegate for LogDelegate {
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
+            .gap(px(theme::SPACE_MD))
             .overflow_hidden();
 
         let graph_row = data.graph.rows.get(ix.row).cloned();
-        row = row.child(lane_canvas(graph_row, data.graph.lane_count));
+        row = row.child(lane_canvas(
+            graph_row,
+            data.graph.lane_count,
+            commit.is_merge(),
+        ));
 
-        let mut refs_col = div().flex_none().flex().flex_row().items_center().gap_1();
+        // Subject 单元格 = ref 标签（可并排多个）+ 提交标题，与表头列一一对应。
+        let mut refs_col = div()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(theme::SPACE_SM));
         for (i, ref_name) in commit.refs.iter().enumerate() {
             let badge_id = SharedString::from(format!("ref-badge-{}-{}", ix.row, i));
-            refs_col = refs_col.child(ref_badge(&badge_id, ref_name, app.clone()));
+            refs_col = refs_col.child(ref_badge(&badge_id, ref_name, app.clone(), &remotes));
         }
-        row = row.child(refs_col);
+        row = row.child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(theme::SPACE_SM))
+                .child(refs_col)
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_size(px(theme::FONT_SIZE_META))
+                        .text_color(fg)
+                        .child(commit.subject.clone()),
+                ),
+        );
 
-        // 列式布局：graph | refs | subject(flex) | author(固定列) | date(固定列)，
-        // 与原版对齐——多行提交时 author/date 始终纵向对齐。
+        // 列式布局：graph | subject(refs + 标题, flex) | author | date，
+        // 与原版一致——author/date 始终纵向对齐，且与表头列一一对应。
         row = row
             .child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_sm()
-                    .text_color(fg)
-                    .child(commit.subject.clone()),
-            )
-            .child(
-                div()
                     .flex_none()
-                    .w(px(96.))
+                    .w(px(theme::COL_AUTHOR_WIDTH))
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_xs()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .text_color(muted)
                     .child(commit.author.name.clone()),
             )
             .child(
                 div()
                     .flex_none()
-                    .w(px(72.))
-                    .text_xs()
+                    .w(px(theme::COL_DATE_WIDTH))
+                    .whitespace_nowrap()
+                    .text_size(px(theme::FONT_SIZE_META))
                     .text_color(muted)
                     .child(format_time(commit.time)),
             );
@@ -210,7 +255,15 @@ impl ListDelegate for LogDelegate {
             }
         });
 
-        Some(ListItem::new(ix.row).selected(selected).px_2().child(row))
+        // `ListItem` 自带 `py_1`，会把行高从 24 撑到 32；这里显式归零，
+        // 让行高完全由 `ROW_HEIGHT` 决定（与原版表格行高一致）。
+        Some(
+            ListItem::new(ix.row)
+                .selected(selected)
+                .px(px(theme::SPACE_MD))
+                .py(px(0.))
+                .child(row),
+        )
     }
 
     fn render_empty(
@@ -225,16 +278,21 @@ impl ListDelegate for LogDelegate {
     }
 }
 
-fn ref_badge(id: &str, name: &str, app: Option<WeakEntity<AppView>>) -> impl IntoElement {
-    let (label, color) = ref_style(name);
+fn ref_badge(
+    id: &str,
+    name: &str,
+    app: Option<WeakEntity<AppView>>,
+    remotes: &[String],
+) -> impl IntoElement {
+    let (label, color) = ref_style_with_remotes(name, remotes);
 
     let name = name.to_string();
-    badge(SharedString::from(id.to_string()), label, color).context_menu(
-        move |menu, _window, cx| match &app {
+    chip(SharedString::from(id.to_string()), label, color).context_menu(move |menu, _window, cx| {
+        match &app {
             Some(app) => build_ref_menu(menu, &name, app, cx),
             None => menu,
-        },
-    )
+        }
+    })
 }
 
 /// ref 徽章的右键菜单：tag 可删除；分支按本地/远程给出对应操作
@@ -242,8 +300,13 @@ fn ref_badge(id: &str, name: &str, app: Option<WeakEntity<AppView>>) -> impl Int
 fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &App) -> PopupMenu {
     if let Some(tag) = name.strip_prefix("tag: ") {
         let tag = tag.to_string();
-        return menu.item(
-            PopupMenuItem::new(format!("✕ Delete tag {tag}…")).on_click({
+        return menu_width(menu.item(menu_item(
+            Ic::Delete,
+            format!("✕ Delete tag {tag}…"),
+            None,
+            true,
+            false,
+            {
                 let app = app.clone();
                 move |_, _, cx| {
                     let _ = app.update(cx, |this, cx| {
@@ -253,8 +316,8 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
                         )
                     });
                 }
-            }),
-        );
+            },
+        )));
     }
 
     let branch = name.strip_prefix("HEAD -> ").unwrap_or(name).to_string();
@@ -267,87 +330,135 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
             .cloned()
     });
     if entry.as_ref().is_none_or(|b| b.is_remote) {
-        menu.item(
-            PopupMenuItem::new(format!("⇥ Checkout {branch} (tracking)")).on_click({
-                let app = app.clone();
-                let branch = branch.clone();
-                move |_, _, cx| {
-                    let _ = app.update(cx, |this, cx| this.checkout_branch(&branch, cx));
-                }
-            }),
-        )
-        .item(
-            PopupMenuItem::new(format!("⇄ Pull {branch} into current")).on_click({
-                let app = app.clone();
-                let branch = branch.clone();
-                move |_, _, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.pull_branch_into_current(branch.clone(), cx)
-                    });
-                }
-            }),
-        )
-        .item(
-            PopupMenuItem::new(format!("⇋ Compare {branch} with current")).on_click({
-                let app = app.clone();
-                let branch = branch.clone();
-                move |_, _, cx| {
-                    let _ = app.update(cx, |this, cx| this.open_branch_compare(branch.clone(), cx));
-                }
-            }),
-        )
-    } else {
-        let is_current = entry.as_ref().is_some_and(|b| b.is_current());
-        let has_upstream = entry.as_ref().is_none_or(|b| b.upstream.is_some());
-        menu.item(
-            PopupMenuItem::new(format!("✓ Checkout {branch}"))
-                .checked(is_current)
-                .on_click({
+        menu_width(
+            menu.item(menu_item(
+                Ic::Checkout,
+                format!("⇥ Checkout {branch} (tracking)"),
+                None,
+                false,
+                false,
+                {
                     let app = app.clone();
                     let branch = branch.clone();
                     move |_, _, cx| {
                         let _ = app.update(cx, |this, cx| this.checkout_branch(&branch, cx));
                     }
-                }),
+                },
+            ))
+            .item(menu_item(
+                Ic::Pull,
+                format!("⇄ Pull {branch} into current"),
+                Some(shortcuts::PULL.label),
+                false,
+                false,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.pull_branch_into_current(branch.clone(), cx)
+                        });
+                    }
+                },
+            ))
+            .item(menu_item(
+                Ic::Compare,
+                format!("⇋ Compare {branch} with current"),
+                None,
+                false,
+                false,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ =
+                            app.update(cx, |this, cx| this.open_branch_compare(branch.clone(), cx));
+                    }
+                },
+            )),
         )
-        .item(PopupMenuItem::new(format!("⇪ Push {branch}")).on_click({
-            let app = app.clone();
-            let branch = branch.clone();
-            move |_, _, cx| {
-                let _ = app.update(cx, |this, cx| {
-                    this.push_branch(branch.clone(), has_upstream, cx)
-                });
-            }
-        }))
-        .item(PopupMenuItem::new(format!("✎ Rename {branch}…")).on_click({
-            let app = app.clone();
-            let branch = branch.clone();
-            move |_, _, cx| {
-                let _ = app.update_in(cx, |this, window, cx| {
-                    this.open_rename_branch_by_name(branch.clone(), window, cx)
-                });
-            }
-        }))
-        .item(PopupMenuItem::new(format!("✕ Delete {branch}…")).on_click({
-            let app = app.clone();
-            let branch = branch.clone();
-            move |_, _, cx| {
-                let _ = app.update(cx, |this, cx| {
-                    this.open_prompt(
-                        PromptKind::Confirm(ConfirmAction::DeleteBranch {
-                            name: branch.clone(),
-                        }),
-                        cx,
-                    )
-                });
-            }
-        }))
+    } else {
+        let is_current = entry.as_ref().is_some_and(|b| b.is_current());
+        let has_upstream = entry.as_ref().is_none_or(|b| b.upstream.is_some());
+        menu_width(
+            menu.item(menu_item(
+                Ic::Checkout,
+                format!("✓ Checkout {branch}"),
+                None,
+                false,
+                is_current,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |this, cx| this.checkout_branch(&branch, cx));
+                    }
+                },
+            ))
+            .item(menu_item(
+                Ic::Push,
+                format!("⇪ Push {branch}"),
+                Some(shortcuts::PUSH.label),
+                false,
+                false,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.push_branch(branch.clone(), has_upstream, cx)
+                        });
+                    }
+                },
+            ))
+            .item(menu_item(
+                Ic::Edit,
+                format!("✎ Rename {branch}…"),
+                None,
+                false,
+                false,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ = app.update_in(cx, |this, window, cx| {
+                            this.open_rename_branch_by_name(branch.clone(), window, cx)
+                        });
+                    }
+                },
+            ))
+            .item(menu_item(
+                Ic::Delete,
+                format!("✕ Delete {branch}…"),
+                None,
+                true,
+                false,
+                {
+                    let app = app.clone();
+                    let branch = branch.clone();
+                    move |_, _, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.open_prompt(
+                                PromptKind::Confirm(ConfirmAction::DeleteBranch {
+                                    name: branch.clone(),
+                                }),
+                                cx,
+                            )
+                        });
+                    }
+                },
+            )),
+        )
     }
 }
 
+/// Log/History/Compare 的日期列格式：含年份，与原版表格一致。
 pub(crate) fn format_time(secs: i64) -> String {
     match DateTime::from_timestamp(secs, 0) {
-        Some(time) => time.with_timezone(&Local).format("%m-%d %H:%M").to_string(),
+        Some(time) => time
+            .with_timezone(&Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string(),
         None => String::new(),
     }
 }

@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowBounds, WindowOptions,
-    div, px, size,
+    AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Render, StatefulInteractiveElement, Styled,
+    Subscription, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Root,
@@ -22,6 +22,7 @@ use rebased_rs::git::{
 };
 
 use crate::ui::commit_list::{LogData, LogDelegate};
+use crate::ui::components::{SplitDrag, SplitSide, drag_overlay, v_handle};
 use crate::ui::i18n::{self, tr};
 use crate::ui::icons;
 use crate::ui::settings;
@@ -32,9 +33,9 @@ mod conflicts;
 mod detail;
 mod detail_view;
 mod diff_window;
-mod panels;
 mod rebase;
 mod shelves;
+mod sidebar;
 mod state;
 mod toolbar;
 mod use_cases;
@@ -74,6 +75,15 @@ pub struct AppView {
     /// AddRemote 对话框的第二个输入框（remote URL）。
     prompt_input2: Entity<TextareaState>,
     diff_edit_input: Entity<TextareaState>,
+    /// 左栏（Commit 面板）宽度，用户可拖拽分隔条调整。
+    commit_panel_width: f32,
+    /// 右栏（详情 / Diff / Rebase…）宽度，用户可拖拽调整；
+    /// 切换侧栏面板时重置为该面板默认宽度。
+    right_panel_width: f32,
+    /// 上一次渲染时的侧栏面板，用于检测面板切换并重置宽度。
+    last_sidebar_mode: SidebarMode,
+    /// 进行中的分栏拖拽快照（Some = 正在拖拽，渲染透明覆盖层）。
+    split_drag: Option<SplitDrag>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -121,6 +131,10 @@ impl AppView {
             prompt_input,
             prompt_input2,
             diff_edit_input,
+            commit_panel_width: theme::COMMIT_PANEL_WIDTH,
+            right_panel_width: SidebarMode::Detail.default_width(),
+            last_sidebar_mode: SidebarMode::Detail,
+            split_drag: None,
             _subscriptions: subscriptions,
         };
 
@@ -474,8 +488,8 @@ impl AppView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .pt_2()
+            .gap(px(theme::SPACE_XS))
+            .pt(px(theme::SPACE_SM))
             .bg(theme::bg_chrome())
             .border_r_1()
             .border_color(theme::separator())
@@ -524,13 +538,13 @@ impl AppView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let fg = if active {
-            theme::rgb(0xFFFFFF)
+            theme::white()
         } else {
             theme::text_muted()
         };
         div()
             .id(id)
-            .size(px(32.0))
+            .size(px(theme::ICON_STRIP_BUTTON_SIZE))
             .flex_none()
             .flex()
             .items_center()
@@ -543,10 +557,89 @@ impl AppView {
             .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
             .child(Icon::new(icon))
     }
+
+    /// 左栏分隔条：拖动改变 Commit 面板宽度。
+    fn render_left_splitter(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_handle("split-left").on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                this.split_drag = Some(SplitDrag::new(
+                    SplitSide::Left,
+                    f32::from(event.position.x),
+                    this.commit_panel_width,
+                ));
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        )
+    }
+
+    /// 右栏分隔条：拖动改变右侧面板宽度。
+    fn render_right_splitter(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_handle("split-right").on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                this.split_drag = Some(SplitDrag::new(
+                    SplitSide::Right,
+                    f32::from(event.position.x),
+                    this.right_panel_width,
+                ));
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        )
+    }
+
+    /// 拖拽期间的全窗口覆盖层：承接 move / up。
+    /// 6px 命中区在快速拖动时容易丢失事件，覆盖层确保拖拽连续。
+    fn render_split_overlay(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        self.split_drag.as_ref()?;
+        Some(
+            drag_overlay("split-overlay")
+                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                    let x = f32::from(event.position.x);
+                    let Some(drag) = this.split_drag else {
+                        return;
+                    };
+                    let window_width = f32::from(window.bounds().size.width);
+                    // 主区最小宽度必须保留，两侧面板共同让位。
+                    let reserved = theme::ICON_STRIP_WIDTH
+                        + theme::SPLITTER_HIT_WIDTH * 2.0
+                        + theme::MIN_MAIN_PANEL_WIDTH;
+                    match drag.side {
+                        SplitSide::Left => {
+                            let max = (window_width - reserved - this.right_panel_width)
+                                .max(theme::MIN_LEFT_PANEL_WIDTH);
+                            this.commit_panel_width =
+                                drag.width_at(x, theme::MIN_LEFT_PANEL_WIDTH, max);
+                        }
+                        SplitSide::Right => {
+                            let min = this.state.sidebar.min_width();
+                            let max = (window_width - reserved - this.commit_panel_width).max(min);
+                            this.right_panel_width = drag.width_at(x, min, max);
+                        }
+                    }
+                    cx.notify();
+                }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.split_drag = None;
+                        cx.notify();
+                    }),
+                ),
+        )
+    }
 }
 
 impl Render for AppView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 切换侧栏面板时，右栏宽度回到该面板的默认值（其后用户拖拽可覆盖）。
+        if self.last_sidebar_mode != self.state.sidebar {
+            self.last_sidebar_mode = self.state.sidebar;
+            self.right_panel_width = self.state.sidebar.default_width();
+        }
+        let dragging = self.split_drag.is_some();
         div()
             .size_full()
             .flex()
@@ -575,10 +668,17 @@ impl Render for AppView {
                     .overflow_hidden()
                     .child(self.render_icon_strip(cx))
                     .child(self.render_commit_sidebar(cx))
+                    .child(self.render_left_splitter(cx))
                     .child(self.render_commit_panel(cx))
+                    .child(self.render_right_splitter(cx))
                     .child(self.render_sidebar(cx)),
             )
             .child(self.render_statusbar(cx))
+            .children(if dragging {
+                self.render_split_overlay(cx)
+            } else {
+                None
+            })
             .children(self.render_vcs_palette(cx))
             .children(self.render_prompt_overlay(cx))
     }
@@ -600,7 +700,11 @@ pub fn run(repo_path: PathBuf) {
             settings::log_event(&format!("theme mode: {}", mode.name()));
             Theme::change(mode, None, cx);
             theme::apply_jetbrains_palette(cx);
-            let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+            let bounds = Bounds::centered(
+                None,
+                size(px(theme::MAIN_WINDOW_WIDTH), px(theme::MAIN_WINDOW_HEIGHT)),
+                cx,
+            );
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 icon: load_window_icon(),

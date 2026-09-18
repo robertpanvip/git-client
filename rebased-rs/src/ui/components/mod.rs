@@ -1,70 +1,58 @@
-//! rebased 风格基础组件：徽章、分隔线、分组标题、空态。
-//! 只做视觉标准化，业务交互（菜单/动作）留在各 panel。
+//! 设计系统组件层。
+//!
+//! 面板**只应**通过本模块的原语构建界面，不得自行写 magic number、
+//! ad-hoc 颜色，或重复实现同一视觉元素。
+//!
+//! 模块划分：
+//! - `button` / `icon_button`：按钮与图标按钮
+//! - `toolbar` / `status_bar` / `tabs` / `separator`：结构容器
+//! - `input` / `search` / `checkbox`：输入控件
+//! - `badge` / `section_header` / `list_row` / `empty_state`：列表与信息展示
+//! - `menu` / `context_menu` / `popup`：菜单与弹层
+//! - `dialog`：对话框
+//! - `split_pane`：可拖拽分栏
+//! - `tooltip`：提示
+//! - `shortcuts`：快捷键单一事实来源
+//!
+//! 扁平 re-export 是设计系统的**公开面**：部分原语当前尚未被面板引用，
+//! 属于为后续面板（Phase 7 次要 Git 表面）预留的接口，因此允许未被导入。
 
-use gpui::{Div, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, px};
+#![allow(unused_imports)]
 
-pub use gpui_kit::component::checkbox::Checkbox;
+pub mod badge;
+pub mod button;
+pub mod checkbox;
+pub mod context_menu;
+pub mod dialog;
+pub mod empty_state;
+pub mod icon_button;
+pub mod input;
+pub mod list_row;
+pub mod menu;
+pub mod popup;
+pub mod search;
+pub mod section_header;
+pub mod separator;
+pub mod shortcuts;
+pub mod split_pane;
+pub mod status_bar;
+pub mod tabs;
+pub mod toolbar;
+pub mod tooltip;
 
-use crate::ui::theme;
-
-/// git ref 名称 → (显示文本, 语义色)。
-pub fn ref_style(name: &str) -> (String, Hsla) {
-    if let Some(tag) = name.strip_prefix("tag: ") {
-        (tag.to_string(), theme::tag_color())
-    } else if let Some(branch) = name.strip_prefix("HEAD -> ") {
-        (branch.to_string(), theme::head_color())
-    } else if name == "HEAD" {
-        ("HEAD".to_string(), theme::head_color())
-    } else {
-        (name.to_string(), theme::remote_color())
-    }
-}
-
-/// 圆角小徽章（分支/标签/状态）。
-pub fn badge(id: SharedString, label: impl Into<SharedString>, color: Hsla) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .px_1()
-        .rounded(px(theme::RADIUS))
-        .bg(theme::badge_bg(color))
-        .text_xs()
-        .text_color(color)
-        .child(label.into())
-}
-
-/// 工具栏竖分隔线。
-pub fn v_separator(fg: Hsla) -> Div {
-    div()
-        .flex_none()
-        .w(px(1.))
-        .h(px(theme::SPACE_LG))
-        .bg(theme::border_color(fg))
-}
-
-/// 面板分组标题行（如 Changes / Branches）。
-pub fn group_header(label: impl Into<SharedString>, muted: Hsla) -> Div {
-    div()
-        .flex_none()
-        .h(px(theme::GROUP_HEADER_HEIGHT))
-        .flex()
-        .flex_row()
-        .items_center()
-        .px_2()
-        .text_xs()
-        .text_color(muted)
-        .child(label.into())
-}
-
-/// 居中空态提示。
-pub fn empty_state(message: impl Into<SharedString>, muted: Hsla) -> Div {
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .text_sm()
-        .text_color(muted)
-        .child(message.into())
-}
+// ---------- 扁平 re-export（调用方直接 `components::xxx`） ----------
+pub use badge::{badge, chip, ref_style, ref_style_with_remotes};
+pub use button::DropdownButton;
+pub use checkbox::Checkbox;
+pub use context_menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+pub use dialog::{cancel_button, dialog_field, dialog_footer, dialog_shell};
+pub use empty_state::{empty_hint, empty_state, empty_state_with};
+pub use icon_button::{icon_button, labeled_icon_button};
+pub use list_row::{list_row, selected, static_row};
+pub use menu::{menu_item, menu_row, menu_section, menu_separator, menu_text, menu_width};
+pub use section_header::{group_header, group_header_controls, panel_header};
+pub use separator::{h_separator, panel_divider, v_separator};
+pub use split_pane::{SplitDrag, SplitSide, drag_overlay, v_handle};
+pub use status_bar::{status_bar, status_message, status_segment};
+pub use toolbar::{toolbar, toolbar_group, toolbar_label};
+pub use tooltip::{row_icon_button, with_tooltip};

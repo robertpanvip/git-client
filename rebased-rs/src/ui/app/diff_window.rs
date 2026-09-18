@@ -15,6 +15,7 @@ use gpui_kit::component::{
 use rebased_rs::git::{FileDiff, GitBackend, parse_unified_diff};
 
 use crate::ui::i18n::tr;
+use crate::ui::theme;
 
 use super::DiffSource;
 
@@ -119,10 +120,10 @@ impl Render for DiffWindowView {
             .flex()
             .flex_row()
             .items_center()
-            .gap_2()
+            .gap(px(theme::SPACE_MD))
             .flex_none()
-            .px_2()
-            .py_1()
+            .px(px(theme::SPACE_MD))
+            .py(px(theme::SPACE_SM))
             .border_b_1()
             .border_color(border)
             .child(
@@ -131,34 +132,27 @@ impl Render for DiffWindowView {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_sm()
+                    .text_size(px(theme::FONT_SIZE_BODY))
                     .text_color(muted)
                     .child(self.title.clone()),
             );
 
-        let ignore_ws_label: SharedString = if self.ignore_whitespace {
-            format!("✓ {}", tr("Ignore whitespace", "忽略空白")).into()
-        } else {
-            tr("Ignore whitespace", "忽略空白").into()
-        };
+        // 开关态由按钮的 selected 呈现，而不是在文案里拼 `✓` / `⇔` / `≡` 字形。
         header = header.child(
             Button::new("dw-ignore-ws")
                 .ghost()
                 .compact()
-                .label(ignore_ws_label)
+                .selected(self.ignore_whitespace)
+                .label(tr("Ignore whitespace", "忽略空白"))
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_ignore_whitespace(cx))),
         );
 
-        let view_label: SharedString = if self.side_by_side {
-            tr("⇔ Side-by-side", "⇔ 并排对比").into()
-        } else {
-            tr("≡ Unified", "≡ 统一视图").into()
-        };
         header = header.child(
             Button::new("dw-view-mode")
                 .ghost()
                 .compact()
-                .label(view_label)
+                .selected(self.side_by_side)
+                .label(tr("Side-by-side", "并排对比"))
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_view_mode(cx))),
         );
 
@@ -194,7 +188,7 @@ impl Render for DiffWindowView {
                 .id("dw-error")
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(px(theme::FONT_SIZE_BODY))
                         .text_color(crate::ui::theme::error_color())
                         .child(error.clone()),
                 )
@@ -208,7 +202,7 @@ impl Render for DiffWindowView {
                 .id("dw-empty")
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(px(theme::FONT_SIZE_BODY))
                         .text_color(muted)
                         .child(tr("No changes", "无更改")),
                 )
@@ -217,7 +211,9 @@ impl Render for DiffWindowView {
                 .id("dw-content")
                 .flex_1()
                 .min_h_0()
+                .min_w_0()
                 .overflow_y_scroll()
+                .overflow_x_scroll()
                 .child(crate::ui::diff_view::render_diff_files(
                     &self.files,
                     self.side_by_side,
@@ -247,7 +243,7 @@ pub(crate) fn open_diff_window(
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(gpui::Bounds::centered(
             None,
-            size(px(1280.), px(860.)),
+            size(px(theme::DIFF_WINDOW_WIDTH), px(theme::DIFF_WINDOW_HEIGHT)),
             cx,
         ))),
         titlebar: Some(TitlebarOptions {

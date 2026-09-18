@@ -50,7 +50,13 @@ pub(crate) fn sync_repo_state(
         remotes,
     } = data;
     state.repo_root = repo.root().to_string_lossy().to_string();
-    state.head_id = commits.first().map(|commit| commit.id.0.clone());
+    // HEAD 必须是仓库真实的 HEAD：日志可能被分支/作者/时间过滤，
+    // `commits.first()` 在被过滤时并不等于 HEAD。
+    state.head_id = repo
+        .rev_parse("HEAD")
+        .ok()
+        .filter(|id| !id.is_empty())
+        .or_else(|| commits.first().map(|commit| commit.id.0.clone()));
     state.changes = status.changes;
     state.branch_entries = Arc::new(branches.clone());
     state.remotes = Arc::new(remotes);

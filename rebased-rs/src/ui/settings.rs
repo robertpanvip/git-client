@@ -7,10 +7,8 @@ use std::path::PathBuf;
 /// 应用数据目录：Windows 优先 %APPDATA%，其余平台沿用 XDG 约定。
 /// config 文件、启动日志、panic 日志统一存放于此。
 pub(crate) fn config_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("APPDATA") {
-        if !dir.is_empty() {
-            return Some(PathBuf::from(dir).join("rebased-rs"));
-        }
+    if let Some(dir) = std::env::var_os("APPDATA").filter(|dir| !dir.is_empty()) {
+        return Some(PathBuf::from(dir).join("rebased-rs"));
     }
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

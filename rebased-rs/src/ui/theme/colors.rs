@@ -1,47 +1,13 @@
-//! 全局设计 tokens：密度、间距、圆角与 Git 语义色。
-//! 组件代码一律从此取值，避免散落的 magic number。
-
-// tokens 为设计系统预留项，未即时引用属预期。
-#![allow(dead_code)]
+//! 色板与 Git 语义色。
+//!
+//! 三部分：
+//! 1. **基准色板**：IntelliJ New UI Dark 实测色值（`rgb()` 直接抄录）。
+//! 2. **派生色**：跟随前景 alpha 派生，用于亮暗自适应（hover / border / badge 底）。
+//! 3. **Git 语义色**：泳道、状态、ref 标签、diff 增删。
 
 use gpui::{App, Hsla, hsla};
 use gpui_kit::component::theme::Theme;
 use rebased_rs::git::{ChangeStatus, MAX_COLORS};
-
-// ---------- 密度（对齐原版实测：工具栏 44 / 列表行 26 / 状态栏 31） ----------
-pub const ROW_HEIGHT: f32 = 26.0;
-pub const TOOLBAR_HEIGHT: f32 = 44.0;
-pub const STATUSBAR_HEIGHT: f32 = 31.0;
-pub const GROUP_HEADER_HEIGHT: f32 = 22.0;
-
-// ---------- 三栏布局（对齐原版实测：左面板 344 / 图标条 40 / 右面板 389） ----------
-/// 左侧 Commit 面板宽度：变更列表 + 提交输入区。
-pub const COMMIT_PANEL_WIDTH: f32 = 344.0;
-/// 左侧最左图标条宽度。
-pub const ICON_STRIP_WIDTH: f32 = 40.0;
-/// Log 主区标题行高度（“Log: <分支>” 蓝色标签行，实测 41px）。
-pub const LOG_HEADER_HEIGHT: f32 = 41.0;
-/// Log 主区过滤行高度（搜索框 + 过滤 chips，实测 37px）。
-pub const LOG_FILTER_HEIGHT: f32 = 37.0;
-/// 右侧详情面板宽度。
-pub const DETAIL_PANEL_WIDTH: f32 = 389.0;
-
-// ---------- 图形泳道 ----------
-pub const LANE_WIDTH: f32 = 14.0;
-pub const DOT_RADIUS: f32 = 2.5;
-pub const LINE_WIDTH: f32 = 1.5;
-
-// ---------- 圆角 ----------
-pub const RADIUS_SM: f32 = 2.0;
-pub const RADIUS: f32 = 4.0;
-pub const RADIUS_LG: f32 = 6.0;
-
-// ---------- 间距（4px 网格） ----------
-pub const SPACE_XS: f32 = 2.0;
-pub const SPACE_SM: f32 = 4.0;
-pub const SPACE_MD: f32 = 8.0;
-pub const SPACE_LG: f32 = 12.0;
-pub const SPACE_XL: f32 = 16.0;
 
 // ---------- JetBrains New UI Dark 精确色板（原版截图像素采样） ----------
 /// `0xRRGGBB` -> gpui `Hsla`，便于直接抄录原版实测色值。
@@ -71,6 +37,11 @@ pub fn rgb(hex: u32) -> Hsla {
     hsla(h / 6.0, s, l, 1.0)
 }
 
+/// 纯白（工具栏选中图标 / Log 标签文字）。
+pub fn white() -> Hsla {
+    rgb(0xFFFFFF)
+}
+
 /// 主背景（Log / 左栏 / 右栏，实测 #191A1C）。
 pub fn bg_main() -> Hsla {
     rgb(0x191A1C)
@@ -84,6 +55,16 @@ pub fn bg_chrome() -> Hsla {
 /// 面板分隔线（实测 1px #26282C）。
 pub fn separator() -> Hsla {
     bg_chrome()
+}
+
+/// 弹层/对话框底色。
+pub fn popover_bg() -> Hsla {
+    rgb(0x2B2D30)
+}
+
+/// 输入框底色。
+pub fn input_bg() -> Hsla {
+    rgb(0x2B2D30)
 }
 
 /// 列表悬停底色（JetBrains New UI Dark hover）。
@@ -111,6 +92,11 @@ pub fn text_muted() -> Hsla {
     rgb(0x9DA0A8)
 }
 
+/// 更弱的文字色（禁用 / 占位）。
+pub fn text_disabled() -> Hsla {
+    rgb(0x6F737A)
+}
+
 /// 链接 / 分支 chip 文字蓝。
 pub fn link_blue() -> Hsla {
     rgb(0x548AF7)
@@ -119,6 +105,21 @@ pub fn link_blue() -> Hsla {
 /// 主按钮蓝（Commit / Commit and Push）。
 pub fn primary_blue() -> Hsla {
     rgb(0x3574F0)
+}
+
+/// 危险色（破坏性操作文字 / 危险按钮）。数据丢失类操作统一使用。
+pub fn danger_color() -> Hsla {
+    rgb(0xDB5C5C)
+}
+
+/// 危险色按钮底色。
+pub fn danger_solid() -> Hsla {
+    rgb(0xC94F4F)
+}
+
+/// 键盘焦点环。
+pub fn focus_ring() -> Hsla {
+    rgb(0x365880)
 }
 
 /// 把实测色板写入 gpui-component 全局主题，并同步 Base 层。
@@ -150,6 +151,9 @@ pub fn apply_jetbrains_palette(cx: &mut App) {
         t.list_head = bg_main();
         t.list_hover = hover_solid();
         t.list_active = selection_bg();
+        // 选中行不使用额外描边：焦点态改由 focus ring / 行首指示条表达，
+        // 避免键盘焦点与"选中"在视觉上不可区分（原实现设为 transparent 会
+        // 让两者完全同形）。
         t.list_active_border = transparent();
         t.table = transparent();
         t.table_even = transparent();
@@ -160,18 +164,20 @@ pub fn apply_jetbrains_palette(cx: &mut App) {
         t.accent = hover_solid();
         t.accent_foreground = text_primary();
         t.border = separator();
-        t.input = rgb(0x2B2D30);
+        t.input = input_bg();
         t.muted = bg_chrome();
         t.muted_foreground = text_muted();
-        t.popover = rgb(0x2B2D30);
+        t.popover = popover_bg();
         t.popover_foreground = text_primary();
         t.link = link_blue();
         t.link_hover = rgb(0x6B9AF5);
-        t.ring = rgb(0x365880);
+        t.ring = focus_ring();
         t.primary = primary_blue();
         t.primary_hover = rgb(0x2F66CE);
         t.primary_active = rgb(0x2857B0);
-        t.primary_foreground = rgb(0xFFFFFF);
+        t.primary_foreground = white();
+        t.danger = danger_solid();
+        t.danger_foreground = white();
         t.scrollbar = transparent();
         t.scrollbar_thumb = rgb(0x4B4D51);
         t.scrollbar_thumb_hover = rgb(0x5A5D63);
@@ -184,20 +190,28 @@ pub fn transparent() -> Hsla {
     hsla(0.0, 0.0, 0.5, 0.0)
 }
 
+/// 行悬停底色。**全应用唯一**的"按前景派生"悬停来源。
 pub fn hover_bg(fg: Hsla) -> Hsla {
     hsla(fg.h, fg.s, fg.l, 0.06)
 }
 
+/// 行选中底色（用于 List 组件之外的轻量列表）。
 pub fn selected_bg(fg: Hsla) -> Hsla {
     hsla(fg.h, fg.s, fg.l, 0.12)
 }
 
+/// 交替行底纹（blame / 长列表斑马纹）。
 pub fn stripe_bg(fg: Hsla) -> Hsla {
     hsla(fg.h, fg.s, fg.l, 0.04)
 }
 
 pub fn badge_bg(color: Hsla) -> Hsla {
     hsla(color.h, color.s, color.l, 0.15)
+}
+
+/// 实色胶囊标签底色（ref 标签）：颜色更实，贴近 IntelliJ Log 的胶囊观感。
+pub fn badge_solid_bg(color: Hsla) -> Hsla {
+    hsla(color.h, color.s, color.l, 0.28)
 }
 
 pub fn border_color(fg: Hsla) -> Hsla {
@@ -273,16 +287,32 @@ pub fn success_color() -> Hsla {
     hsla(0.31, 0.6, 0.5, 1.0)
 }
 
+// ---------- ref 标签语义色 ----------
+// IntelliJ Log 中三类 ref 视觉互异：HEAD/当前分支、本地分支、远程分支、tag。
+// 原实现把「本地分支」并入「远程分支」同色，此处拆开。
+/// HEAD / 当前分支。
 pub fn head_color() -> Hsla {
     lane_color(0)
 }
 
-pub fn tag_color() -> Hsla {
+/// 普通本地分支。
+pub fn branch_local_color() -> Hsla {
     lane_color(2)
 }
 
-pub fn remote_color() -> Hsla {
+/// 远程分支。
+pub fn branch_remote_color() -> Hsla {
     lane_color(5)
+}
+
+/// tag：中性灰，与「新增」绿（同为 lane_color(2)）明确区分。
+pub fn tag_color() -> Hsla {
+    rgb(0xB0B2B6)
+}
+
+/// 兼容旧调用点：原 `remote_color` 语义即"非 HEAD 的 ref"。
+pub fn remote_color() -> Hsla {
+    branch_remote_color()
 }
 
 // ---------- Diff ----------
@@ -300,4 +330,14 @@ pub fn empty_half_bg() -> Hsla {
 
 pub fn hunk_bg() -> Hsla {
     hsla(0.58, 0.7, 0.55, 0.1)
+}
+
+/// 行号 gutter 底色（比正文略深，形成独立列）。
+pub fn gutter_bg() -> Hsla {
+    hsla(0.0, 0.0, 0.0, 0.16)
+}
+
+/// gutter 与正文之间的分隔线。
+pub fn gutter_border() -> Hsla {
+    hsla(0.0, 0.0, 1.0, 0.08)
 }

@@ -21,6 +21,33 @@ pub(crate) enum SidebarMode {
     Reflog,
 }
 
+impl SidebarMode {
+    /// 该面板的默认宽度（对齐原版实测值）。
+    /// 面板切换时重置为该值，此后允许用户拖拽分隔条覆盖。
+    pub(crate) fn default_width(self) -> f32 {
+        use crate::ui::theme;
+        match self {
+            Self::Workspace | Self::Detail | Self::Shelve => theme::DETAIL_PANEL_WIDTH,
+            Self::Rebase => theme::REBASE_PANEL_WIDTH,
+            Self::Diff
+            | Self::Blame
+            | Self::Compare
+            | Self::Conflicts
+            | Self::History
+            | Self::Reflog => theme::WIDE_PANEL_WIDTH,
+        }
+    }
+
+    /// 该面板允许拖到的最小宽度。
+    pub(crate) fn min_width(self) -> f32 {
+        use crate::ui::theme;
+        match self {
+            Self::Workspace | Self::Detail | Self::Shelve => theme::MIN_RIGHT_PANEL_WIDTH,
+            _ => theme::MIN_WIDE_PANEL_WIDTH,
+        }
+    }
+}
+
 /// 当前 diff 面板内容来源，决定 hunk 按钮行为：
 /// Staged = `git diff --cached`（按钮为 Unstage），Unstaged = `git diff`（按钮为 Stage），
 /// Commit = `git show`（只读，无按钮）。
