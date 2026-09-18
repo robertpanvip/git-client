@@ -31,7 +31,12 @@ impl AppView {
     /// 避免 `apply_data` 仓库就绪后遗漏本次装载。`apply_data` 会在
     /// `MainView::Files` 时自动补调 `load_files`。
     pub(crate) fn open_files_view(&mut self, cx: &mut Context<Self>) {
-        eprintln!("[diag] open_files_view files={} loading={} repo={}", self.state.files.len(), self.state.files_loading, self.repo.is_some());
+        eprintln!(
+            "[diag] open_files_view files={} loading={} repo={}",
+            self.state.files.len(),
+            self.state.files_loading,
+            self.repo.is_some()
+        );
         self.state.main_view = MainView::Files;
         if self.state.files.is_empty() && !self.state.files_loading {
             self.state.files_loading = true;

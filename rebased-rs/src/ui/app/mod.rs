@@ -546,7 +546,10 @@ impl AppView {
                 self.state.main_view == MainView::Log,
                 |this, cx| {
                     // 主窗口左下角的 Git 图标：在「工作区（图1）」与「Git 日志（图2）」间切换。
-                    eprintln!("[diag] strip-git clicked, main_view={:?}", this.state.main_view);
+                    eprintln!(
+                        "[diag] strip-git clicked, main_view={:?}",
+                        this.state.main_view
+                    );
                     this.state.main_view = match this.state.main_view {
                         MainView::Workspace => MainView::Log,
                         MainView::Log | MainView::Files => MainView::Workspace,
