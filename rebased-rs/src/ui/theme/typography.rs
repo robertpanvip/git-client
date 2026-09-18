@@ -2,18 +2,24 @@
 //!
 //! 面板不得自行挑选 `text_xs` / `text_sm`，而应使用此处定义的**角色**：
 //! 同类信息在全应用使用同一角色，避免"同一字段在不同面板字号不同"。
+//!
+//! 字号数值定义在 [`super::dimensions`]（`FONT_SIZE_*` 常量），此处提供
+//! **语义化别名**（`FONT_SIZE_META` / `FONT_SIZE_BODY` 等）和 **排版角色系统**
+//! （[`TextRole`] + [`text_role()`] 助手）。
 
 use gpui::{Div, FontWeight, Styled, px};
 
-// ---------- 字号 ----------
-/// 次要信息（时间、哈希、计数、作者、hint）。
-pub const FONT_SIZE_META: f32 = 12.0;
-/// 正文 / 列表行主文本（提交 subject、文件路径、菜单项）。
-pub const FONT_SIZE_BODY: f32 = 13.0;
-/// 强调文本（对话框标题、面板主标题）。
-pub const FONT_SIZE_TITLE: f32 = 14.0;
-/// 数值/代码（等宽场景）。
-pub const FONT_SIZE_MONO: f32 = 12.0;
+use super::dimensions::{FONT_SIZE_BASE, FONT_SIZE_MD, FONT_SIZE_MONO, FONT_SIZE_SM};
+
+// ---------- 字号语义化别名 ----------
+/// 次要信息（时间、哈希、计数、作者、hint）—— 对应 `FONT_SIZE_SM` (12px)。
+pub const FONT_SIZE_META: f32 = FONT_SIZE_SM;
+/// 正文 / 列表行主文本（提交 subject、文件路径、菜单项）—— 对应 `FONT_SIZE_BASE` (13px)。
+pub const FONT_SIZE_BODY: f32 = FONT_SIZE_BASE;
+/// 强调文本（对话框标题、面板主标题）—— 对应 `FONT_SIZE_MD` (14px)。
+pub const FONT_SIZE_TITLE: f32 = FONT_SIZE_MD;
+/// 数值/代码（等宽场景）—— 对应 `FONT_SIZE_MONO` (12.5px)。
+pub const FONT_SIZE_CODE: f32 = FONT_SIZE_MONO;
 
 // ---------- 行高 ----------
 pub const LINE_HEIGHT_META: f32 = 16.0;
@@ -48,7 +54,7 @@ impl TextRole {
             TextRole::Meta => FONT_SIZE_META,
             TextRole::SectionHeader => FONT_SIZE_META,
             TextRole::DialogTitle => FONT_SIZE_TITLE,
-            TextRole::Mono => FONT_SIZE_MONO,
+            TextRole::Mono => FONT_SIZE_CODE,
         }
     }
 

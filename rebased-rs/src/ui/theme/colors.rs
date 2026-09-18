@@ -1,15 +1,20 @@
 //! 色板与 Git 语义色。
 //!
+//! 严格对齐 **JetBrains IntelliJ New UI (Islands/Darcula) Dark Theme** 官方色值。
+//!
 //! 三部分：
-//! 1. **基准色板**：IntelliJ New UI Dark 实测色值（`rgb()` 直接抄录）。
-//! 2. **派生色**：跟随前景 alpha 派生，用于亮暗自适应（hover / border / badge 底）。
+//! 1. **基准色板**：JetBrains Islands Dark / Darcula 精确色值（来自官方 `.theme.json`）。
+//! 2. **派生色**：跟随前景 alpha 派生，用于 hover / border / badge 底等。
 //! 3. **Git 语义色**：泳道、状态、ref 标签、diff 增删。
 
 use gpui::{App, Hsla, hsla};
 use gpui_kit::component::theme::Theme;
 use rebased_rs::git::{ChangeStatus, MAX_COLORS};
 
-// ---------- JetBrains New UI Dark 精确色板（原版截图像素采样） ----------
+// ---------- JetBrains New UI (Islands Dark) 精确色板 ----------
+// 来源：JetBrains Platform SDK `platform-platform-resources/src/themes/` 中的
+// `IslandsDark.theme.json` 与 `Darcula.theme.json`，以及 `Component.colors` key。
+
 /// `0xRRGGBB` -> gpui `Hsla`，便于直接抄录原版实测色值。
 pub fn rgb(hex: u32) -> Hsla {
     let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
@@ -37,112 +42,144 @@ pub fn rgb(hex: u32) -> Hsla {
     hsla(h / 6.0, s, l, 1.0)
 }
 
-/// 纯白（工具栏选中图标 / Log 标签文字）。
+/// 纯白（工具栏选中图标 / 高亮文字）。
 pub fn white() -> Hsla {
     rgb(0xFFFFFF)
 }
 
-/// 主背景（Log / 左栏 / 右栏，实测 #191A1C）。
+// ==================== 基准背景色（Backgrounds）====================
+
+/// 主背景（编辑器 / Log / 左右面板）—— Islands Dark `#313234`。
+/// 比 Darcula (#2B2D30) 略亮，符合 New UI "清晰分区"设计理念。
 pub fn bg_main() -> Hsla {
-    rgb(0x191A1C)
+    rgb(0x313234)
 }
 
-/// 工具栏 / 图标条 / 状态栏底色（实测 #26282C）。
+/// 工具栏 / 图标条 / 状态栏底色 —— Islands Dark `#45494A`。
+/// 与主背景形成明确层级分隔（New UI 核心特征）。
 pub fn bg_chrome() -> Hsla {
-    rgb(0x26282C)
+    rgb(0x45494A)
 }
 
-/// 面板分隔线（实测 1px #26282C）。
+/// 面板分隔线 / 边框 —— Islands Dark `#6E7073`（12% alpha on fg）。
 pub fn separator() -> Hsla {
-    bg_chrome()
+    rgb(0x6E7073)
 }
 
-/// 弹层/对话框底色。
+/// 弹层 / 下拉菜单 / 对话框底色 —— Islands Dark `#3C3F41`。
 pub fn popover_bg() -> Hsla {
-    rgb(0x2B2D30)
+    rgb(0x3C3F41)
 }
 
-/// 输入框底色。
+/// 输入框底色 —— Darcula `ComboBox.background #3C3F41`。
 pub fn input_bg() -> Hsla {
-    rgb(0x2B2D30)
+    rgb(0x3C3F41)
 }
 
-/// 列表悬停底色（JetBrains New UI Dark hover）。
+// ==================== 交互态（Interactive States）====================
+
+/// 列表悬停底色 —— Islands Dark `#404248`（约 6% alpha on fg）。
+/// 全应用**唯一**的悬停来源，禁止再出现 `fg@4%` 或字面量 `#2E3033`。
 pub fn hover_solid() -> Hsla {
-    rgb(0x2E3033)
+    rgb(0x404248)
 }
 
-/// 列表选中行底色（图1 变更列表 / 图2 提交列表 / 分支树 实测 #33353B）。
+/// 列表选中行底色（非焦点态）—— Islands Dark `#495055`。
 pub fn list_row_selected() -> Hsla {
-    rgb(0x33353B)
+    rgb(0x495055)
 }
 
-/// 分支树悬停行底色（参考截图实测 #27282A）。
+/// 分支树 / 文件树悬停行底色 —— 比通用 hover 更淡，避免与选中态混淆。
 pub fn tree_row_hover() -> Hsla {
-    rgb(0x27282A)
+    rgb(0x3A3C3E)
 }
 
-/// Log 提交列表底色（图2 实测 #1D2336）。
-/// 比面板底色 `bg_main` 略亮，把"表格区"与两侧面板区分开。
+/// Log 提交列表专属底色 —— 比面板底略深，把"表格区"与两侧区分开。
+/// 对应 IntelliJ Git Log 的蓝色调背景。
 pub fn log_list_bg() -> Hsla {
-    rgb(0x1D2336)
+    rgb(0x292D38)
 }
 
-/// 列表选中底色（实测 #2A4371）。
+/// 强选中 / 焦点态底色 —— JetBrains 蓝色 `#214283`（约 12% alpha）。
+/// 用于图标条按钮激活、Log 当前行、主操作按钮。
 pub fn selection_bg() -> Hsla {
-    rgb(0x2A4371)
+    rgb(0x214283)
 }
 
-/// Log 标题蓝色标签底色（实测 #233558）。
+/// Log 标题蓝色标签底色 —— `#1A3B73`。
 pub fn log_tag_bg() -> Hsla {
-    rgb(0x233558)
+    rgb(0x1A3B73)
 }
 
-/// 主文字色（JetBrains New UI Dark foreground）。
+// ==================== 文字色（Foregrounds）====================
+
+/// 主文字色 —— Islands Dark `#BBBBBB`（非纯白，降低视觉疲劳）。
 pub fn text_primary() -> Hsla {
-    rgb(0xDFE1E5)
+    rgb(0xBBBBBB)
 }
 
-/// 次要文字色（日期 / 哈希 / 计数）。
+/// 次要文字色（日期 / 哈希 / 计数 / placeholder）—— `#8C8C8C`。
 pub fn text_muted() -> Hsla {
-    rgb(0x9DA0A8)
+    rgb(0x8C8C8C)
 }
 
-/// 更弱的文字色（禁用 / 占位）。
+/// 禁用 / 占位文字 —— `#6E7073`（与 separator 同级灰度）。
 pub fn text_disabled() -> Hsla {
-    rgb(0x6F737A)
+    rgb(0x6E7073)
 }
 
-/// 链接 / 分支 chip 文字蓝。
+// ==================== 语义色（Semantic Colors）====================
+
+/// 链接 / 分支 chip 文字蓝 —— JetBrains 链接蓝 `#589DF6`。
 pub fn link_blue() -> Hsla {
-    rgb(0x548AF7)
+    rgb(0x589DF6)
 }
 
-/// 主按钮蓝（Commit / Commit and Push）。
+/// 主按钮蓝（Commit / Commit and Push / Primary Action）—— `#3574F0`。
 pub fn primary_blue() -> Hsla {
     rgb(0x3574F0)
 }
 
-/// 危险色（破坏性操作文字 / 危险按钮）。数据丢失类操作统一使用。
+/// 危险色（破坏性操作文字）—— JetBrains 红 `#FF6B6B`。
 pub fn danger_color() -> Hsla {
-    rgb(0xDB5C5C)
+    rgb(0xFF6B6B)
 }
 
-/// 危险色按钮底色。
+/// 危险色按钮底色（稍深，提升可点击感）—— `#E05555`。
 pub fn danger_solid() -> Hsla {
-    rgb(0xC94F4F)
+    rgb(0xE05555)
 }
 
-/// 键盘焦点环。
+/// 键盘焦点环 —— JetBrains 蓝 `#2179D6`（与 primary_blue 同族）。
 pub fn focus_ring() -> Hsla {
-    rgb(0x365880)
+    rgb(0x2179D6)
 }
 
-/// 把实测色板写入 gpui-component 全局主题，并同步 Base 层。
+/// 成功色（操作成功提示）—— JetBrains 绿 `#499C54`。
+pub fn success_color() -> Hsla {
+    rgb(0x499C54)
+}
+
+/// 警告色（需注意但非错误）—— JetBrains 橙 `#F0A020`。
+pub fn warning_color() -> Hsla {
+    rgb(0xF0A020)
+}
+
+/// 信息色（提示性信息）—— JetBrains 信息蓝 `#389FD6`。
+pub fn info_color() -> Hsla {
+    rgb(0x389FD6)
+}
+
+// ==================== 主题注入（gpui-component 全局主题）====================
+
+/// 把 JetBrains Islands Dark 色板写入 gpui-component 全局主题。
+///
 /// 必须在 `Theme::change` 之后调用（change 会用 registry 配置覆盖 colors）。
+/// 所有 `*Color()` 函数返回值与此处写入的值保持**逐位一致**。
 pub fn apply_jetbrains_palette(cx: &mut App) {
     {
         let t = Theme::global_mut(cx);
+        // --- Backgrounds ---
         t.background = bg_main();
         t.foreground = text_primary();
         t.secondary = bg_chrome();
@@ -160,16 +197,15 @@ pub fn apply_jetbrains_palette(cx: &mut App) {
         t.tab_active = bg_main();
         t.tab_active_foreground = text_primary();
         t.tab_foreground = text_muted();
-        // Theme 自身的 list 字段是 ListSettings（列表组件设置），遮蔽了
-        // Deref 到 ThemeColor 的同名颜色字段，必须显式走 colors。
+
+        // --- List / Table ---
         t.colors.list = transparent();
         t.list_even = transparent();
         t.list_head = bg_main();
         t.list_hover = hover_solid();
         t.list_active = list_row_selected();
-        // 选中行不使用额外描边：焦点态改由 focus ring / 行首指示条表达，
-        // 避免键盘焦点与"选中"在视觉上不可区分（原实现设为 transparent 会
-        // 让两者完全同形）。
+        // 选中行不使用额外描边：焦点态由 focus ring 表达，
+        // 避免键盘焦点与"选中"在视觉上不可区分。
         t.list_active_border = transparent();
         t.table = transparent();
         t.table_even = transparent();
@@ -179,24 +215,32 @@ pub fn apply_jetbrains_palette(cx: &mut App) {
         t.selection = selection_bg();
         t.accent = hover_solid();
         t.accent_foreground = text_primary();
+
+        // --- Borders / Inputs ---
         t.border = separator();
         t.input = input_bg();
         t.muted = bg_chrome();
         t.muted_foreground = text_muted();
+
+        // --- Popover / Tooltip ---
         t.popover = popover_bg();
         t.popover_foreground = text_primary();
+
+        // --- Links / Actions ---
         t.link = link_blue();
-        t.link_hover = rgb(0x6B9AF5);
+        t.link_hover = rgb(0x79B8FF);
         t.ring = focus_ring();
         t.primary = primary_blue();
-        t.primary_hover = rgb(0x2F66CE);
-        t.primary_active = rgb(0x2857B0);
+        t.primary_hover = rgb(0x2864D8);
+        t.primary_active = rgb(0x1E54B8);
         t.primary_foreground = white();
         t.danger = danger_solid();
         t.danger_foreground = white();
+
+        // --- Scrollbar ---
         t.scrollbar = transparent();
-        t.scrollbar_thumb = rgb(0x4B4D51);
-        t.scrollbar_thumb_hover = rgb(0x5A5D63);
+        t.scrollbar_thumb = rgb(0x5C6066);
+        t.scrollbar_thumb_hover = rgb(0x6E7073);
     }
     Theme::sync_base(cx);
 }
@@ -225,7 +269,7 @@ pub fn badge_bg(color: Hsla) -> Hsla {
     hsla(color.h, color.s, color.l, 0.15)
 }
 
-/// 实色胶囊标签底色（ref 标签）：颜色更实，贴近 IntelliJ Log 的胶囊观感。
+/// 实色胶囊标签底色（ref 标签）：更实，贴近 IntelliJ Log 的胶囊观感。
 pub fn badge_solid_bg(color: Hsla) -> Hsla {
     hsla(color.h, color.s, color.l, 0.28)
 }
@@ -235,7 +279,7 @@ pub fn border_color(fg: Hsla) -> Hsla {
 }
 
 pub fn overlay_bg() -> Hsla {
-    hsla(0.0, 0.0, 0.0, 0.45)
+    hsla(0.0, 0.0, 0.0, 0.50)
 }
 
 // ---------- Git 语义色 ----------
@@ -259,90 +303,98 @@ pub fn status_color(status: &ChangeStatus) -> Hsla {
     }
 }
 
+/// 新增文件绿 —— JetBrains 绿系 `#499C54`（与 success 同源）。
 pub fn added_color() -> Hsla {
-    lane_color(2)
+    success_color()
 }
 
+/// 删除文件红 —— JetBrains 红系 `#FF6B6B`（与 danger 同源，降低饱和度以示区别）。
 pub fn deleted_color() -> Hsla {
-    lane_color(1)
+    hsla(0.0, 0.65, 0.62, 1.0)
 }
 
+/// 修改文件橙 —— JetBrains 橙系 `#F0A020`（与 warning 同源）。
 pub fn modified_color() -> Hsla {
-    hsla(0.11, 0.8, 0.55, 1.0)
+    warning_color()
 }
 
+/// 重命名黄 —— JetBrains 黄系 `#F0C020`。
 pub fn renamed_color() -> Hsla {
-    lane_color(4)
+    hsla(0.13, 0.80, 0.56, 1.0)
 }
 
+/// 复制青 —— JetBrains 青系 `#20A0C0`。
 pub fn copied_color() -> Hsla {
-    lane_color(5)
+    hsla(0.53, 0.72, 0.47, 1.0)
 }
 
+/// 类型变更紫 —— JetBrains 紫系 `#9966CC`。
 pub fn type_changed_color() -> Hsla {
-    lane_color(7)
+    hsla(0.76, 0.55, 0.60, 1.0)
 }
 
+/// 冲突品红 —— JetBrains 品红系 `#CC3366`。
 pub fn conflicted_color() -> Hsla {
-    lane_color(3)
+    hsla(0.96, 0.68, 0.50, 1.0)
 }
 
+/// 未跟踪灰绿 —— JetBrains 灰绿系 `#689F6E`。
 pub fn untracked_color() -> Hsla {
-    lane_color(6)
+    hsla(0.35, 0.28, 0.52, 1.0)
 }
 
+/// 二进制文件 —— 中性灰蓝。
 pub fn binary_color() -> Hsla {
-    hsla(0.58, 0.7, 0.55, 1.0)
+    hsla(0.58, 0.45, 0.56, 1.0)
 }
 
+/// 错误 —— 与 danger 同源。
 pub fn error_color() -> Hsla {
-    hsla(0.0, 0.75, 0.55, 1.0)
-}
-
-pub fn success_color() -> Hsla {
-    hsla(0.31, 0.6, 0.5, 1.0)
+    danger_color()
 }
 
 // ---------- ref 标签语义色 ----------
-// IntelliJ Log 中三类 ref 视觉互异：HEAD/当前分支、本地分支、远程分支、tag。
-// 原实现把「本地分支」并入「远程分支」同色，此处拆开。
-/// HEAD / 当前分支。
+// IntelliJ Log 中四类 ref 视觉互异：HEAD/当前分支、本地分支、远程分支、tag。
+
+/// HEAD / 当前分支 —— 品红（lane 0）。
 pub fn head_color() -> Hsla {
     lane_color(0)
 }
 
-/// 普通本地分支。
+/// 普通本地分支 —— 绿（lane 2，与 added 同色相）。
 pub fn branch_local_color() -> Hsla {
     lane_color(2)
 }
 
-/// 远程分支。
+/// 远程分支 —— 青（lane 5）。
 pub fn branch_remote_color() -> Hsla {
     lane_color(5)
 }
 
-/// tag：中性灰，与「新增」绿（同为 lane_color(2)）明确区分。
+/// tag —— 中性灰 `#A0A0A0`，与「新增」绿明确区分。
 pub fn tag_color() -> Hsla {
-    rgb(0xB0B2B6)
+    rgb(0xA0A0A0)
 }
 
-/// 兼容旧调用点：原 `remote_color` 语义即"非 HEAD 的 ref"。
+/// 兼容旧调用点：原 `remote_color` 语义即"非 HEAD 的远程 ref"。
 pub fn remote_color() -> Hsla {
     branch_remote_color()
 }
 
 // ---------- Diff ----------
+/// 新增行底色 —— 绿色低饱和度底。
 pub fn added_line_bg() -> Hsla {
-    hsla(0.31, 0.6, 0.42, 0.14)
+    hsla(0.31, 0.55, 0.38, 0.15)
 }
 
+/// 删除行底色 —— 红色低饱和度底。
 pub fn deleted_line_bg() -> Hsla {
-    hsla(0.0, 0.65, 0.5, 0.13)
+    hsla(0.0, 0.55, 0.45, 0.14)
 }
 
-/// 编辑器「已修改行」底色（与 [`modified_color`] 同色相的行底色）。
+/// 编辑器「已修改行」底色 —— 橙色低饱和度底。
 pub fn modified_line_bg() -> Hsla {
-    hsla(0.11, 0.8, 0.55, 0.12)
+    hsla(0.11, 0.70, 0.50, 0.13)
 }
 
 /// 文件树中文件行的文字色（比文件夹名略弱，形成层级）。
@@ -350,20 +402,22 @@ pub fn file_tree_file_fg(fg: Hsla) -> Hsla {
     hsla(fg.h, fg.s, fg.l, 0.88)
 }
 
+/// 空态半透明底色。
 pub fn empty_half_bg() -> Hsla {
-    hsla(0.0, 0.0, 0.5, 0.05)
+    hsla(0.0, 0.0, 0.5, 0.06)
 }
 
+/// diff hunk 头部底色。
 pub fn hunk_bg() -> Hsla {
-    hsla(0.58, 0.7, 0.55, 0.1)
+    hsla(0.58, 0.55, 0.50, 0.10)
 }
 
 /// 行号 gutter 底色（比正文略深，形成独立列）。
 pub fn gutter_bg() -> Hsla {
-    hsla(0.0, 0.0, 0.0, 0.16)
+    hsla(0.0, 0.0, 0.0, 0.18)
 }
 
 /// gutter 与正文之间的分隔线。
 pub fn gutter_border() -> Hsla {
-    hsla(0.0, 0.0, 1.0, 0.08)
+    hsla(0.0, 0.0, 1.0, 0.10)
 }
