@@ -84,10 +84,8 @@ pub const TREE_INDENT: f32 = 14.0;
 pub const FILE_TREE_PANEL_WIDTH: f32 = 272.0;
 /// 编辑器行变更标记条宽度（行首窄色条）。
 pub const EDITOR_CHANGE_BAR_WIDTH: f32 = 3.0;
-/// 编辑器行级 blame 列宽度（短哈希 + 作者）。
-pub const EDITOR_BLAME_WIDTH: f32 = 168.0;
-/// 编辑器单帧最多渲染的行数：超大文件只画前 N 行，避免一帧构建过多元素。
-pub const EDITOR_MAX_LINES: usize = 5000;
+/// 编辑器行级 blame 列宽度（提交时间 + 作者）。
+pub const EDITOR_BLAME_WIDTH: f32 = 200.0;
 
 // ---------- 图标 ----------
 /// 图标条 / 工具栏图标按钮边长。

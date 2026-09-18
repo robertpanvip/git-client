@@ -1,17 +1,21 @@
 //! 文件视图左栏：工作区文件夹树（文件夹 + 文件）。
 //!
 //! 对齐 IntelliJ「项目」工具窗口的经典树形呈现：
-//! - 目录行带展开/折叠状态图标，点击切换展开；文件行带文档图标，点击在右栏打开；
+//! - 目录行 = 展开箭头 + IDEA 文件夹图标，点击切换展开；
+//! - 文件行 = IDEA 文本文件图标，点击在右栏打开；
 //! - 缩进按层级递增，选中文件用统一的列表选中底色高亮。
 //!
-//! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平）。
+//! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平），渲染走
+//! `uniform_list` 只画可视区——大仓库的深层目录不会拖慢界面。
 
 use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::Arc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
     App, Div, Hsla, InteractiveElement, ParentElement, Stateful, StatefulInteractiveElement,
-    Styled, div, px,
+    Styled, UniformList, UniformListScrollHandle, div, px, uniform_list,
 };
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::{Icon, Sizable, Size};
@@ -46,7 +50,7 @@ pub(crate) struct TreeRow {
 
 /// 把扁平路径列表摊平成可见行。
 ///
-/// `files` 必须是按路径升序排好的列表（[`crate::ui::app`] 由 `git ls-files` 排序得到）：
+/// `files` 必须是按路径升序排好的列表（由 `git ls-files` 排序得到）：
 /// 升序遍历保证父目录总在子节点之前出现。`expanded` 之外的目录视为折叠，
 /// 其整棵子树都不产生行。
 pub(crate) fn flatten_tree(files: &[String], expanded: &HashSet<String>) -> Vec<TreeRow> {
@@ -96,23 +100,37 @@ pub(crate) fn flatten_tree(files: &[String], expanded: &HashSet<String>) -> Vec<
     rows
 }
 
-/// 渲染文件夹树。
+/// 渲染文件夹树（`uniform_list` 只构建可视区的行）。
 pub(crate) fn render_file_tree(
-    files: &[String],
-    expanded: &HashSet<String>,
+    rows: &Arc<Vec<TreeRow>>,
     selected: Option<&str>,
+    scroll: &UniformListScrollHandle,
     on_pick: &TreePick,
     cx: &App,
-) -> Div {
+) -> UniformList {
     let fg = cx.theme().foreground;
-    let mut tree = div().flex().flex_col().w_full().py(px(theme::SPACE_XS));
-    for row in flatten_tree(files, expanded) {
-        tree = tree.child(render_row(row, selected, on_pick, fg));
-    }
-    tree
+    let rows = Arc::clone(rows);
+    let selected = selected.map(str::to_string);
+    let on_pick = Arc::clone(on_pick);
+
+    uniform_list(
+        "file-tree",
+        rows.len(),
+        move |range: Range<usize>, _window, _cx| {
+            range
+                .map(|index| render_row(&rows[index], selected.as_deref(), &on_pick, fg))
+                .collect::<Vec<_>>()
+        },
+    )
+    .track_scroll(scroll)
 }
 
-fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla) -> Stateful<Div> {
+fn render_row(
+    row: &TreeRow,
+    selected: Option<&str>,
+    on_pick: &TreePick,
+    fg: Hsla,
+) -> Stateful<Div> {
     let indent = theme::SPACE_SM + theme::TREE_INDENT * row.depth as f32;
     let is_selected = !row.is_dir && selected == Some(row.path.as_str());
     let text_color = if is_selected {
@@ -122,11 +140,7 @@ fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla
     } else {
         theme::file_tree_file_fg(fg)
     };
-    let icon = match (row.is_dir, row.expanded) {
-        (true, true) => Ic::FolderOpen,
-        (true, false) => Ic::Folder,
-        (false, _) => Ic::File,
-    };
+    let icon = if row.is_dir { Ic::Folder } else { Ic::File };
     let click = if row.is_dir {
         TreeClick::Dir(row.path.clone())
     } else {
@@ -151,15 +165,24 @@ fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla
         .overflow_hidden()
         .cursor_pointer()
         .child(
-            Icon::new(icon)
-                .with_size(Size::Small)
-                .text_color(if row.is_dir {
-                    theme::text_muted()
-                } else {
-                    text_color
+            // 展开箭头与 IDEA 项目树一致：展开时朝下、折叠时朝右。
+            div()
+                .w(px(theme::ICON_BUTTON_SIZE))
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_center()
+                .when(row.is_dir, |arrow| {
+                    arrow.child(Icon::new(if row.expanded {
+                        Ic::ChevronDown
+                    } else {
+                        Ic::ChevronRight
+                    }))
                 }),
         )
-        .child(row.name);
+        .child(Icon::new(icon).with_size(Size::Small))
+        .child(row.name.clone());
     if is_selected {
         element = element.bg(theme::list_row_selected());
     } else {

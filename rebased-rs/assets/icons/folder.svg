@@ -1,4 +1,4 @@
-<!-- Closed-folder icon drawn in the JetBrains UI style of this icon set (16px, stroke #6C707E). -->
+<!-- Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license. -->
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M1.5 12.7V4.5C1.5 3.67 2.17 3 3 3H5.4C5.87 3 6.31 3.19 6.45 3.44L7.51 4.56C7.69 4.83 7.98 5.06 8.62 5.06H13C13.83 5.06 14.5 5.73 14.5 6.56V12.7C14.5 13.53 13.83 14.2 13 14.2H3C2.17 14.2 1.5 13.53 1.5 12.7Z" stroke="#6C707E" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8.10584 4.34613L8.25344 4.5H8.46667H13C13.8284 4.5 14.5 5.17157 14.5 6V12.1333C14.5 12.9529 13.932 13.5 13.3667 13.5H2.63333C2.06804 13.5 1.5 12.9529 1.5 12.1333V3.86667C1.5 3.04707 2.06804 2.5 2.63333 2.5H6.1217C6.25792 2.5 6.38824 2.55557 6.48253 2.65387L8.10584 4.34613Z" fill="#43454A" stroke="#CED0D6"/>
 </svg>

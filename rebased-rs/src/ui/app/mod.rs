@@ -7,7 +7,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, MouseMoveEvent, ParentElement, Render, StatefulInteractiveElement, Styled,
-    Subscription, Window, WindowBounds, WindowOptions, div, px, size,
+    Subscription, UniformListScrollHandle, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Root,
@@ -77,6 +77,10 @@ pub struct AppView {
     branch_query: Entity<InputState>,
     /// 分支部件弹窗顶部的「搜索分支和操作」输入。
     branch_popup_query: Entity<InputState>,
+    /// 文件视图左栏（文件夹树）的滚动位置。
+    tree_scroll: UniformListScrollHandle,
+    /// 文件视图右栏（代码区域）的滚动位置。
+    editor_scroll: UniformListScrollHandle,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
     /// AddRemote 对话框的第二个输入框（remote URL）。
@@ -161,6 +165,8 @@ impl AppView {
             commit_panel_width: theme::COMMIT_PANEL_WIDTH,
             right_panel_width: SidebarMode::Workspace.default_width(),
             last_sidebar_mode: SidebarMode::Workspace,
+            tree_scroll: UniformListScrollHandle::new(),
+            editor_scroll: UniformListScrollHandle::new(),
             split_drag: None,
             _subscriptions: subscriptions,
         };
@@ -529,7 +535,7 @@ impl AppView {
             .border_color(theme::separator())
             .child(self.render_strip_button(
                 "strip-files",
-                icons::Ic::FolderOpen,
+                icons::Ic::Folder,
                 self.state.main_view == MainView::Files,
                 |this, cx| this.open_files_view(cx),
                 cx,

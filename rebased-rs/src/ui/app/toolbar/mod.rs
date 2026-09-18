@@ -752,7 +752,7 @@ impl AppView {
                 Button::new("open")
                     .ghost()
                     .compact()
-                    .icon(Ic::FolderOpen)
+                    .icon(Ic::Folder)
                     .tooltip(tr("Open Project", "打开项目"))
                     .on_click(cx.listener(|this, _, window, cx| this.open_repo_dialog(window, cx))),
             )

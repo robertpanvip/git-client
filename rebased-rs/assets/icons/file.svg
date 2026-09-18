@@ -1,5 +1,7 @@
-<!-- Document icon drawn in the JetBrains UI style of this icon set (16px, stroke #6C707E). -->
+<!-- Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license. -->
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M9 1.8H4.4C3.63 1.8 3 2.43 3 3.2V12.8C3 13.57 3.63 14.2 4.4 14.2H11.6C12.37 14.2 13 13.57 13 12.8V5.8L9 1.8Z" stroke="#6C707E" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M8.9 1.9V5.7H13" stroke="#6C707E" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="2" y="12" width="8" height="1" rx="0.5" fill="#CED0D6"/>
+<rect x="2" y="6" width="8" height="1" rx="0.5" fill="#CED0D6"/>
+<rect x="2" y="9" width="12" height="1" rx="0.5" fill="#CED0D6"/>
+<rect x="2" y="3" width="12" height="1" rx="0.5" fill="#CED0D6"/>
 </svg>

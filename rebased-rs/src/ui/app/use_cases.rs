@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    BlameGroup, Commit, FileDiff, GitBackend, GitError, Graph, HunkChoice, RepoData,
-    conflict_hunks, parse_unified_diff,
+    Commit, GitBackend, GitError, Graph, HunkChoice, RepoData, conflict_hunks, parse_unified_diff,
 };
 #[cfg(test)]
 use rebased_rs::git::{DEFAULT_LOG_LIMIT, load_repo_data, open_backend};
+
+use crate::ui::editor_view::{EditorContent, build_content};
 
 use super::state::{AppState, DiffSource, RebaseFlow, SidebarMode};
 
@@ -336,21 +337,21 @@ pub(crate) fn load_worktree_files(repo: &dyn GitBackend) -> Result<Vec<String>, 
     repo.worktree_files()
 }
 
-/// 文件视图右栏数据：某个工作区文件的内容 + 逐行 blame + 相对 HEAD 的 diff。
+/// 文件视图右栏数据：某个工作区文件的逐行渲染数据 + 空态判定。
 pub(crate) struct WorktreeFileData {
     pub(crate) path: String,
-    /// 文件正文；二进制 / 非 UTF-8 时为空串。
-    pub(crate) content: String,
-    /// 文件为二进制或非 UTF-8（含工作区中已删除的文件），代码区改为空态提示。
+    /// 文件为二进制 / 非 UTF-8，无法按文本预览。
     pub(crate) binary: bool,
-    pub(crate) blame: Vec<BlameGroup>,
-    pub(crate) diff: Vec<FileDiff>,
+    /// 该文件在工作区中已删除。
+    pub(crate) deleted: bool,
+    pub(crate) editor: EditorContent,
 }
 
 /// 装载文件视图右栏所需数据。
 ///
 /// blame、diff 失败都不视为错误：未跟踪文件在 HEAD 中不存在、分支尚未诞生
 /// （`HEAD` 无法解析）都属正常状态——保留空结果，代码区仍显示文件内容。
+/// 逐行数据在这里（后台线程）一次算好，渲染时不再重复解析 diff / blame。
 pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str) -> WorktreeFileData {
     let (content, read_failed) = match repo.worktree_file_content(path) {
         Ok(text) => (text, false),
@@ -361,10 +362,9 @@ pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str) -> WorktreeF
     let binary = read_failed || diff.iter().any(|file| file.is_binary);
     WorktreeFileData {
         path: path.to_string(),
-        content,
         binary,
-        blame,
-        diff,
+        deleted: diff.iter().any(|file| file.is_deleted),
+        editor: build_content(&content, &diff, &blame),
     }
 }
 

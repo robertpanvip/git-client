@@ -3,20 +3,20 @@
 //! 对齐 IntelliJ「项目」工具窗口 + 编辑器的经典组合：
 //! 左栏按目录层级浏览工作区文件（`git ls-files` 的 tracked + untracked 清单），
 //! 右栏显示选中文件的代码，并逐行标出相对 HEAD 的变更与最近提交（行级 blame）。
+//!
+//! 两侧都是 `uniform_list`（只渲染可视行），逐行 / 逐树的派生数据在装载时算好
+//! 并缓存，避免每次重绘重建上万行元素。
 
 use std::sync::Arc;
 
-use gpui::{
-    AnyElement, AppContext, Context, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, px,
-};
+use gpui::{AnyElement, AppContext, Context, IntoElement, ParentElement, Styled, div, px};
 use gpui_kit::component::ActiveTheme;
 
 use crate::ui::blame_view::BlameJump;
 use crate::ui::components::empty_state;
 use crate::ui::components::panel_header;
-use crate::ui::editor_view::{line_changes, render_editor};
-use crate::ui::file_tree::{TreeClick, TreePick, render_file_tree};
+use crate::ui::editor_view::render_editor;
+use crate::ui::file_tree::{TreeClick, TreePick, flatten_tree, render_file_tree};
 use crate::ui::i18n::tr;
 use crate::ui::theme;
 
@@ -26,7 +26,7 @@ impl AppView {
     /// 进入文件视图；首次进入（或仓库切换后）在后台装载文件清单。
     pub(crate) fn open_files_view(&mut self, cx: &mut Context<Self>) {
         self.state.main_view = MainView::Files;
-        if self.state.files.is_empty() {
+        if self.state.files.is_empty() && !self.state.files_loading {
             self.load_files(cx);
         }
         cx.notify();
@@ -37,19 +37,21 @@ impl AppView {
         let Some(repo) = self.repo.clone() else {
             return;
         };
+        self.state.files_loading = true;
         let task =
             cx.background_spawn(async move { use_cases::load_worktree_files(repo.as_ref()) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
-            let _ = this.update(cx, |this, cx| match result {
-                Ok(files) => {
-                    this.state.files = Arc::new(files);
-                    cx.notify();
+            let _ = this.update(cx, |this, cx| {
+                this.state.files_loading = false;
+                match result {
+                    Ok(files) => {
+                        this.state.files = Arc::new(files);
+                        this.rebuild_rows();
+                    }
+                    Err(e) => this.state.error = Some(e.to_string()),
                 }
-                Err(e) => {
-                    this.state.error = Some(e.to_string());
-                    cx.notify();
-                }
+                cx.notify();
             });
         })
         .detach();
@@ -60,20 +62,32 @@ impl AppView {
         if !self.state.files_expanded.remove(&path) {
             self.state.files_expanded.insert(path);
         }
+        self.rebuild_rows();
         cx.notify();
     }
 
+    /// 重算文件树可见行（文件清单或展开集合变化后调用一次）。
+    fn rebuild_rows(&mut self) {
+        self.state.files_rows =
+            Arc::new(flatten_tree(&self.state.files, &self.state.files_expanded));
+    }
+
     /// 打开（选中）一个文件：后台装载内容、行级 blame 与相对 HEAD 的 diff。
+    ///
+    /// 自动刷新会对当前文件重复调用本函数；只有切换文件时才清空右栏，
+    /// 否则每次刷新都会闪一下空白。
     pub(crate) fn open_file(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;
         };
+        let switched = self.state.files_selected.as_deref() != Some(path.as_str());
         self.state.files_selected = Some(path.clone());
-        self.state.files_content.clear();
-        self.state.files_binary = false;
-        self.state.files_blame.clear();
-        self.state.files_diff.clear();
-        cx.notify();
+        if switched {
+            self.state.files_binary = false;
+            self.state.files_deleted = false;
+            self.state.files_editor = Arc::new(Default::default());
+            cx.notify();
+        }
         let task =
             cx.background_spawn(async move { use_cases::load_worktree_file(repo.as_ref(), &path) });
         cx.spawn(async move |this, cx| {
@@ -83,10 +97,9 @@ impl AppView {
                 if this.state.files_selected.as_deref() != Some(data.path.as_str()) {
                     return;
                 }
-                this.state.files_content = data.content;
                 this.state.files_binary = data.binary;
-                this.state.files_blame = data.blame;
-                this.state.files_diff = data.diff;
+                this.state.files_deleted = data.deleted;
+                this.state.files_editor = Arc::new(data.editor);
                 cx.notify();
             });
         })
@@ -118,26 +131,24 @@ impl AppView {
             .border_color(theme::separator())
             .child(panel_header(tr("Project", "项目"), muted, Vec::new()));
 
-        if self.state.files.is_empty() {
+        if self.state.files_loading {
+            column = column.child(empty_state(
+                tr("Loading files...", "正在加载文件..."),
+                muted,
+            ));
+        } else if self.state.files.is_empty() {
             column = column.child(empty_state(
                 tr("No files to show", "没有可显示的文件"),
                 muted,
             ));
         } else {
-            column = column.child(
-                div()
-                    .id("file-tree")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(render_file_tree(
-                        &self.state.files,
-                        &self.state.files_expanded,
-                        self.state.files_selected.as_deref(),
-                        &on_pick,
-                        cx,
-                    )),
-            );
+            column = column.child(div().flex_1().min_h_0().child(render_file_tree(
+                &self.state.files_rows,
+                self.state.files_selected.as_deref(),
+                &self.tree_scroll,
+                &on_pick,
+                cx,
+            )));
         }
         column.into_any_element()
     }
@@ -163,15 +174,8 @@ impl AppView {
                 .into_any_element();
         };
 
-        let on_commit: BlameJump = {
-            let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
-            Arc::new(move |id, app| {
-                let _ = weak.update(app, |this, cx| this.open_commit_diff(id, None, cx));
-            })
-        };
-
         if self.state.files_binary {
-            let message = if self.state.files_diff.iter().any(|file| file.is_deleted) {
+            let message = if self.state.files_deleted {
                 tr(
                     "This file is deleted in the working tree",
                     "该文件已在工作区中删除",
@@ -181,21 +185,24 @@ impl AppView {
             };
             return base.child(empty_state(message, muted)).into_any_element();
         }
-        let changes = line_changes(&self.state.files_diff);
+
+        let on_commit: BlameJump = {
+            let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+            Arc::new(move |id, app| {
+                let _ = weak.update(app, |this, cx| this.open_commit_diff(id, None, cx));
+            })
+        };
 
         base.child(panel_header(path, muted, vec![change_legend(cx)]))
             .child(
                 div()
-                    .id("editor-content")
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .overflow_y_scroll()
-                    .overflow_x_scroll()
+                    .overflow_hidden()
                     .child(render_editor(
-                        &self.state.files_content,
-                        &changes,
-                        &self.state.files_blame,
+                        &self.state.files_editor,
+                        &self.editor_scroll,
                         Some(&on_commit),
                         cx,
                     )),

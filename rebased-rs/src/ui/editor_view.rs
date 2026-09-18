@@ -2,21 +2,26 @@
 //!
 //! 对齐 IntelliJ 编辑器「Annotate」的经典形式：
 //! - **行首窄条**标记该行相对 HEAD 的变更类型（新增 / 修改 / 删除）；
-//! - **blame 列**显示每行的最近提交（短哈希 + 作者，按提交着色），点击跳到该提交；
-//! - 其后是行号 gutter 与等宽正文，长行横向滚动。
+//! - **blame 列**显示每行的最近提交（时间 + 作者，按提交着色），点击跳到该提交；
+//! - 其后是行号 gutter 与等宽正文。
+//!
+//! 逐行数据在打开文件时构建一次（[`build_content`]），渲染走 `uniform_list`
+//! 只画可视区——大文件不会因为「每帧构建上万行元素」而卡顿。
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    App, Div, Hsla, InteractiveElement, ParentElement, Stateful, StatefulInteractiveElement,
-    Styled, div, px,
+    App, Div, Hsla, InteractiveElement, ListHorizontalSizingBehavior, ParentElement, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, UniformList, UniformListScrollHandle, div, px,
+    uniform_list,
 };
 use gpui_kit::component::ActiveTheme;
 use rebased_rs::git::{BlameGroup, DiffLineKind, FileDiff};
 
 use crate::ui::blame_view::BlameJump;
-use crate::ui::commit_list::short_id;
+use crate::ui::commit_list::format_time;
 use crate::ui::graph_view::lane_color;
 use crate::ui::i18n::tr;
 use crate::ui::theme;
@@ -30,6 +35,76 @@ pub(crate) enum LineChange {
     Modified,
     /// 该行附近有被删除的行（工作区已无对应行，标记挂在相邻行上）。
     Deleted,
+}
+
+/// 单行的 blame 信息（只显示提交时间与作者，不显示哈希）。
+pub(crate) struct EditorBlame {
+    pub(crate) author: String,
+    pub(crate) time: String,
+    /// 可跳转的提交 id；未提交的行为 `None`。
+    pub(crate) commit_id: Option<String>,
+    /// 按提交着色的色号（同一提交同色）。
+    pub(crate) color_index: usize,
+}
+
+/// 编辑器的单行渲染数据。
+pub(crate) struct EditorLine {
+    pub(crate) number: u32,
+    pub(crate) text: String,
+    pub(crate) change: Option<LineChange>,
+    pub(crate) blame: Option<EditorBlame>,
+}
+
+/// 编辑器内容：逐行数据 + 最长行字符数（决定横向滚动宽度）。
+#[derive(Default)]
+pub(crate) struct EditorContent {
+    pub(crate) lines: Vec<EditorLine>,
+    pub(crate) max_chars: usize,
+}
+
+/// 构建编辑器逐行数据（内容 + 相对 HEAD 的 diff + 工作区 blame）。
+pub(crate) fn build_content(
+    content: &str,
+    diff: &[FileDiff],
+    blame: &[BlameGroup],
+) -> EditorContent {
+    let changes = line_changes(diff);
+    let index = blame_index(blame);
+    let mut lines = Vec::new();
+    let mut max_chars = 0;
+    for (offset, text) in content.lines().enumerate() {
+        let number = offset as u32 + 1;
+        max_chars = max_chars.max(text.chars().count());
+        let blame = match index.get(&number) {
+            Some(slot) => blame.get(*slot).map(|group| editor_blame(group, *slot)),
+            None => None,
+        };
+        lines.push(EditorLine {
+            number,
+            text: text.to_string(),
+            change: changes.get(&number).copied(),
+            blame,
+        });
+    }
+    EditorContent { lines, max_chars }
+}
+
+fn editor_blame(group: &BlameGroup, color_index: usize) -> EditorBlame {
+    // 未提交的行由 git 标记为全 0 commit：没有可跳转的提交，只显示「未提交」。
+    if group.commit_id.chars().all(|c| c == '0') {
+        return EditorBlame {
+            author: tr("Not committed", "未提交").to_string(),
+            time: String::new(),
+            commit_id: None,
+            color_index,
+        };
+    }
+    EditorBlame {
+        author: group.author.clone(),
+        time: format_time(group.time),
+        commit_id: Some(group.commit_id.clone()),
+        color_index,
+    }
 }
 
 /// 由文件 diff 计算「工作区行号 -> 变更类型」。
@@ -105,170 +180,172 @@ pub(crate) fn blame_index(groups: &[BlameGroup]) -> HashMap<u32, usize> {
     map
 }
 
-/// 渲染代码区域。
+/// 渲染代码区域（`uniform_list` 只构建可视区的行）。
 pub(crate) fn render_editor(
-    content: &str,
-    changes: &HashMap<u32, LineChange>,
-    blame: &[BlameGroup],
+    content: &Arc<EditorContent>,
+    scroll: &UniformListScrollHandle,
     on_commit: Option<&BlameJump>,
     cx: &App,
-) -> Div {
+) -> UniformList {
     let mono = cx.theme().mono_font_family.clone();
     let fg = cx.theme().foreground;
     let muted = cx.theme().muted_foreground;
-    let index = blame_index(blame);
-
-    let lines: Vec<&str> = content.lines().collect();
-    let shown = lines.len().min(theme::EDITOR_MAX_LINES);
-    let max_chars = lines
-        .iter()
-        .take(shown)
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(0);
-    let code_width = (max_chars.max(1) as f32) * theme::DIFF_CHAR_WIDTH + theme::SPACE_LG;
+    let code_width = (content.max_chars.max(1) as f32) * theme::DIFF_CHAR_WIDTH + theme::SPACE_LG;
     let row_min_w = theme::EDITOR_CHANGE_BAR_WIDTH
         + theme::EDITOR_BLAME_WIDTH
         + theme::DIFF_GUTTER_COLUMN_WIDTH
         + code_width;
+    let content = Arc::clone(content);
+    let on_commit = on_commit.cloned();
 
-    let mut container = div().flex().flex_col();
-    for (offset, text) in lines.iter().take(shown).enumerate() {
-        let number = offset as u32 + 1;
-        let change = changes.get(&number).copied();
-
-        let marker_bg = match change {
-            Some(LineChange::Added) => theme::added_color(),
-            Some(LineChange::Modified) => theme::modified_color(),
-            Some(LineChange::Deleted) => theme::deleted_color(),
-            None => theme::transparent(),
-        };
-        let row_bg = match change {
-            Some(LineChange::Added) => theme::added_line_bg(),
-            Some(LineChange::Modified) => theme::modified_line_bg(),
-            _ => theme::transparent(),
-        };
-
-        // 未提交的行由 git 标记为全 0 commit，没有可跳转的提交——直接显示「未提交」。
-        let group = index.get(&number).and_then(|slot| blame.get(*slot));
-        let uncommitted = group.is_some_and(|group| group.commit_id.chars().all(|c| c == '0'));
-        let (blame_bg, blame_fg, blame_text) = match (group, index.get(&number)) {
-            (Some(_), Some(slot)) if uncommitted => (
-                theme::badge_bg(lane_color(*slot)),
-                lane_color(*slot),
-                tr("Not committed", "未提交").to_string(),
-            ),
-            (Some(group), Some(slot)) => (
-                theme::badge_bg(lane_color(*slot)),
-                lane_color(*slot),
-                format!("{} {}", short_id(&group.commit_id), group.author),
-            ),
-            _ => (theme::transparent(), muted.opacity(0.5), String::new()),
-        };
-
-        let mut blame_cell: Stateful<Div> = div()
-            .id(format!("ed-blame-{number}"))
-            .w(px(theme::EDITOR_BLAME_WIDTH))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .pl(px(theme::SPACE_SM))
-            .pr(px(theme::SPACE_SM))
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .bg(blame_bg)
-            .text_size(px(theme::FONT_SIZE_MONO))
-            .text_color(blame_fg)
-            .font_family(mono.clone())
-            .child(blame_text);
-        if let (Some(group), Some(jump), false) = (group, on_commit, uncommitted) {
-            let id = group.commit_id.clone();
-            let jump = Arc::clone(jump);
-            blame_cell = blame_cell.cursor_pointer().on_click(move |_, _, app| {
-                jump(id.clone(), app);
-            });
-        }
-
-        container = container.child(
-            div()
-                .flex_none()
-                .h(px(theme::DIFF_LINE_HEIGHT))
-                .min_w(px(row_min_w))
-                .flex()
-                .flex_row()
-                .items_center()
-                .bg(row_bg)
-                .child(
-                    div()
-                        .w(px(theme::EDITOR_CHANGE_BAR_WIDTH))
-                        .h_full()
-                        .flex_none()
-                        .bg(marker_bg),
-                )
-                .child(blame_cell)
-                .child(
-                    div()
-                        .w(px(theme::DIFF_GUTTER_COLUMN_WIDTH))
-                        .h_full()
-                        .flex_none()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .justify_end()
-                        .pr(px(theme::SPACE_XS))
-                        .bg(theme::gutter_bg())
-                        .border_r_1()
-                        .border_color(theme::gutter_border())
-                        .text_size(px(theme::FONT_SIZE_MONO))
-                        .text_color(muted.opacity(0.7))
-                        .font_family(mono.clone())
-                        .child(number.to_string()),
-                )
-                .child(code_cell(text.to_string(), fg, &mono, code_width)),
-        );
-    }
-    if lines.len() > shown {
-        // 超大文件只画前 N 行：明确告知还有多少行未显示，避免误以为文件到此为止。
-        container = container.child(
-            div()
-                .flex_none()
-                .h(px(theme::DIFF_LINE_HEIGHT))
-                .min_w(px(row_min_w))
-                .flex()
-                .flex_row()
-                .items_center()
-                .pl(px(theme::SPACE_MD))
-                .text_size(px(theme::FONT_SIZE_META))
-                .text_color(muted)
-                .child(format!(
-                    "… {} {}",
-                    lines.len() - shown,
-                    tr("more lines not shown", "行未显示")
-                )),
-        );
-    }
-    container.min_w(px(row_min_w))
+    uniform_list(
+        "editor-lines",
+        content.lines.len(),
+        move |range: Range<usize>, _window, _cx| {
+            range
+                .map(|index| {
+                    render_line(
+                        &content.lines[index],
+                        &mono,
+                        fg,
+                        muted,
+                        row_min_w,
+                        on_commit.as_ref(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        },
+    )
+    .track_scroll(scroll)
+    // 长行超出视口时整表横向滚动（与 diff 视图同策略）。
+    .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
 }
 
-fn code_cell(content: String, color: Hsla, mono: &gpui::SharedString, min_w: f32) -> Div {
-    div()
+fn render_line(
+    line: &EditorLine,
+    mono: &SharedString,
+    fg: Hsla,
+    muted: Hsla,
+    row_min_w: f32,
+    on_commit: Option<&BlameJump>,
+) -> Div {
+    let marker_bg = match line.change {
+        Some(LineChange::Added) => theme::added_color(),
+        Some(LineChange::Modified) => theme::modified_color(),
+        Some(LineChange::Deleted) => theme::deleted_color(),
+        None => theme::transparent(),
+    };
+    let row_bg = match line.change {
+        Some(LineChange::Added) => theme::added_line_bg(),
+        Some(LineChange::Modified) => theme::modified_line_bg(),
+        _ => theme::transparent(),
+    };
+
+    let (blame_bg, author_fg, author, time, commit_id) = match &line.blame {
+        Some(blame) => (
+            theme::badge_bg(lane_color(blame.color_index)),
+            lane_color(blame.color_index),
+            blame.author.clone(),
+            blame.time.clone(),
+            blame.commit_id.clone(),
+        ),
+        None => (
+            theme::transparent(),
+            muted.opacity(0.5),
+            String::new(),
+            String::new(),
+            None,
+        ),
+    };
+
+    let mut blame_cell: Stateful<Div> = div()
+        .id(("ed-blame", line.number as usize))
+        .w(px(theme::EDITOR_BLAME_WIDTH))
         .h_full()
-        .min_w(px(min_w))
         .flex_none()
         .flex()
         .flex_row()
         .items_center()
-        .pl(px(theme::SPACE_SM))
+        .gap(px(theme::SPACE_SM))
+        .px(px(theme::SPACE_SM))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .bg(blame_bg)
         .text_size(px(theme::FONT_SIZE_MONO))
-        .text_color(color)
         .font_family(mono.clone())
-        .child(if content.is_empty() {
-            " ".to_string()
-        } else {
-            content
-        })
+        .child(div().flex_none().text_color(author_fg).child(author))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .text_color(muted.opacity(0.8))
+                .child(time),
+        );
+    if let (Some(id), Some(jump)) = (commit_id, on_commit) {
+        let jump = Arc::clone(jump);
+        blame_cell = blame_cell
+            .cursor_pointer()
+            .on_click(move |_, _, app| jump(id.clone(), app));
+    }
+
+    div()
+        .flex_none()
+        .h(px(theme::DIFF_LINE_HEIGHT))
+        .min_w(px(row_min_w))
+        .flex()
+        .flex_row()
+        .items_center()
+        .bg(row_bg)
+        .child(
+            div()
+                .w(px(theme::EDITOR_CHANGE_BAR_WIDTH))
+                .h_full()
+                .flex_none()
+                .bg(marker_bg),
+        )
+        .child(blame_cell)
+        .child(
+            div()
+                .w(px(theme::DIFF_GUTTER_COLUMN_WIDTH))
+                .h_full()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_end()
+                .pr(px(theme::SPACE_XS))
+                .bg(theme::gutter_bg())
+                .border_r_1()
+                .border_color(theme::gutter_border())
+                .text_size(px(theme::FONT_SIZE_MONO))
+                .text_color(muted.opacity(0.7))
+                .font_family(mono.clone())
+                .child(line.number.to_string()),
+        )
+        .child(
+            div()
+                .h_full()
+                .min_w(px(code_width_of(line)))
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .pl(px(theme::SPACE_SM))
+                .text_size(px(theme::FONT_SIZE_MONO))
+                .text_color(fg)
+                .font_family(mono.clone())
+                .child(if line.text.is_empty() {
+                    " ".to_string()
+                } else {
+                    line.text.clone()
+                }),
+        )
+}
+
+/// 单行正文的最小宽度（按字符数估算，空行也保留一格）。
+fn code_width_of(line: &EditorLine) -> f32 {
+    (line.text.chars().count().max(1) as f32) * theme::DIFF_CHAR_WIDTH + theme::SPACE_LG
 }
 
 #[cfg(test)]
@@ -385,5 +462,34 @@ mod tests {
         assert_eq!(index.get(&2), Some(&0));
         assert_eq!(index.get(&3), Some(&1));
         assert_eq!(index.get(&4), None);
+    }
+
+    #[test]
+    fn build_content_attaches_changes_and_blame_without_hash() {
+        let diff = vec![file(vec![Hunk {
+            header: "@@ -1,2 +1,2 @@".to_string(),
+            lines: vec![
+                line(DiffLineKind::Deleted, Some(1), None, "old"),
+                line(DiffLineKind::Added, None, Some(1), "new"),
+                line(DiffLineKind::Context, Some(2), Some(2), "tail"),
+            ],
+        }])];
+        let groups = vec![BlameGroup {
+            commit_id: "c".repeat(40),
+            author: "Alice".to_string(),
+            time: 1_700_000_000,
+            filename: "a.txt".to_string(),
+            lines: vec![rebased_rs::git::BlameLine {
+                number: 1,
+                content: "new".to_string(),
+            }],
+        }];
+        let content = build_content("new\ntail\n", &diff, &groups);
+        assert_eq!(content.lines.len(), 2);
+        assert_eq!(content.lines[0].change, Some(LineChange::Modified));
+        let blame = content.lines[0].blame.as_ref().expect("首行应有 blame");
+        assert_eq!(blame.author, "Alice");
+        assert!(!blame.time.is_empty());
+        assert!(!blame.author.contains(&"c".repeat(8)));
     }
 }
