@@ -454,11 +454,10 @@ impl AppView {
                 .absolute()
                 .inset_0()
                 .bg(theme::transparent())
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    let _ = weak.update(cx, |this, cx| {
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak.update(cx, |this, _| {
                         this.state.branch_popup = false;
                     });
-                    window.focus(&window.root_focus_handle(), cx);
                 })
                 .child(
                     div()

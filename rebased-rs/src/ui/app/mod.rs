@@ -77,8 +77,6 @@ pub struct AppView {
     branch_query: Entity<InputState>,
     /// 分支部件弹窗顶部的「搜索分支和操作」输入。
     branch_popup_query: Entity<InputState>,
-    /// 文件视图左栏（文件夹树）的滚动位置。
-    tree_scroll: UniformListScrollHandle,
     /// 文件视图右栏（代码区域）的滚动位置。
     editor_scroll: UniformListScrollHandle,
     message_input: Entity<TextareaState>,
@@ -165,7 +163,6 @@ impl AppView {
             commit_panel_width: theme::COMMIT_PANEL_WIDTH,
             right_panel_width: SidebarMode::Workspace.default_width(),
             last_sidebar_mode: SidebarMode::Workspace,
-            tree_scroll: UniformListScrollHandle::new(),
             editor_scroll: UniformListScrollHandle::new(),
             split_drag: None,
             _subscriptions: subscriptions,

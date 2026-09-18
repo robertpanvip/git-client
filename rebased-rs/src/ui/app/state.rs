@@ -7,7 +7,6 @@ use rebased_rs::git::{
 };
 
 use crate::ui::editor_view::EditorContent;
-use crate::ui::file_tree::TreeRow;
 use crate::ui::i18n::tr;
 
 /// 主区域视图：决定左栏内容与整体分栏方式。
@@ -302,8 +301,6 @@ pub(crate) struct AppState {
     pub(crate) files_loading: bool,
     /// 文件视图中已展开的目录路径。
     pub(crate) files_expanded: HashSet<String>,
-    /// 文件树当前可见行（`files` / `files_expanded` 变化时重算一次，渲染直接复用）。
-    pub(crate) files_rows: Arc<Vec<TreeRow>>,
     /// 文件视图当前选中的文件（仓库相对路径）。
     pub(crate) files_selected: Option<String>,
     /// 当前文件为二进制 / 非 UTF-8，代码区改为空态提示。
@@ -396,7 +393,6 @@ impl Default for AppState {
             files: Arc::new(Vec::new()),
             files_loading: false,
             files_expanded: HashSet::new(),
-            files_rows: Arc::new(Vec::new()),
             files_selected: None,
             files_binary: false,
             files_deleted: false,

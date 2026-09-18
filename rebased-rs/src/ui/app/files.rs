@@ -4,19 +4,23 @@
 //! 左栏按目录层级浏览工作区文件（`git ls-files` 的 tracked + untracked 清单），
 //! 右栏显示选中文件的代码，并逐行标出相对 HEAD 的变更与最近提交（行级 blame）。
 //!
-//! 两侧都是 `uniform_list`（只渲染可视行），逐行 / 逐树的派生数据在装载时算好
-//! 并缓存，避免每次重绘重建上万行元素。
+//! 左栏为文件树（渲染时实时摊平，与 v0.6.0 一致），右栏显示代码区域，
+//! 并逐行标出相对 HEAD 的变更与最近提交（行级 blame）。
 
 use std::sync::Arc;
 
-use gpui::{AnyElement, AppContext, Context, IntoElement, ParentElement, Styled, div, px};
+use gpui::{
+    AnyElement, AppContext, Context, InteractiveElement, IntoElement, ParentElement, Styled, div,
+    px,
+};
+use gpui::StatefulInteractiveElement;
 use gpui_kit::component::{ActiveTheme, button::Button};
 
 use crate::ui::blame_view::BlameJump;
 use crate::ui::components::empty_state;
 use crate::ui::components::panel_header;
 use crate::ui::editor_view::render_editor;
-use crate::ui::file_tree::{TreeClick, TreePick, flatten_tree, render_file_tree};
+use crate::ui::file_tree::{TreeClick, TreePick, render_file_tree};
 use crate::ui::i18n::tr;
 use crate::ui::theme;
 
@@ -73,7 +77,6 @@ impl AppView {
                             auto_expand_toplevel_dirs(&mut this.state.files_expanded, &files);
                         }
                         this.state.files = Arc::new(files);
-                        this.rebuild_rows();
                     }
                     Err(e) => this.state.error = Some(e.to_string()),
                 }
@@ -85,18 +88,10 @@ impl AppView {
 
     /// 展开 / 折叠文件夹树中的一个目录。
     pub(crate) fn toggle_dir(&mut self, path: String, cx: &mut Context<Self>) {
-        eprintln!("[diag] toggle_dir {path}");
         if !self.state.files_expanded.remove(&path) {
             self.state.files_expanded.insert(path);
         }
-        self.rebuild_rows();
         cx.notify();
-    }
-
-    /// 重算文件树可见行（文件清单或展开集合变化后调用一次）。
-    fn rebuild_rows(&mut self) {
-        self.state.files_rows =
-            Arc::new(flatten_tree(&self.state.files, &self.state.files_expanded));
     }
 
     /// 打开（选中）一个文件：后台装载内容、行级 blame 与相对 HEAD 的 diff。
@@ -104,7 +99,6 @@ impl AppView {
     /// 自动刷新会对当前文件重复调用本函数；只有切换文件时才清空右栏，
     /// 否则每次刷新都会闪一下空白。
     pub(crate) fn open_file(&mut self, path: String, cx: &mut Context<Self>) {
-        eprintln!("[diag] open_file {path}");
         let Some(repo) = self.repo.clone() else {
             return;
         };
@@ -168,7 +162,6 @@ impl AppView {
                     let _ = weak.update(app, |this, cx| {
                         this.state.error = None;
                         this.state.files = Arc::new(Vec::new());
-                        this.state.files_rows = Arc::new(Vec::new());
                         this.open_files_view(cx);
                     });
                 });
@@ -216,19 +209,21 @@ impl AppView {
                 tr("No files to show", "没有可显示的文件"),
                 muted,
             ));
-        } else if self.state.files_rows.is_empty() {
-            column = column.child(empty_state(
-                tr("File tree is empty (all files filtered)", "文件树为空（所有文件被过滤）"),
-                muted,
-            ));
         } else {
-            column = column.child(div().flex_1().min_h_0().child(render_file_tree(
-                &self.state.files_rows,
-                self.state.files_selected.as_deref(),
-                &self.tree_scroll,
-                &on_pick,
-                cx,
-            )));
+            column = column.child(
+                div()
+                    .id("file-tree")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(render_file_tree(
+                        &self.state.files,
+                        &self.state.files_expanded,
+                        self.state.files_selected.as_deref(),
+                        &on_pick,
+                        cx,
+                    )),
+            );
         }
         column.into_any_element()
     }

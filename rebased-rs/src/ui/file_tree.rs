@@ -5,17 +5,17 @@
 //! - 文件行 = IDEA 文本文件图标，点击在右栏打开；
 //! - 缩进按层级递增，选中文件用统一的列表选中底色高亮。
 //!
-//! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平），渲染走
-//! `uniform_list` 只画可视区——大仓库的深层目录不会拖慢界面。
+//! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平）。
+//! 摊平在渲染时现算（纯内存遍历，微秒级），不引入缓存——
+//! 缓存方案曾因与渲染脱节导致整棵树显示为空。
 
 use std::collections::HashSet;
-use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, Div, Hsla, InteractiveElement, ParentElement, Stateful, StatefulInteractiveElement,
-    Styled, UniformList, UniformListScrollHandle, div, px, uniform_list,
+    Styled, div, px,
 };
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::{Icon, Sizable, Size};
@@ -100,37 +100,23 @@ pub(crate) fn flatten_tree(files: &[String], expanded: &HashSet<String>) -> Vec<
     rows
 }
 
-/// 渲染文件夹树（`uniform_list` 只构建可视区的行）。
+/// 渲染文件夹树（渲染时实时摊平，与 v0.6.0 一致）。
 pub(crate) fn render_file_tree(
-    rows: &Arc<Vec<TreeRow>>,
+    files: &[String],
+    expanded: &HashSet<String>,
     selected: Option<&str>,
-    scroll: &UniformListScrollHandle,
     on_pick: &TreePick,
     cx: &App,
-) -> UniformList {
+) -> Div {
     let fg = cx.theme().foreground;
-    let rows = Arc::clone(rows);
-    let selected = selected.map(str::to_string);
-    let on_pick = Arc::clone(on_pick);
-
-    uniform_list(
-        "file-tree",
-        rows.len(),
-        move |range: Range<usize>, _window, _cx| {
-            range
-                .map(|index| render_row(&rows[index], selected.as_deref(), &on_pick, fg))
-                .collect::<Vec<_>>()
-        },
-    )
-    .track_scroll(scroll)
+    let mut tree = div().flex().flex_col().w_full().py(px(theme::SPACE_XS));
+    for row in flatten_tree(files, expanded) {
+        tree = tree.child(render_row(row, selected, on_pick, fg));
+    }
+    tree
 }
 
-fn render_row(
-    row: &TreeRow,
-    selected: Option<&str>,
-    on_pick: &TreePick,
-    fg: Hsla,
-) -> Stateful<Div> {
+fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla) -> Stateful<Div> {
     let indent = theme::SPACE_SM + theme::TREE_INDENT * row.depth as f32;
     let is_selected = !row.is_dir && selected == Some(row.path.as_str());
     let text_color = if is_selected {
