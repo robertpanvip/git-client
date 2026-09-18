@@ -7,6 +7,15 @@ use rebased_rs::git::{
 
 use crate::ui::i18n::tr;
 
+/// 主区域视图：决定左栏内容与整体分栏方式。
+/// - `Workspace`：图1 主窗口（左 = 工作区变更 + 提交信息，右 = 单栏只读预览）。
+/// - `Log`：图2 Git 日志（左 = 分支树，中 = 提交列表，右 = 改动文件）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MainView {
+    Workspace,
+    Log,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SidebarMode {
     Workspace,
@@ -280,6 +289,8 @@ pub(crate) struct AppState {
     pub(crate) detail_files: Vec<Change>,
     pub(crate) detail_branches: Vec<String>,
     pub(crate) sidebar: SidebarMode,
+    /// 主区域视图：工作区（图1 两栏）或 Git 日志（图2 三栏，左栏为分支树）。
+    pub(crate) main_view: MainView,
     pub(crate) diff_files: Vec<FileDiff>,
     pub(crate) diff_title: String,
     pub(crate) diff_path: Option<String>,
@@ -329,6 +340,8 @@ pub(crate) struct AppState {
     pub(crate) cancel_token: Option<CancelToken>,
     /// Alt+` 唤起的 VCS 操作快切弹层是否可见（与 prompt 互斥）。
     pub(crate) vcs_palette: bool,
+    /// 工具栏分支部件主按钮唤起的「搜索分支和操作」弹层是否可见。
+    pub(crate) branch_popup: bool,
     /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
     pub(crate) compare_mine: String,
     pub(crate) compare_theirs: String,
@@ -357,7 +370,8 @@ impl Default for AppState {
             selected: None,
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
-            sidebar: SidebarMode::Detail,
+            sidebar: SidebarMode::Workspace,
+            main_view: MainView::Workspace,
             diff_files: Vec::new(),
             diff_title: String::new(),
             diff_path: None,
@@ -393,6 +407,7 @@ impl Default for AppState {
             progress_text: None,
             cancel_token: None,
             vcs_palette: false,
+            branch_popup: false,
             compare_mine: String::new(),
             compare_theirs: String::new(),
             compare_ahead: Vec::new(),

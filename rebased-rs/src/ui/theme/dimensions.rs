@@ -31,6 +31,8 @@ pub const SEGMENT_HEIGHT: f32 = 20.0;
 // ---------- 三栏布局 ----------
 /// 左侧 Commit 面板宽度：变更列表 + 提交输入区。
 pub const COMMIT_PANEL_WIDTH: f32 = 344.0;
+/// Git 日志视图（图2）左栏分支树宽度（原版实测 196）。
+pub const LOG_BRANCH_PANEL_WIDTH: f32 = 196.0;
 /// 左侧最左图标条宽度。
 pub const ICON_STRIP_WIDTH: f32 = 40.0;
 /// Log 主区标题行高度（“Log: <分支>” 蓝色标签行，实测 41px）。
@@ -66,10 +68,12 @@ pub const LINE_WIDTH: f32 = 1.5;
 // ---------- 列表列宽 ----------
 /// 状态列（A/M/D/R…）宽度。
 pub const COL_STATUS_WIDTH: f32 = 16.0;
-/// Log 作者列宽度。
-pub const COL_AUTHOR_WIDTH: f32 = 120.0;
-/// Log 日期列宽度（右对齐，容纳 `yyyy-MM-dd HH:mm`）。
+/// Log 作者列宽度（图2 实测 88）。
+pub const COL_AUTHOR_WIDTH: f32 = 88.0;
+/// Log 日期列宽度（右对齐，容纳 `yyyy/M/d HH:mm` 与「昨天 HH:mm」）。
 pub const COL_DATE_WIDTH: f32 = 104.0;
+/// Log 短哈希列宽度（图2 实测 56）。
+pub const COL_HASH_WIDTH: f32 = 56.0;
 /// Reflog selector 列宽度（容纳 `HEAD@{1234}`）。
 pub const COL_SELECTOR_WIDTH: f32 = 92.0;
 /// 树形缩进步长。
@@ -108,6 +112,8 @@ pub const PALETTE_WIDTH: f32 = 480.0;
 pub const PALETTE_TOP: f32 = 96.0;
 /// 命令面板最大高度。
 pub const PALETTE_MAX_HEIGHT: f32 = 460.0;
+/// 分支部件弹窗（“搜索分支和操作”）宽度。
+pub const BRANCH_POPUP_WIDTH: f32 = 360.0;
 
 // ---------- Diff ----------
 /// 行号 gutter 单列宽度（容纳 4 位行号）。

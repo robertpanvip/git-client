@@ -72,6 +72,22 @@ pub fn hover_solid() -> Hsla {
     rgb(0x2E3033)
 }
 
+/// 列表选中行底色（图1 变更列表 / 图2 提交列表 / 分支树 实测 #33353B）。
+pub fn list_row_selected() -> Hsla {
+    rgb(0x33353B)
+}
+
+/// 分支树悬停行底色（参考截图实测 #27282A）。
+pub fn tree_row_hover() -> Hsla {
+    rgb(0x27282A)
+}
+
+/// Log 提交列表底色（图2 实测 #1D2336）。
+/// 比面板底色 `bg_main` 略亮，把"表格区"与两侧面板区分开。
+pub fn log_list_bg() -> Hsla {
+    rgb(0x1D2336)
+}
+
 /// 列表选中底色（实测 #2A4371）。
 pub fn selection_bg() -> Hsla {
     rgb(0x2A4371)
@@ -150,7 +166,7 @@ pub fn apply_jetbrains_palette(cx: &mut App) {
         t.list_even = transparent();
         t.list_head = bg_main();
         t.list_hover = hover_solid();
-        t.list_active = selection_bg();
+        t.list_active = list_row_selected();
         // 选中行不使用额外描边：焦点态改由 focus ring / 行首指示条表达，
         // 避免键盘焦点与"选中"在视觉上不可区分（原实现设为 transparent 会
         // 让两者完全同形）。

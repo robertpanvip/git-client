@@ -1,8 +1,8 @@
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::{ActiveTheme, Icon, Sizable, Size, input::Input};
 
 use crate::ui::app::actions::FocusComposer;
 use crate::ui::app::{AppView, PromptKind};
@@ -287,5 +287,217 @@ impl AppView {
                 run(this, window, cx);
             },
         ))
+    }
+
+    /// 工具栏分支部件弹窗（对标图1）：搜索框「搜索分支和操作」+
+    /// 常用操作 + 本地/远程分支 + 标签，输入即时过滤。
+    /// 右侧 ▾ 仍打开完整的分支管理菜单。
+    pub(crate) fn render_branch_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.state.branch_popup {
+            return None;
+        }
+        let fg = cx.theme().foreground;
+        let muted = cx.theme().muted_foreground;
+        let query = self
+            .branch_popup_query
+            .read(cx)
+            .value()
+            .trim()
+            .to_lowercase();
+        let hit = |label: &str| query.is_empty() || label.to_lowercase().contains(&query);
+
+        type PopupAction = (
+            &'static str,
+            Ic,
+            &'static str,
+            &'static str,
+            Box<dyn Fn(&mut AppView, &mut Window, &mut Context<AppView>)>,
+        );
+        let actions: Vec<PopupAction> = vec![
+            (
+                "branch-pop-pull",
+                Ic::Pull,
+                tr("Update Project", "更新项目"),
+                "Ctrl+T",
+                Box::new(|this, _, cx| this.do_pull(cx)),
+            ),
+            (
+                "branch-pop-commit",
+                Ic::Commit,
+                tr("Commit…", "提交…"),
+                "Ctrl+K",
+                Box::new(|this, window, cx| {
+                    this.on_focus_composer(&FocusComposer, window, cx);
+                }),
+            ),
+            (
+                "branch-pop-push",
+                Ic::Push,
+                tr("Push…", "推送…"),
+                "Ctrl+Shift+K",
+                Box::new(|this, _, cx| this.do_push(cx)),
+            ),
+            (
+                "branch-pop-new",
+                Ic::Add,
+                tr("New Branch…", "新建分支…"),
+                "Ctrl+Alt+N",
+                Box::new(|this, _, cx| {
+                    this.open_prompt(PromptKind::NewBranch { start_point: None }, cx);
+                }),
+            ),
+        ];
+
+        let mut items: Vec<AnyElement> = Vec::new();
+        for (id, icon, label, keys, run) in actions {
+            if !hit(label) {
+                continue;
+            }
+            items.push(
+                menu_row(id, fg, icon, label, (!keys.is_empty()).then_some(keys))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.state.branch_popup = false;
+                        run(this, window, cx);
+                    }))
+                    .into_any_element(),
+            );
+        }
+
+        // 本地分支：点击检出；右侧提示上游分支。
+        let locals: Vec<&rebased_rs::git::Branch> = self
+            .state
+            .branch_entries
+            .iter()
+            .filter(|b| !b.is_remote && hit(&b.name))
+            .collect();
+        if !locals.is_empty() {
+            items.push(group_header(tr("Local", "本地"), muted).into_any_element());
+            for branch in locals {
+                let name = branch.name.clone();
+                let upstream = branch.upstream.clone();
+                items.push(
+                    menu_row(
+                        SharedString::from(format!("branch-pop-local-{name}")),
+                        fg,
+                        Ic::Branch,
+                        name.clone(),
+                        upstream.as_deref(),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.state.branch_popup = false;
+                        this.checkout_branch(&name, cx);
+                    }))
+                    .into_any_element(),
+                );
+            }
+        }
+
+        // 远程分支：点击检出（自动建立 tracking）。
+        let remotes: Vec<&rebased_rs::git::Branch> = self
+            .state
+            .branch_entries
+            .iter()
+            .filter(|b| b.is_remote && hit(&b.name))
+            .collect();
+        if !remotes.is_empty() {
+            items.push(group_header(tr("Remote", "远程"), muted).into_any_element());
+            for branch in remotes {
+                let name = branch.name.clone();
+                items.push(
+                    menu_row(
+                        SharedString::from(format!("branch-pop-remote-{name}")),
+                        fg,
+                        Ic::Branch,
+                        name.clone(),
+                        None,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.state.branch_popup = false;
+                        this.checkout_branch(&name, cx);
+                    }))
+                    .into_any_element(),
+                );
+            }
+        }
+
+        // 标签：点击检出对应修订。
+        let tags: Vec<String> = self
+            .state
+            .tags
+            .iter()
+            .map(|tag| tag.name.clone())
+            .filter(|name| hit(name))
+            .collect();
+        if !tags.is_empty() {
+            items.push(group_header(tr("Tags", "标签"), muted).into_any_element());
+            for name in tags {
+                items.push(
+                    menu_row(
+                        SharedString::from(format!("branch-pop-tag-{name}")),
+                        fg,
+                        Ic::Tag,
+                        name.clone(),
+                        None,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.state.branch_popup = false;
+                        this.checkout_branch(&name, cx);
+                    }))
+                    .into_any_element(),
+                );
+            }
+        }
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(theme::transparent())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(theme::TOOLBAR_HEIGHT + theme::SPACE_XS))
+                        .left(px(theme::SPACE_SM))
+                        .w(px(theme::BRANCH_POPUP_WIDTH))
+                        .max_h(px(theme::PALETTE_MAX_HEIGHT))
+                        .rounded(px(theme::RADIUS_LG))
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(theme::popover_bg())
+                        .p(px(theme::SPACE_XS))
+                        .flex()
+                        .flex_col()
+                        .gap(px(theme::SPACE_XS))
+                        .shadow_lg()
+                        .child(
+                            div()
+                                .flex_none()
+                                .px(px(theme::SPACE_XS))
+                                .pb(px(theme::SPACE_XS))
+                                .child(
+                                    Input::new(&self.branch_popup_query)
+                                        .with_size(Size::Small)
+                                        .prefix(
+                                            Icon::new(Ic::Search)
+                                                .text_color(cx.theme().muted_foreground),
+                                        )
+                                        .cleanable(true),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("branch-popup-list")
+                                .flex_1()
+                                .min_h_0()
+                                .overflow_y_scroll()
+                                .flex()
+                                .flex_col()
+                                .gap(px(theme::SPACE_XS))
+                                .children(items),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 }

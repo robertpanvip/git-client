@@ -40,7 +40,9 @@ mod state;
 mod toolbar;
 mod use_cases;
 
-pub(crate) use state::{AppState, ConfirmAction, DiffSource, PromptKind, RebaseFlow, SidebarMode};
+pub(crate) use state::{
+    AppState, ConfirmAction, DiffSource, MainView, PromptKind, RebaseFlow, SidebarMode,
+};
 use use_cases::{reload_conflict_state, sync_repo_state};
 
 struct Loaded {
@@ -70,6 +72,10 @@ pub struct AppView {
     list: Entity<ListState<LogDelegate>>,
     /// Log 过滤行搜索输入（“Text or hash”），变化时转发 ListState::set_query。
     log_query: Entity<InputState>,
+    /// Git 日志视图左栏分支树顶部的“分支或标签”搜索输入。
+    branch_query: Entity<InputState>,
+    /// 分支部件弹窗顶部的「搜索分支和操作」输入。
+    branch_popup_query: Entity<InputState>,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
     /// AddRemote 对话框的第二个输入框（remote URL）。
@@ -94,6 +100,12 @@ impl AppView {
         let list = cx.new(|cx| ListState::new(LogDelegate::new(), window, cx).searchable(false));
         let log_query =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr("Text or hash", "文本或哈希")));
+        let branch_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("Branch or tag", "分支或标签")));
+        let branch_popup_query = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(tr("Search branches and actions", "搜索分支和操作"))
+        });
         let message_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .placeholder(tr("Commit message", "提交信息"))
@@ -117,6 +129,18 @@ impl AppView {
         let subscriptions = vec![
             cx.subscribe_in(&list, window, Self::on_list_event),
             cx.subscribe_in(&log_query, window, Self::on_log_query_changed),
+            // 分支树搜索只影响该栏的渲染，输入变化重绘即可。
+            cx.subscribe_in(&branch_query, window, |_, _, event, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+            // 分支弹窗内的搜索同理：仅驱动弹窗内容过滤。
+            cx.subscribe_in(&branch_popup_query, window, |_, _, event, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
         ];
         list.update(cx, |list, cx| list.focus(window, cx));
 
@@ -127,13 +151,15 @@ impl AppView {
             state: AppState::default(),
             list,
             log_query,
+            branch_query,
+            branch_popup_query,
             message_input,
             prompt_input,
             prompt_input2,
             diff_edit_input,
             commit_panel_width: theme::COMMIT_PANEL_WIDTH,
-            right_panel_width: SidebarMode::Detail.default_width(),
-            last_sidebar_mode: SidebarMode::Detail,
+            right_panel_width: SidebarMode::Workspace.default_width(),
+            last_sidebar_mode: SidebarMode::Workspace,
             split_drag: None,
             _subscriptions: subscriptions,
         };
@@ -496,12 +522,13 @@ impl AppView {
             .child(self.render_strip_button(
                 "strip-git",
                 icons::Ic::Changes,
-                matches!(
-                    self.state.sidebar,
-                    SidebarMode::Workspace | SidebarMode::Detail
-                ),
+                self.state.main_view == MainView::Log,
                 |this, cx| {
-                    this.state.sidebar = SidebarMode::Detail;
+                    // 主窗口左下角的 Git 图标：在「工作区（图1）」与「Git 日志（图2）」间切换。
+                    this.state.main_view = match this.state.main_view {
+                        MainView::Workspace => MainView::Log,
+                        MainView::Log => MainView::Workspace,
+                    };
                     cx.notify();
                 },
                 cx,
@@ -660,20 +687,40 @@ impl Render for AppView {
             .on_action(cx.listener(Self::on_blame_current_file))
             .on_action(cx.listener(Self::on_select_sidebar_panel))
             .child(self.render_toolbar(cx))
-            .child(
-                div()
+            .child({
+                let mut row = div()
                     .flex_1()
                     .min_h_0()
                     .flex()
                     .flex_row()
                     .overflow_hidden()
-                    .child(self.render_icon_strip(cx))
-                    .child(self.render_commit_sidebar(cx))
-                    .child(self.render_left_splitter(cx))
-                    .child(self.render_commit_panel(cx))
-                    .child(self.render_right_splitter(cx))
-                    .child(self.render_sidebar(cx)),
-            )
+                    .child(self.render_icon_strip(cx));
+                if self.state.main_view == MainView::Log {
+                    // 图2 Git 日志视图：分支树 | 提交列表 | 提交详情。
+                    // 分支树为固定窄栏（原版 196），故不挂左分隔条。
+                    row = row
+                        .child(self.render_branch_column(cx))
+                        .child(self.render_commit_panel(cx))
+                        .child(self.render_right_splitter(cx))
+                        .child(self.render_sidebar(cx));
+                } else {
+                    // 图1 工作区视图：左 = 变更 + 提交信息，右 = 单栏只读预览。
+                    // Blame / Compare / Rebase 等宽面板仍以右栏形式出现。
+                    row = row
+                        .child(self.render_commit_sidebar(cx))
+                        .child(self.render_left_splitter(cx))
+                        .child(self.render_preview_panel(cx));
+                    if !matches!(
+                        self.state.sidebar,
+                        SidebarMode::Workspace | SidebarMode::Diff
+                    ) {
+                        row = row
+                            .child(self.render_right_splitter(cx))
+                            .child(self.render_sidebar(cx));
+                    }
+                }
+                row
+            })
             .child(self.render_statusbar(cx))
             .children(if dragging {
                 self.render_split_overlay(cx)
@@ -681,6 +728,7 @@ impl Render for AppView {
                 None
             })
             .children(self.render_vcs_palette(cx))
+            .children(self.render_branch_popup(cx))
             .children(self.render_prompt_overlay(window, cx))
     }
 }

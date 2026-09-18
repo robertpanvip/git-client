@@ -4,7 +4,10 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, div, px,
 };
 use gpui_kit::component::{
-    ActiveTheme, Icon, Sizable, Size, button::Button, input::Input, list::List,
+    ActiveTheme, Icon, Sizable, Size,
+    button::{Button, ButtonVariants, DropdownButton},
+    input::Input,
+    list::List,
     menu::ContextMenuExt,
 };
 
@@ -44,8 +47,9 @@ impl AppView {
             .items_center()
             .gap(px(theme::SPACE_MD))
             .px(px(theme::SPACE_MD))
+            .bg(theme::log_list_bg())
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(theme::separator())
             .text_size(px(theme::FONT_SIZE_META))
             .font_weight(theme::WEIGHT_MEDIUM)
             .text_color(muted)
@@ -77,6 +81,13 @@ impl AppView {
                     .flex_none()
                     .whitespace_nowrap()
                     .child(tr("Date", "日期")),
+            )
+            .child(
+                div()
+                    .w(px(theme::COL_HASH_WIDTH))
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .child(tr("Hash", "哈希")),
             )
     }
 
@@ -145,26 +156,166 @@ impl AppView {
             .child(Icon::new(Ic::Close).with_size(Size::Small))
     }
 
-    /// Log 过滤行（对齐原版 37px）：“Text or hash” 搜索框 + 激活的过滤 chips。
+    /// Log 过滤行（对齐图2）：搜索框「文本或哈希」+
+    /// 分支 / 用户 / 日期 三个文本过滤下拉 + 已激活过滤 chip（点击清除）。
     fn render_log_filter_row(&self, cx: &mut Context<Self>) -> Div {
+        let muted = cx.theme().muted_foreground;
+        let weak: WeakEntity<Self> = cx.entity().downgrade();
+        let branch_names: Vec<String> = self
+            .state
+            .branch_entries
+            .iter()
+            .map(|b| b.name.clone())
+            .collect();
+        let filter_branch = self.state.filter_branch.clone();
+        let filter_since = self.state.filter_since.clone();
+
+        let branch_label = filter_branch
+            .clone()
+            .unwrap_or_else(|| tr("Branch", "分支").to_string());
+        let author_label = if self.state.filter_author.is_empty() {
+            tr("User", "用户").to_string()
+        } else {
+            self.state.filter_author.clone()
+        };
+        let date_label = filter_since
+            .as_ref()
+            .map(|(label, _)| label.clone())
+            .unwrap_or_else(|| tr("Date", "日期").to_string());
+
+        let branch_weak = weak.clone();
+        let branch_filter = filter_branch.clone();
+        let date_weak = weak.clone();
+        let date_filter = filter_since.clone();
+
         div()
             .h(px(theme::LOG_FILTER_HEIGHT))
             .flex_none()
+            .bg(theme::log_list_bg())
             .border_b_1()
-            .border_color(cx.theme().border)
+            .border_color(theme::separator())
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(theme::SPACE_MD))
-            .px(px(theme::SPACE_MD))
+            .gap(px(theme::SPACE_SM))
+            .px(px(theme::SPACE_SM))
             .child(
                 div().w(px(theme::SEARCH_WIDTH)).flex_none().child(
                     Input::new(&self.log_query)
                         .with_size(Size::Small)
-                        .prefix(Icon::new(Ic::Search).text_color(cx.theme().muted_foreground))
+                        .prefix(Icon::new(Ic::Search).text_color(muted))
                         .cleanable(true)
                         .appearance(false),
                 ),
+            )
+            .child(
+                DropdownButton::new("log-branch-filter")
+                    .button(
+                        Button::new("log-branch-filter-button")
+                            .ghost()
+                            .compact()
+                            .label(branch_label)
+                            .dropdown_caret(true),
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(menu_item(
+                            Ic::Filter,
+                            tr("All Branches", "所有分支"),
+                            None,
+                            false,
+                            branch_filter.is_none(),
+                            {
+                                let weak = branch_weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak
+                                        .update(cx, |this, cx| this.set_branch_filter(None, cx));
+                                }
+                            },
+                        ));
+                        for name in branch_names.iter() {
+                            let checked = branch_filter.as_deref() == Some(name.as_str());
+                            let weak = branch_weak.clone();
+                            let name = name.clone();
+                            result = result.item(menu_item(
+                                Ic::Filter,
+                                name.clone(),
+                                None,
+                                false,
+                                checked,
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.set_branch_filter(Some(name.clone()), cx)
+                                    });
+                                },
+                            ));
+                        }
+                        menu_width(result)
+                    }),
+            )
+            .child(
+                Button::new("log-author-filter")
+                    .ghost()
+                    .compact()
+                    .label(author_label)
+                    .dropdown_caret(true)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| {
+                            this.open_prompt(PromptKind::FilterAuthor, cx)
+                        }),
+                    ),
+            )
+            .child(
+                DropdownButton::new("log-date-filter")
+                    .button(
+                        Button::new("log-date-filter-button")
+                            .ghost()
+                            .compact()
+                            .label(date_label)
+                            .dropdown_caret(true),
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(menu_item(
+                            Ic::Filter,
+                            tr("All Time", "全部时间"),
+                            None,
+                            false,
+                            date_filter.is_none(),
+                            {
+                                let weak = date_weak.clone();
+                                move |_, _, cx| {
+                                    let _ =
+                                        weak.update(cx, |this, cx| this.set_date_filter(None, cx));
+                                }
+                            },
+                        ));
+                        let date_specs = [
+                            (tr("Today", "今天"), "midnight"),
+                            (tr("This week", "本周"), "1 week ago"),
+                            (tr("This month", "本月"), "1 month ago"),
+                            (tr("This year", "今年"), "1 year ago"),
+                        ];
+                        for (label, expr) in date_specs {
+                            let checked =
+                                date_filter.as_ref().map(|(_, e)| e.as_str()) == Some(expr);
+                            let weak = date_weak.clone();
+                            result = result.item(menu_item(
+                                Ic::Filter,
+                                label,
+                                None,
+                                false,
+                                checked,
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.set_date_filter(
+                                            Some((label.to_string(), expr.to_string())),
+                                            cx,
+                                        )
+                                    });
+                                },
+                            ));
+                        }
+                        menu_width(result)
+                    }),
             )
             .when(self.state.filter_branch.is_some(), |row| {
                 let branch = self.state.filter_branch.clone().unwrap_or_default();
@@ -258,6 +409,7 @@ impl AppView {
                 div()
                     .flex_1()
                     .min_h_0()
+                    .bg(theme::log_list_bg())
                     .child(List::new(&self.list))
                     .context_menu(move |menu, _window, cx| {
                         let row = list.read(cx).right_clicked_index().map(|ix| ix.row);

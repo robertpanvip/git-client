@@ -48,11 +48,6 @@ impl AppView {
         let remote_list = self.state.remotes.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();
         let tag_weak = weak.clone();
-        let filter_weak = weak.clone();
-        let branch_names: Vec<String> = branch_entries.iter().map(|b| b.name.clone()).collect();
-        let filter_branch = self.state.filter_branch.clone();
-        let date_weak = weak.clone();
-        let filter_since = self.state.filter_since.clone();
         let mut branch_label = current.clone().unwrap_or_else(|| "main".to_string());
         if self.state.ahead > 0 {
             branch_label.push_str(&format!(" ↑{}", self.state.ahead));
@@ -79,7 +74,14 @@ impl AppView {
                             .compact()
                             .icon(Ic::Branch)
                             .label(branch_label.clone())
-                            .tooltip(format!("{}: {}", tr("Branches", "分支"), branch_label)),
+                            .tooltip(format!(
+                                "{}: {branch_label}",
+                                tr("Search branches and actions", "搜索分支和操作")
+                            ))
+                            // 主按钮 = 可搜索分支弹窗；右侧 ▾ 仍打开完整分支管理菜单。
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_branch_popup(window, cx)
+                            })),
                     )
                     .dropdown_menu(move |menu, window, cx| {
                         let mut result = menu;
@@ -659,128 +661,6 @@ impl AppView {
                     }),
             )
             .child(v_separator(fg))
-            .child(
-                DropdownButton::new("branch-filter-menu")
-                    .button(
-                        Button::new("branch-filter-button")
-                            .ghost()
-                            .compact()
-                            .icon(Ic::Filter)
-                            .tooltip(
-                                filter_branch
-                                    .clone()
-                                    .unwrap_or_else(|| tr("All Branches", "所有分支").to_string()),
-                            ),
-                    )
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let mut result = menu.item(menu_item(
-                            Ic::Filter,
-                            tr("All Branches", "所有分支"),
-                            None,
-                            false,
-                            filter_branch.is_none(),
-                            {
-                                let weak = filter_weak.clone();
-                                move |_, _, cx| {
-                                    let _ = weak
-                                        .update(cx, |this, cx| this.set_branch_filter(None, cx));
-                                }
-                            },
-                        ));
-                        for name in branch_names.iter() {
-                            let checked = filter_branch.as_deref() == Some(name.as_str());
-                            let weak = filter_weak.clone();
-                            let name = name.clone();
-                            result = result.item(menu_item(
-                                Ic::Filter,
-                                name.clone(),
-                                None,
-                                false,
-                                checked,
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.set_branch_filter(Some(name.clone()), cx)
-                                    });
-                                },
-                            ));
-                        }
-                        menu_width(result)
-                    }),
-            )
-            .child(
-                Button::new("author-filter")
-                    .ghost()
-                    .compact()
-                    .icon(Ic::User)
-                    .tooltip(if self.state.filter_author.is_empty() {
-                        tr("All Authors", "所有作者").to_string()
-                    } else {
-                        self.state.filter_author.clone()
-                    })
-                    .on_click(
-                        cx.listener(|this, _, _, cx| {
-                            this.open_prompt(PromptKind::FilterAuthor, cx)
-                        }),
-                    ),
-            )
-            .child(
-                DropdownButton::new("date-filter-menu")
-                    .button(
-                        Button::new("date-filter-button")
-                            .ghost()
-                            .compact()
-                            .icon(Ic::History)
-                            .tooltip(
-                                filter_since
-                                    .as_ref()
-                                    .map(|(label, _)| label.clone())
-                                    .unwrap_or_else(|| tr("All Time", "全部时间").to_string()),
-                            ),
-                    )
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let mut result = menu.item(menu_item(
-                            Ic::Filter,
-                            tr("All Time", "全部时间"),
-                            None,
-                            false,
-                            filter_since.is_none(),
-                            {
-                                let weak = date_weak.clone();
-                                move |_, _, cx| {
-                                    let _ =
-                                        weak.update(cx, |this, cx| this.set_date_filter(None, cx));
-                                }
-                            },
-                        ));
-                        let date_specs = [
-                            (tr("Today", "今天"), "midnight"),
-                            (tr("This week", "本周"), "1 week ago"),
-                            (tr("This month", "本月"), "1 month ago"),
-                            (tr("This year", "今年"), "1 year ago"),
-                        ];
-                        for (label, expr) in date_specs {
-                            let checked =
-                                filter_since.as_ref().map(|(_, e)| e.as_str()) == Some(expr);
-                            let weak = date_weak.clone();
-                            result = result.item(menu_item(
-                                Ic::Filter,
-                                label,
-                                None,
-                                false,
-                                checked,
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.set_date_filter(
-                                            Some((label.to_string(), expr.to_string())),
-                                            cx,
-                                        )
-                                    });
-                                },
-                            ));
-                        }
-                        menu_width(result)
-                    }),
-            )
             .child(
                 Button::new("goto")
                     .ghost()

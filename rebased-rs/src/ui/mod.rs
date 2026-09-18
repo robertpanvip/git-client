@@ -1,5 +1,6 @@
 mod app;
 mod blame_view;
+mod branch_tree;
 mod commit_list;
 mod components;
 mod diff_view;

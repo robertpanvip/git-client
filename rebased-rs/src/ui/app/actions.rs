@@ -590,6 +590,11 @@ impl AppView {
             cx.notify();
             return;
         }
+        if self.state.branch_popup {
+            self.state.branch_popup = false;
+            cx.notify();
+            return;
+        }
         if matches!(
             self.state.sidebar,
             SidebarMode::Diff | SidebarMode::Blame | SidebarMode::History
@@ -609,6 +614,22 @@ impl AppView {
         self.state.vcs_palette = !self.state.vcs_palette;
         if self.state.vcs_palette && self.state.prompt.is_some() {
             self.cancel_prompt(cx);
+        }
+        cx.notify();
+    }
+
+    /// 工具栏分支部件主按钮：开关「搜索分支和操作」弹层。
+    /// 打开时清空搜索并关掉互斥的 VCS 快切 / 对话框。
+    pub(crate) fn toggle_branch_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let open = !self.state.branch_popup;
+        self.state.branch_popup = open;
+        if open {
+            self.state.vcs_palette = false;
+            if self.state.prompt.is_some() {
+                self.cancel_prompt(cx);
+            }
+            self.branch_popup_query
+                .update(cx, |state, cx| state.set_value("", window, cx));
         }
         cx.notify();
     }

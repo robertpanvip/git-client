@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Datelike, Local};
 use gpui::{
     App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Task, WeakEntity, Window, div, px,
@@ -216,8 +216,8 @@ impl ListDelegate for LogDelegate {
                 ),
         );
 
-        // 列式布局：graph | subject(refs + 标题, flex) | author | date，
-        // 与原版一致——author/date 始终纵向对齐，且与表头列一一对应。
+        // 列式布局：graph | subject(refs + 标题, flex) | author | date | hash，
+        // 与原版一致——author/date/hash 始终纵向对齐，且与表头列一一对应。
         row = row
             .child(
                 div()
@@ -237,6 +237,15 @@ impl ListDelegate for LogDelegate {
                     .text_size(px(theme::FONT_SIZE_META))
                     .text_color(muted)
                     .child(format_time(commit.time)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(theme::COL_HASH_WIDTH))
+                    .whitespace_nowrap()
+                    .text_size(px(theme::FONT_SIZE_MONO))
+                    .text_color(muted)
+                    .child(short_id(&commit.id.0).to_string()),
             );
 
         // 双击 commit = Checkout（IntelliJ 惯例）。行选中由 ListState 统一处理，
@@ -453,15 +462,28 @@ fn build_ref_menu(menu: PopupMenu, name: &str, app: &WeakEntity<AppView>, cx: &A
     }
 }
 
-/// Log/History/Compare 的日期列格式：含年份，与原版表格一致。
+/// Log/History/Compare 的日期列格式：`yyyy/M/d HH:mm`；
+/// 当天与前一天用「今天 / 昨天」相对表述（对齐原版表格）。
 pub(crate) fn format_time(secs: i64) -> String {
-    match DateTime::from_timestamp(secs, 0) {
-        Some(time) => time
-            .with_timezone(&Local)
-            .format("%Y-%m-%d %H:%M")
-            .to_string(),
-        None => String::new(),
+    let Some(time) = DateTime::from_timestamp(secs, 0) else {
+        return String::new();
+    };
+    let time = time.with_timezone(&Local);
+    let hm = time.format("%H:%M");
+    let today = Local::now().date_naive();
+    let day = time.date_naive();
+    if day == today {
+        return format!("{} {hm}", tr("Today", "今天"));
     }
+    if Some(day) == today.pred_opt() {
+        return format!("{} {hm}", tr("Yesterday", "昨天"));
+    }
+    format!("{}/{}/{} {hm}", time.year(), time.month(), time.day())
+}
+
+/// Log 哈希列的短 SHA（8 位，与原版一致）。
+pub(crate) fn short_id(id: &str) -> &str {
+    &id[..id.len().min(8)]
 }
 
 /// 完整日期时间（含年份与秒），用于 Detail 头部的提交时间展示。
