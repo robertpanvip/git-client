@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rebased_rs::git::{
     BlameGroup, Branch, CancelToken, Change, Commit, ConflictFile, ConflictHunk, FileDiff,
-    HunkChoice, RebaseAction, ReflogEntry, Remote, StashEntry, Tag,
+    HunkChoice, MergeMode, RebaseAction, ReflogEntry, Remote, StashEntry, Tag,
 };
 
 use crate::ui::i18n::tr;
@@ -48,6 +48,10 @@ pub(crate) enum PromptKind {
     Reword {
         commit_id: String,
     },
+    /// 把提交 squash 进其父提交；输入为空时采用 git 默认合并消息。
+    Squash {
+        commit_id: String,
+    },
     RenameBranch,
     RenameBranchByName {
         name: String,
@@ -75,12 +79,28 @@ pub(crate) enum PromptKind {
 #[derive(Clone)]
 pub(crate) enum ConfirmAction {
     ForcePush,
-    DeleteBranch { name: String },
-    DeleteTag { name: String },
-    RemoveRemote { name: String },
+    DeleteBranch {
+        name: String,
+    },
+    DeleteTag {
+        name: String,
+    },
+    RemoveRemote {
+        name: String,
+    },
     DropHeadCommit,
     UndoHeadCommit,
-    DiscardChanges { path: String },
+    /// 丢弃非 HEAD 提交（丢弃其更改）。
+    DropCommit {
+        commit_id: String,
+    },
+    /// 撤销非 HEAD 提交（保留其差异为暂存更改）。
+    UncommitCommit {
+        commit_id: String,
+    },
+    DiscardChanges {
+        path: String,
+    },
 }
 
 impl ConfirmAction {
@@ -92,6 +112,8 @@ impl ConfirmAction {
             Self::RemoveRemote { .. } => tr("Remove remote", "移除远程仓库").to_string(),
             Self::DropHeadCommit => tr("Drop HEAD commit", "丢弃 HEAD 提交").to_string(),
             Self::UndoHeadCommit => tr("Undo HEAD commit", "撤销 HEAD 提交").to_string(),
+            Self::DropCommit { .. } => tr("Drop commit", "丢弃提交").to_string(),
+            Self::UncommitCommit { .. } => tr("Uncommit commit", "撤销提交").to_string(),
             Self::DiscardChanges { .. } => tr("Discard changes", "丢弃更改").to_string(),
         }
     }
@@ -128,6 +150,18 @@ impl ConfirmAction {
                 "HEAD 提交将被撤销，其更改保留在工作区暂存中。",
             )
             .to_string(),
+            Self::DropCommit { commit_id } => format!(
+                "{} {} {}",
+                tr("Commit", "提交"),
+                &commit_id[..commit_id.len().min(7)],
+                tr("will be removed from history. Its changes are lost.", "将从历史中移除，其更改将丢失。")
+            ),
+            Self::UncommitCommit { commit_id } => format!(
+                "{} {} {}",
+                tr("Commit", "提交"),
+                &commit_id[..commit_id.len().min(7)],
+                tr("will be removed from history. Its changes stay staged in the working tree.", "将从历史中移除，其更改保留在工作区暂存中。")
+            ),
             Self::DiscardChanges { path } => format!(
                 "{} ({path}) {}",
                 tr("All uncommitted changes in", "所有未提交的更改"),
@@ -143,6 +177,8 @@ impl ConfirmAction {
             Self::RemoveRemote { .. } => tr("Remove", "移除").to_string(),
             Self::DropHeadCommit => tr("Drop", "丢弃").to_string(),
             Self::UndoHeadCommit => tr("Undo", "撤销").to_string(),
+            Self::DropCommit { .. } => tr("Drop", "丢弃").to_string(),
+            Self::UncommitCommit { .. } => tr("Uncommit", "撤销").to_string(),
             Self::DiscardChanges { .. } => tr("Discard", "丢弃").to_string(),
         }
     }
@@ -232,6 +268,12 @@ pub(crate) struct AppState {
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
+    /// Stash 对话框选项：保留暂存区（--keep-index）。
+    pub(crate) prompt_stash_keep_index: bool,
+    /// Stash 对话框选项：包含未跟踪文件（--include-untracked）。
+    pub(crate) prompt_stash_include_untracked: bool,
+    /// Merge 对话框选中的快进模式。
+    pub(crate) prompt_merge_mode: MergeMode,
     pub(crate) rebase: RebaseFlow,
     /// Planning 时勾选的 autosquash 开关：Start 后自动重排 fixup!/squash! 提交。
     pub(crate) rebase_autosquash: bool,
@@ -291,13 +333,16 @@ impl Default for AppState {
             diff_title: String::new(),
             diff_path: None,
             diff_editing: false,
-            diff_side_by_side: false,
+            diff_side_by_side: true,
             diff_source: None,
             ignore_whitespace: false,
             diff_commit: None,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
+            prompt_stash_keep_index: false,
+            prompt_stash_include_untracked: true,
+            prompt_merge_mode: MergeMode::NoFastForward,
             rebase: RebaseFlow::Idle,
             rebase_autosquash: false,
             merge_in_progress: false,

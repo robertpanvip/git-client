@@ -732,7 +732,7 @@ fn shelve_stash_roundtrip() {
     let repo = Repository::open(&temp.path).expect("open repo");
     temp.write("a.txt", "shelved work\n");
 
-    repo.stash_push(Some("my shelve"), false)
+    repo.stash_push(Some("my shelve"), false, false)
         .expect("stash push");
     let entries = repo.stash_list().expect("stash list");
     assert_eq!(entries.len(), 1);

@@ -396,6 +396,18 @@ impl AppView {
         self.run_op("Dropped HEAD commit", |repo| repo.drop_head_commit(), cx);
     }
 
+    pub(crate) fn drop_commit_named(&mut self, commit: String, cx: &mut Context<Self>) {
+        let short = commit[..commit.len().min(7)].to_string();
+        let message = format!("Dropped {short}");
+        self.run_op(&message, move |repo| repo.drop_commit(&commit), cx);
+    }
+
+    pub(crate) fn uncommit_commit_named(&mut self, commit: String, cx: &mut Context<Self>) {
+        let short = commit[..commit.len().min(7)].to_string();
+        let message = format!("Uncommitted {short} (changes kept staged)");
+        self.run_op(&message, move |repo| repo.uncommit_commit(&commit), cx);
+    }
+
     pub(crate) fn force_push_current(&mut self, cx: &mut Context<Self>) {
         let Some(branch) = self.state.current_branch.clone() else {
             self.state.error = Some("No current branch".to_string());
@@ -440,6 +452,10 @@ impl AppView {
             ConfirmAction::RemoveRemote { name } => self.remove_remote(&name, cx),
             ConfirmAction::DropHeadCommit => self.drop_head(cx),
             ConfirmAction::UndoHeadCommit => self.undo_head(cx),
+            ConfirmAction::DropCommit { commit_id } => self.drop_commit_named(commit_id, cx),
+            ConfirmAction::UncommitCommit { commit_id } => {
+                self.uncommit_commit_named(commit_id, cx);
+            }
             ConfirmAction::DiscardChanges { path } => {
                 let message = format!("Discarded {path}");
                 self.run_op(&message, move |repo| repo.discard_changes(&path), cx);

@@ -229,7 +229,7 @@ fn smoke_working_tree_status_diff_stash_commit() {
     assert!(unstaged.iter().any(|f| f.path == "src/main.rs"));
 
     // 3. stash push（含未跟踪）→ 列表 → 恢复
-    repo.stash_push(Some("wip scratch"), true)
+    repo.stash_push(Some("wip scratch"), false, true)
         .expect("stash push");
     let stash = repo.stash_list().expect("stash list");
     assert_eq!(stash.len(), 1);

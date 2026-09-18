@@ -85,6 +85,57 @@ impl AppView {
         cx.notify();
     }
 
+    /// 在独立新窗口中打开 staged 差异（默认 diff 展示方式，对齐原版独立窗口）。
+    pub(crate) fn open_staged_diff_window(&mut self, path: Option<String>, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let state = &mut self.state;
+        if let Err(e) = use_cases::open_staged_diff(repo.as_ref(), state, path) {
+            state.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.open_diff_in_new_window(cx);
+    }
+
+    /// 在独立新窗口中打开 unstaged 差异。
+    pub(crate) fn open_unstaged_diff_window(
+        &mut self,
+        path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let state = &mut self.state;
+        if let Err(e) = use_cases::open_unstaged_diff(repo.as_ref(), state, path) {
+            state.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.open_diff_in_new_window(cx);
+    }
+
+    /// 在独立新窗口中打开 commit 差异。
+    pub(crate) fn open_commit_diff_window(
+        &mut self,
+        commit_id: String,
+        path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        let state = &mut self.state;
+        if let Err(e) = use_cases::open_commit_diff(repo.as_ref(), state, commit_id, path) {
+            state.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.open_diff_in_new_window(cx);
+    }
+
     /// 切换「忽略空白」开关，并按当前 diff 来源重新加载。
     pub(crate) fn toggle_ignore_whitespace(&mut self, cx: &mut Context<Self>) {
         self.state.ignore_whitespace = !self.state.ignore_whitespace;
@@ -212,6 +263,7 @@ impl AppView {
             .clone()
             .unwrap_or_else(|| "HEAD".to_string());
         let prefill = format!("Merge branch '{name}' into {target}");
+        self.state.prompt_merge_mode = MergeMode::NoFastForward;
         self.prompt_input
             .update(cx, |state, cx| state.set_value(&prefill, window, cx));
         self.state.prompt = Some(PromptKind::MergeMessage { name });
@@ -324,9 +376,23 @@ impl AppView {
             }
             PromptKind::Stash => {
                 let message = if input.is_empty() { None } else { Some(input) };
+                let (keep_index, include_untracked) = (
+                    self.state.prompt_stash_keep_index,
+                    self.state.prompt_stash_include_untracked,
+                );
                 self.run_op(
                     tr("Stashed", "已贮藏"),
-                    move |repo| repo.stash_push(message.as_deref(), true),
+                    move |repo| repo.stash_push(message.as_deref(), keep_index, include_untracked),
+                    cx,
+                );
+            }
+            PromptKind::Squash { commit_id } => {
+                let message = if input.is_empty() { None } else { Some(input) };
+                let short = commit_id[..commit_id.len().min(7)].to_string();
+                let op_message = format!("{} {short}", tr("Squashed", "已压缩到父提交"));
+                self.run_op(
+                    &op_message,
+                    move |repo| repo.squash_commit(&commit_id, message.as_deref()),
                     cx,
                 );
             }
@@ -370,7 +436,8 @@ impl AppView {
             }
             PromptKind::MergeMessage { name } => {
                 let message = if input.is_empty() { None } else { Some(input) };
-                self.merge_branch_into_current(name, MergeMode::NoFastForward, message, cx);
+                let mode = self.state.prompt_merge_mode;
+                self.merge_branch_into_current(name, mode, message, cx);
             }
             PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
             PromptKind::RebaseEdit { index } => {

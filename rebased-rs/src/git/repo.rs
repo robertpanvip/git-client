@@ -301,8 +301,13 @@ impl Repository {
         ops::unset_upstream(&self.cmd, branch)
     }
 
-    pub fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()> {
-        ops::stash_push(&self.cmd, message, include_untracked)
+    pub fn stash_push(
+        &self,
+        message: Option<&str>,
+        keep_index: bool,
+        include_untracked: bool,
+    ) -> Result<()> {
+        ops::stash_push(&self.cmd, message, keep_index, include_untracked)
     }
 
     pub fn stash_pop(&self) -> Result<()> {
@@ -512,6 +517,22 @@ impl Repository {
 
     pub fn reword_commit(&self, commit: &str, message: &str) -> Result<()> {
         rebase::reword(&self.cmd, commit, message)
+    }
+
+    pub fn fixup_commit(&self, commit: &str) -> Result<()> {
+        rebase::fixup(&self.cmd, commit)
+    }
+
+    pub fn squash_commit(&self, commit: &str, message: Option<&str>) -> Result<()> {
+        rebase::squash(&self.cmd, commit, message)
+    }
+
+    pub fn drop_commit(&self, commit: &str) -> Result<()> {
+        rebase::drop_commit(&self.cmd, commit)
+    }
+
+    pub fn uncommit_commit(&self, commit: &str) -> Result<()> {
+        rebase::uncommit_commit(&self.cmd, commit)
     }
 
     pub fn log_follow(&self, limit: usize, path: &str) -> Result<Vec<Commit>> {

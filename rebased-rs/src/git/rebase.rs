@@ -385,6 +385,190 @@ pub fn reword(cmd: &GitCommand, commit: &str, message: &str) -> Result<()> {
     }
 }
 
+/// 将 `commit` 合并进其父提交（通过 `rebase -i`）：`Fixup` 丢弃原提交信息，
+/// `Squash` 保留（并可用 `message` 覆盖）合并后的提交信息。该提交必须是
+/// rebase 计划中紧随其父的一条（即逻辑上的直接子提交）。
+fn combine_into_parent(
+    cmd: &GitCommand,
+    commit: &str,
+    kind: RebaseActionKind,
+    message: Option<&str>,
+) -> Result<()> {
+    match kind {
+        RebaseActionKind::Fixup | RebaseActionKind::Squash => {}
+        _ => {
+            return Err(GitError::with_stderr(
+                "combine failed",
+                "unsupported combine kind",
+            ));
+        }
+    }
+    let full = full_sha(cmd, commit)?;
+    let parent = full_sha(cmd, &format!("{full}^"))?;
+    let base_todos = todos(cmd, &parent)?;
+    let Some(target_idx) = base_todos.iter().position(|action| action.id == full) else {
+        return Err(GitError::with_stderr(
+            "combine failed",
+            format!("{commit} is not found in the rebase plan"),
+        ));
+    };
+    if target_idx == 0 {
+        return Err(GitError::with_stderr(
+            "combine failed",
+            "cannot combine a commit into a commit that has no pick before it",
+        ));
+    }
+    let mut todo = String::new();
+    // squash/fixup 必须紧跟其吸收者之后，因此把它并到前一个 `pick` 上。
+    let mut plan: Vec<RebaseAction> = base_todos[..target_idx].to_vec();
+    plan.push(RebaseAction {
+        kind,
+        message: message.map(str::to_string).filter(|m| !m.trim().is_empty()),
+        ..base_todos[target_idx].clone()
+    });
+    for tail in &base_todos[target_idx + 1..] {
+        plan.push(tail.clone());
+    }
+    for action in &plan {
+        let short = &action.id[..action.id.len().min(10)];
+        todo.push_str(&format!(
+            "{} {short} {}\n",
+            action.kind.keyword(),
+            action.subject
+        ));
+    }
+    let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let tmp_todo = std::env::temp_dir().join(format!("rebased-rs-combine-todo-{}", unique));
+    std::fs::write(&tmp_todo, todo)
+        .map_err(|e| GitError::with_stderr("failed to write combine todo", e.to_string()))?;
+    let seq_editor = copy_editor(&tmp_todo);
+    let msg_editor = editor_script(
+        &plan
+            .iter()
+            .filter_map(|a| {
+                a.message.as_deref().map(|m| {
+                    (
+                        // git squash 时编辑器收到的消息首行是吸收者的主题。
+                        base_todos[target_idx - 1].subject.clone(),
+                        m.to_string(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>(),
+    );
+    let output = cmd.execute_env(
+        &["rebase", "-i", &parent],
+        &[
+            ("GIT_SEQUENCE_EDITOR", seq_editor.as_str()),
+            ("GIT_EDITOR", msg_editor.as_str()),
+        ],
+    );
+    let _ = std::fs::remove_file(&tmp_todo);
+    match output {
+        Err(err) => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(err)
+        }
+        Ok(out) if !out.success => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(GitError::with_stderr(
+                "interactive rebase failed",
+                out.stderr,
+            ))
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
+/// 把 `commit` 的压力并入其父提交，补充信息保留（git 默认合并两者消息）。
+pub fn fixup(cmd: &GitCommand, commit: &str) -> Result<()> {
+    combine_into_parent(cmd, commit, RebaseActionKind::Fixup, None)
+}
+
+/// 把 `commit` squash 进其父提交，可选覆盖合并后的提交信息。
+pub fn squash(cmd: &GitCommand, commit: &str, message: Option<&str>) -> Result<()> {
+    combine_into_parent(cmd, commit, RebaseActionKind::Squash, message)
+}
+
+/// 用给定 todo 内容执行一次 `rebase -i base`：todo 整体注入，失败自动 abort。
+fn rebase_with_todo(cmd: &GitCommand, base: &str, todo: &str) -> Result<()> {
+    let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let tmp = std::env::temp_dir().join(format!("rebased-rs-edit-todo-{}", unique));
+    std::fs::write(&tmp, todo)
+        .map_err(|e| GitError::with_stderr("failed to write rebase todo", e.to_string()))?;
+    let editor = copy_editor(&tmp);
+    let output = cmd.execute_env(
+        &["rebase", "-i", base],
+        &[("GIT_SEQUENCE_EDITOR", editor.as_str())],
+    );
+    let _ = std::fs::remove_file(&tmp);
+    match output {
+        Err(err) => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(err)
+        }
+        Ok(out) if !out.success => {
+            let _ = cmd.run_ok(&["rebase", "--abort"]);
+            Err(GitError::with_stderr(
+                "interactive rebase failed",
+                out.stderr,
+            ))
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
+/// 从历史中删除 `commit`（丢弃其更改），通过 `rebase -i` 把该行改为 `drop`。
+pub fn drop_commit(cmd: &GitCommand, commit: &str) -> Result<()> {
+    let full = full_sha(cmd, commit)?;
+    let parent = full_sha(cmd, &format!("{full}^"))?;
+    let base_todos = todos(cmd, &parent)?;
+    if !base_todos.iter().any(|action| action.id == full) {
+        return Err(GitError::with_stderr(
+            "drop failed",
+            format!("{commit} is not found in the rebase plan"),
+        ));
+    }
+    let mut todo = String::new();
+    for action in &base_todos {
+        let keyword = if action.id == full {
+            "drop"
+        } else {
+            action.kind.keyword()
+        };
+        let short = &action.id[..action.id.len().min(10)];
+        todo.push_str(&format!("{keyword} {short} {}\n", action.subject));
+    }
+    rebase_with_todo(cmd, &parent, &todo)
+}
+
+/// 把 `commit` 从历史中删除，但把其差异保留回工作区（暂存），即 IntelliJ 的
+/// Uncommit（非 HEAD 提交）。流程：先生成该提交相对其父的补丁，再 `rebase -i`
+/// 丢弃该提交，最后 `git apply --cached` 还原差异。
+pub fn uncommit_commit(cmd: &GitCommand, commit: &str) -> Result<()> {
+    let full = full_sha(cmd, commit)?;
+    let parent = full_sha(cmd, &format!("{full}^"))?;
+    let patch = cmd
+        .execute(&["diff", "--binary", &parent, &full])
+        .map_err(|e| GitError::with_stderr("uncommit failed", e.to_string()))?;
+    if !patch.success {
+        return Err(GitError::with_stderr("uncommit failed", patch.stderr));
+    }
+    let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let tmp_patch = std::env::temp_dir().join(format!("rebased-rs-uncommit-{}.patch", unique));
+    std::fs::write(&tmp_patch, &patch.stdout)
+        .map_err(|e| GitError::with_stderr("failed to write uncommit patch", e.to_string()))?;
+    let drop_result = drop_commit(cmd, &full);
+    if let Err(e) = drop_result {
+        let _ = std::fs::remove_file(&tmp_patch);
+        return Err(e);
+    }
+    // commit 已被移除，把差异还原进暂存区。失败时补丁文件已删除，改动不会丢失于工作区。
+    let apply = cmd.run_ok(&["apply", "--cached", &tmp_patch.to_string_lossy()]);
+    let _ = std::fs::remove_file(&tmp_patch);
+    apply
+}
+
 pub fn in_progress(cmd: &GitCommand) -> bool {
     let Ok(out) = cmd.run(&["rev-parse", "--git-dir"]) else {
         return false;

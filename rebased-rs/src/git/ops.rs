@@ -225,8 +225,16 @@ pub fn delete_branch(cmd: &GitCommand, name: &str, force: bool) -> Result<()> {
     cmd.run_ok(&["branch", flag, name])
 }
 
-pub fn stash_push(cmd: &GitCommand, message: Option<&str>, include_untracked: bool) -> Result<()> {
+pub fn stash_push(
+    cmd: &GitCommand,
+    message: Option<&str>,
+    keep_index: bool,
+    include_untracked: bool,
+) -> Result<()> {
     let mut args = vec!["stash", "push"];
+    if keep_index {
+        args.push("--keep-index");
+    }
     if include_untracked {
         args.push("--include-untracked");
     }

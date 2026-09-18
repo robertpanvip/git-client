@@ -11,7 +11,7 @@ use gpui_kit::component::{
     input::Textarea,
 };
 
-use rebased_rs::git::{HunkChoice, ResetMode};
+use rebased_rs::git::{HunkChoice, MergeMode, ResetMode};
 
 use crate::ui::blame_view::{BlameJump, render_blame};
 use crate::ui::components::{empty_state, group_header};
@@ -1002,7 +1002,7 @@ impl AppView {
                         .cursor_pointer()
                         .hover(move |style| style.bg(theme::hover_bg(fg)))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.open_commit_diff(id.clone(), None, cx)
+                            this.open_commit_diff_window(id.clone(), None, cx)
                         }))
                         .child(
                             div()
@@ -1094,7 +1094,7 @@ impl AppView {
                         .cursor_pointer()
                         .hover(move |style| style.bg(theme::hover_bg(fg)))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.open_commit_diff(id.clone(), None, cx)
+                            this.open_commit_diff_window(id.clone(), None, cx)
                         }))
                         .child(
                             div()
@@ -1191,6 +1191,8 @@ impl AppView {
                 "",
                 cx,
                 |this, _, cx| {
+                    this.state.prompt_stash_keep_index = false;
+                    this.state.prompt_stash_include_untracked = true;
                     this.open_prompt(super::PromptKind::Stash, cx);
                 },
             )
@@ -1423,8 +1425,8 @@ impl AppView {
             super::PromptKind::Stash => (
                 tr("Stash changes", "贮藏更改").to_string(),
                 tr(
-                    "Optional message; untracked files are included",
-                    "可选信息；未跟踪文件也会被包含",
+                    "Optional message; choose whether to include untracked files and keep the index.",
+                    "可选信息；可选择是否包含未跟踪文件以及保留暂存区。",
                 )
                 .to_string(),
             ),
@@ -1434,6 +1436,18 @@ impl AppView {
                     "{} {}",
                     tr("New message for", "新的提交信息："),
                     &commit_id[..commit_id.len().min(7)]
+                ),
+            ),
+            super::PromptKind::Squash { commit_id } => (
+                tr("Squash commit", "压缩到父提交").to_string(),
+                format!(
+                    "{} {} — {}",
+                    tr("Squash", "压缩"),
+                    &commit_id[..commit_id.len().min(7)],
+                    tr(
+                        "optionally set a combined message; leave empty to keep git's default.",
+                        "可选设置合并后的信息；留空则使用 git 默认信息。",
+                    ),
                 ),
             ),
             super::PromptKind::RenameBranch => (
@@ -1554,6 +1568,131 @@ impl AppView {
                             })),
                     )
             }
+            super::PromptKind::Stash => div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(Textarea::new(&self.prompt_input).h(px(64.)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            Checkbox::new("stash-keep-index")
+                                .checked(self.state.prompt_stash_keep_index)
+                                .label(tr("Keep staged changes", "保留暂存区更改"))
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.state.prompt_stash_keep_index = *checked;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Checkbox::new("stash-untracked")
+                                .checked(self.state.prompt_stash_include_untracked)
+                                .label(tr("Include untracked files", "包含未跟踪文件"))
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.state.prompt_stash_include_untracked = *checked;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("prompt-cancel")
+                                .ghost()
+                                .label(tr("Cancel", "取消"))
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
+                        )
+                        .child(
+                            Button::new("prompt-ok")
+                                .primary()
+                                .label(tr("Stash", "贮藏"))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_prompt(window, cx)
+                                })),
+                        ),
+                ),
+            super::PromptKind::MergeMessage { .. } => {
+                let current_mode = self.state.prompt_merge_mode;
+                fn mode_button(
+                    cx: &mut Context<crate::ui::app::AppView>,
+                    id: String,
+                    label: SharedString,
+                    active: bool,
+                    mode: MergeMode,
+                ) -> Button {
+                    let color = if active { "primary" } else { "ghost" };
+                    let mut btn = Button::new(id).label(label);
+                    if color == "primary" {
+                        btn = btn.primary();
+                    } else {
+                        btn = btn.ghost();
+                    }
+                    btn.on_click(cx.listener(move |this, _, _, cx| {
+                        this.state.prompt_merge_mode = mode;
+                        cx.notify();
+                    }))
+                }
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(mode_button(
+                                cx,
+                                "merge-mode-default".to_string(),
+                                tr("Default", "默认").into(),
+                                current_mode == MergeMode::Default,
+                                MergeMode::Default,
+                            ))
+                            .child(mode_button(
+                                cx,
+                                "merge-mode-noff".to_string(),
+                                tr("No FF", "非快进").into(),
+                                current_mode == MergeMode::NoFastForward,
+                                MergeMode::NoFastForward,
+                            ))
+                            .child(mode_button(
+                                cx,
+                                "merge-mode-ffonly".to_string(),
+                                tr("FF only", "仅快进").into(),
+                                current_mode == MergeMode::FastForwardOnly,
+                                MergeMode::FastForwardOnly,
+                            )),
+                    )
+                    .child(Textarea::new(&self.prompt_input).h(px(64.)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                Button::new("prompt-cancel")
+                                    .ghost()
+                                    .label(tr("Cancel", "取消"))
+                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
+                            )
+                            .child(
+                                Button::new("prompt-ok")
+                                    .primary()
+                                    .label(tr("Merge", "合并"))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.confirm_prompt(window, cx)
+                                    })),
+                            ),
+                    )
+            }
             super::PromptKind::Confirm(action) => {
                 let action = action.clone();
                 let label = action.confirm_label();
@@ -1613,6 +1752,7 @@ impl AppView {
                     super::PromptKind::Reword { .. } | super::PromptKind::RebaseEdit { .. } => {
                         tr("Reword", "改写")
                     }
+                    super::PromptKind::Squash { .. } => tr("Squash", "压缩"),
                     super::PromptKind::RenameBranch => tr("Rename", "重命名"),
                     super::PromptKind::GoTo => tr("Go", "跳转"),
                     super::PromptKind::FilterAuthor => tr("Filter", "过滤"),

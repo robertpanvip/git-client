@@ -1187,6 +1187,46 @@ impl AppView {
                                 }
                             }),
                         );
+                        result = result.item(
+                            PopupMenuItem::new(tr("Fixup into Parent", "fixup 到父提交")).on_click(
+                                {
+                                    let weak = weak.clone();
+                                    let id = id.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            let short = id[..id.len().min(7)].to_string();
+                                            let message = format!(
+                                                "{} {short}",
+                                                tr("Fixuped", "已 fixup 到父提交")
+                                            );
+                                            let cid = id.clone();
+                                            this.run_op(
+                                                &message,
+                                                move |repo| repo.fixup_commit(&cid),
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                },
+                            ),
+                        );
+                        result = result.item(
+                            PopupMenuItem::new(tr("Squash into Parent…", "squash 到父提交…"))
+                                .on_click({
+                                    let weak = weak.clone();
+                                    let id = id.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_prompt(
+                                                PromptKind::Squash {
+                                                    commit_id: id.clone(),
+                                                },
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                }),
+                        );
                         result = result.separator();
                         result =
                             result.item(PopupMenuItem::new(tr("Diff", "查看差异")).on_click({
@@ -1194,7 +1234,7 @@ impl AppView {
                                 let id = id.clone();
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
-                                        this.open_commit_diff(id.clone(), None, cx)
+                                        this.open_commit_diff_window(id.clone(), None, cx)
                                     });
                                 }
                             }));
@@ -1240,6 +1280,43 @@ impl AppView {
                                         let _ = weak.update(cx, |this, cx| {
                                             this.open_prompt(
                                                 PromptKind::Confirm(ConfirmAction::DropHeadCommit),
+                                                cx,
+                                            )
+                                        });
+                                    }
+                                }),
+                            );
+                        } else {
+                            result = result.item(
+                                PopupMenuItem::new(tr("Uncommit Commit…", "撤销该提交…")).on_click(
+                                    {
+                                        let weak = weak.clone();
+                                        let id = id.clone();
+                                        move |_, _, cx| {
+                                            let _ = weak.update(cx, |this, cx| {
+                                                this.open_prompt(
+                                                    PromptKind::Confirm(
+                                                        ConfirmAction::UncommitCommit {
+                                                            commit_id: id.clone(),
+                                                        },
+                                                    ),
+                                                    cx,
+                                                )
+                                            });
+                                        }
+                                    },
+                                ),
+                            );
+                            result = result.item(
+                                PopupMenuItem::new(tr("Drop Commit…", "丢弃该提交…")).on_click({
+                                    let weak = weak.clone();
+                                    let id = id.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.open_prompt(
+                                                PromptKind::Confirm(ConfirmAction::DropCommit {
+                                                    commit_id: id.clone(),
+                                                }),
                                                 cx,
                                             )
                                         });
@@ -1324,9 +1401,9 @@ impl AppView {
                     cx.stop_propagation();
                     let path = diff_path.clone();
                     if staged {
-                        this.open_staged_diff(Some(path), cx);
+                        this.open_staged_diff_window(Some(path), cx);
                     } else {
-                        this.open_unstaged_diff(Some(path), cx);
+                        this.open_unstaged_diff_window(Some(path), cx);
                     }
                 })),
         );
@@ -1392,9 +1469,9 @@ impl AppView {
                     move |_, _, app| {
                         let _ = weak_for_diff.update(app, |this, cx| {
                             if menu_change.staged {
-                                this.open_staged_diff(Some(path_for_diff.clone()), cx);
+                                this.open_staged_diff_window(Some(path_for_diff.clone()), cx);
                             } else {
-                                this.open_unstaged_diff(Some(path_for_diff.clone()), cx);
+                                this.open_unstaged_diff_window(Some(path_for_diff.clone()), cx);
                             }
                         });
                     },

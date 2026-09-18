@@ -91,7 +91,12 @@ pub trait GitBackend: Send + Sync {
     /// 设置分支上游（upstream 形如 `origin/main`）。
     fn set_upstream(&self, branch: &str, upstream: &str) -> Result<()>;
     fn unset_upstream(&self, branch: &str) -> Result<()>;
-    fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()>;
+    fn stash_push(
+        &self,
+        message: Option<&str>,
+        keep_index: bool,
+        include_untracked: bool,
+    ) -> Result<()>;
     fn stash_pop(&self) -> Result<()>;
     fn discard_changes(&self, path: &str) -> Result<()>;
     fn remove_untracked(&self, path: &str) -> Result<()>;
@@ -143,6 +148,14 @@ pub trait GitBackend: Send + Sync {
     fn stash_apply_at(&self, index: usize) -> Result<()>;
     fn stash_drop_at(&self, index: usize) -> Result<()>;
     fn reword_commit(&self, commit: &str, message: &str) -> Result<()>;
+    /// 把 `commit` fixup 进其父提交（丢弃该提交原信息）。
+    fn fixup_commit(&self, commit: &str) -> Result<()>;
+    /// 把 `commit` squash 进其父提交，可选覆盖合并后的提交信息。
+    fn squash_commit(&self, commit: &str, message: Option<&str>) -> Result<()>;
+    /// 从历史中删除 `commit`（丢弃其更改）。
+    fn drop_commit(&self, commit: &str) -> Result<()>;
+    /// 删除 `commit` 但保留其差异为暂存的工作区更改（非 HEAD Uncommit）。
+    fn uncommit_commit(&self, commit: &str) -> Result<()>;
     /// History of commits touching `path`（follow renames）。
     fn log_follow(&self, limit: usize, path: &str) -> Result<Vec<Commit>>;
     /// Full message（%B）of HEAD，用于 Amend 预填原提交消息。
@@ -324,8 +337,13 @@ impl GitBackend for Repository {
         Repository::unset_upstream(self, branch)
     }
 
-    fn stash_push(&self, message: Option<&str>, include_untracked: bool) -> Result<()> {
-        Repository::stash_push(self, message, include_untracked)
+    fn stash_push(
+        &self,
+        message: Option<&str>,
+        keep_index: bool,
+        include_untracked: bool,
+    ) -> Result<()> {
+        Repository::stash_push(self, message, keep_index, include_untracked)
     }
 
     fn stash_pop(&self) -> Result<()> {
@@ -496,6 +514,22 @@ impl GitBackend for Repository {
 
     fn reword_commit(&self, commit: &str, message: &str) -> Result<()> {
         Repository::reword_commit(self, commit, message)
+    }
+
+    fn fixup_commit(&self, commit: &str) -> Result<()> {
+        Repository::fixup_commit(self, commit)
+    }
+
+    fn squash_commit(&self, commit: &str, message: Option<&str>) -> Result<()> {
+        Repository::squash_commit(self, commit, message)
+    }
+
+    fn drop_commit(&self, commit: &str) -> Result<()> {
+        Repository::drop_commit(self, commit)
+    }
+
+    fn uncommit_commit(&self, commit: &str) -> Result<()> {
+        Repository::uncommit_commit(self, commit)
     }
 
     fn log_follow(&self, limit: usize, path: &str) -> Result<Vec<Commit>> {
