@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
 use anyhow::Context;
@@ -144,6 +145,32 @@ pub(crate) fn configure_dwm_dark_mode(hwnd: HWND, appearance: WindowAppearance) 
             std::mem::size_of::<BOOL>() as u32,
         )
         .log_err();
+    }
+}
+
+/// 应用层强制指定的窗口外观（0 = 跟随系统，1 = 亮色，2 = 暗色）。
+static APPEARANCE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+/// 应用层显式指定外观后，窗口标题栏不再跟随系统主题。
+pub(crate) fn set_appearance_override(appearance: Option<WindowAppearance>) {
+    let value = match appearance {
+        Some(WindowAppearance::Dark | WindowAppearance::VibrantDark) => 2,
+        Some(WindowAppearance::Light | WindowAppearance::VibrantLight) => 1,
+        None => 0,
+    };
+    APPEARANCE_OVERRIDE.store(value, Ordering::SeqCst);
+}
+
+pub(crate) fn appearance_overridden() -> bool {
+    APPEARANCE_OVERRIDE.load(Ordering::SeqCst) != 0
+}
+
+/// 当前生效的外观：应用层覆盖优先，否则跟随系统。
+pub(crate) fn effective_appearance() -> WindowAppearance {
+    match APPEARANCE_OVERRIDE.load(Ordering::SeqCst) {
+        1 => WindowAppearance::Light,
+        2 => WindowAppearance::Dark,
+        _ => system_appearance().unwrap_or_default(),
     }
 }
 

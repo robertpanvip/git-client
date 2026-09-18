@@ -3,7 +3,9 @@ mod log;
 mod menus;
 
 use gpui::prelude::FluentBuilder;
-use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, WeakEntity, div, px};
+use gpui::{
+    Anchor, Context, IntoElement, ParentElement, Styled, WeakEntity, WindowAppearance, div, px,
+};
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants, DropdownButton},
@@ -800,6 +802,7 @@ impl AppView {
                                 !is_dark,
                                 |_, window, cx| {
                                     Theme::change(ThemeMode::Light, Some(window), cx);
+                                    cx.set_window_appearance(Some(WindowAppearance::Light));
                                     settings::persist_theme_mode(ThemeMode::Light);
                                     cx.refresh_windows();
                                 },
@@ -813,6 +816,7 @@ impl AppView {
                                 |_, window, cx| {
                                     Theme::change(ThemeMode::Dark, Some(window), cx);
                                     theme::apply_jetbrains_palette(cx);
+                                    cx.set_window_appearance(Some(WindowAppearance::Dark));
                                     settings::persist_theme_mode(ThemeMode::Dark);
                                     cx.refresh_windows();
                                 },

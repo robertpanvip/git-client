@@ -588,7 +588,26 @@ impl Platform for WindowsPlatform {
     }
 
     fn window_appearance(&self) -> WindowAppearance {
-        system_appearance().log_err().unwrap_or_default()
+        effective_appearance()
+    }
+
+    /// 应用层调用 `App::set_window_appearance` 时同步所有已存在窗口的标题栏深浅色。
+    fn set_window_appearance(&self, appearance: Option<WindowAppearance>) {
+        set_appearance_override(appearance);
+        let new_appearance = effective_appearance();
+        let handles = self.raw_window_handles.read();
+        for handle in handles.iter() {
+            configure_dwm_dark_mode(handle.as_raw(), new_appearance);
+            // DWM 属性在下一次非客户区绘制时生效，主动触发重绘让标题栏立即切换。
+            unsafe {
+                _ = RedrawWindow(
+                    Some(handle.as_raw()),
+                    None,
+                    None,
+                    RDW_INVALIDATE | RDW_FRAME,
+                );
+            }
+        }
     }
 
     fn open_url(&self, url: &str) {

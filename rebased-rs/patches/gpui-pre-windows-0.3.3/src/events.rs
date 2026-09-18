@@ -1231,6 +1231,10 @@ impl WindowsWindowInner {
         {
             log::info!("System settings changed: {}", parameter_string);
             if parameter_string.as_str() == "ImmersiveColorSet" {
+                // 应用层已显式指定外观：标题栏不跟随系统主题变化。
+                if appearance_overridden() {
+                    return Some(0);
+                }
                 let new_appearance = system_appearance()
                     .context("unable to get system appearance when handling ImmersiveColorSet")
                     .log_err()?;

@@ -7,7 +7,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, MouseMoveEvent, ParentElement, Render, StatefulInteractiveElement, Styled,
-    Subscription, UniformListScrollHandle, Window, WindowBounds, WindowOptions, div, px, size,
+    Subscription, UniformListScrollHandle, Window, WindowAppearance, WindowBounds, WindowOptions,
+    div, px, size,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Root,
@@ -784,6 +785,12 @@ pub fn run(repo_path: PathBuf) {
             settings::log_event(&format!("theme mode: {}", mode.name()));
             Theme::change(mode, None, cx);
             theme::apply_jetbrains_palette(cx);
+            // 标题栏外观与应用主题保持一致，不跟随系统亮暗模式。
+            cx.set_window_appearance(Some(if mode == ThemeMode::Dark {
+                WindowAppearance::Dark
+            } else {
+                WindowAppearance::Light
+            }));
             let bounds = Bounds::centered(
                 None,
                 size(px(theme::MAIN_WINDOW_WIDTH), px(theme::MAIN_WINDOW_HEIGHT)),
