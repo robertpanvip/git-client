@@ -1,18 +1,18 @@
-//! Diff 渲染（统一 / 并排三栏两种视图）。
+//! Diff 渲染（统一 / 并排两种视图）。
 //!
-//! Rebased 对齐 IntelliJ merge diff 的**三栏模型**：
-//! - 左栏 = old / Yours（源文件 / 当前分支原始行，带 old_no gutter）
-//! - **中间栏 = Result（自动合并结果或用户选择结果，无 gutter——核心创新点）**
-//! - 右栏 = new / Theirs（目标文件 / 合入分支原始行，带 new_no gutter）
+//! 对齐 IntelliJ diff 编辑器的结构：
+//! - **独立行号 gutter**：固定列宽 [`DIFF_GUTTER_COLUMN_WIDTH`]、独立底色、右侧分隔线，
+//!   与正文分离（原实现把行号拼进正文文本里，列宽随内容漂移）；
+//! - 固定行高 [`DIFF_LINE_HEIGHT`]，不是由字号+padding 自动撑开；
+//! - 正文不换行，超宽时整体**横向滚动**（按最长行估算内容宽度）；
+//! - hunk 头独立成行（hunk 底色 + 上下分隔线 + 右侧 Stage/Unstage）。
 //!
-//! 统一视图（`side_by_side = false`）仍是经典 unified diff：两列 gutter + 一列正文。
+//! 并排视图为**两栏**：左 = old（旧行，`old_no` gutter），右 = new（新行，
+//! `new_no` gutter）。两栏宽度与内容长度解耦（基线宽 + flex 平分），任何
+//! 视口下都同时可见，长行在各自半宽内裁剪——不会出现某一半被挤出视口
+//! 造成「上下排列」的观感。
 //!
-//! 设计约束：
-//! - 并排三栏的每列正文都 `flex_1 + overflow_hidden`，保证三栏在任何视口下同时可见，
-//!   不会出现「右半滑出视口」的上下观感
-//! - 中间 Result 栏的内容由左右栏差异**自动派生**（见 `side_by_side_rows` 内规则）：
-//!   Context 行三栏相同、Deleted 行结果为空、Added 行结果为 new、修改行结果为 new
-//! - 行高、字号、间距一律引用 theme token，禁止裸 `px(...)`
+//! 两个 surface（右侧面板 / 独立窗口）共用本模块，保证呈现一致。
 
 use std::sync::Arc;
 
@@ -50,30 +50,17 @@ fn status_badge(file: &FileDiff) -> (&'static str, Hsla) {
     }
 }
 
-/// 将 hunk 内的行配对成并排**三栏行**。配对逻辑：
-/// - Context → 三栏相同（左=中=右）
-/// - 连续 Deleted 段与紧跟的连续 Added 段按序 zip，短侧补 None
-/// - 独立 Added 段（无前导 Delete）→ 左空、中=new、右=Added
-/// - 独立 Deleted 段（无后继 Add）→ 左=Deleted、中空、右空
-///
-/// **中间 Result 的派生规则**（merge diff 语义）：
-/// | 左 | 右 | 中间 Result | 原因 |
-/// |---|---|---|---|
-/// | Context(L) | Context(R) | L.content | 不变行，结果保留原样 |
-/// | Deleted | None | "" | 删除生效，结果中无此行 |
-/// | None | Added(R) | R.content | 新增生效，结果中出现新行 |
-/// | Deleted | Added(R) | R.content | 修改 = 删旧+加新，结果是新行 |
-pub(crate) fn side_by_side_rows(
-    hunk: &Hunk,
-) -> Vec<(Option<&DiffLine>, String, Option<&DiffLine>)> {
+/// 将 hunk 内的行配对成并排两栏行：连续 Deleted 段与紧跟的连续 Added 段
+/// 按序 zip，短的一侧补 None（渲染为空半行）；Context 行自成一对
+/// （左右同一行）；独立 Added 段左侧补 None。
+pub(crate) fn side_by_side_rows(hunk: &Hunk) -> Vec<(Option<&DiffLine>, Option<&DiffLine>)> {
     let lines = &hunk.lines;
-    let mut rows: Vec<(Option<&DiffLine>, String, Option<&DiffLine>)> = Vec::new();
+    let mut rows: Vec<(Option<&DiffLine>, Option<&DiffLine>)> = Vec::new();
     let mut idx = 0;
     while idx < lines.len() {
         match lines[idx].kind {
             DiffLineKind::Context => {
-                let content = lines[idx].content.clone();
-                rows.push((Some(&lines[idx]), content, Some(&lines[idx])));
+                rows.push((Some(&lines[idx]), Some(&lines[idx])));
                 idx += 1;
             }
             DiffLineKind::Deleted => {
@@ -88,17 +75,8 @@ pub(crate) fn side_by_side_rows(
                 }
                 let dels = &lines[del_start..del_end];
                 let adds = &lines[del_end..add_end];
-                let n = dels.len().max(adds.len());
-                for i in 0..n {
-                    let left = dels.get(i);
-                    let right = adds.get(i);
-                    let middle = match (left, right) {
-                        (Some(_), Some(r)) => r.content.clone(), // 修改: 新行取代旧行
-                        (Some(_), None) => String::new(),        // 纯删除: 结果中无此行
-                        (None, Some(r)) => r.content.clone(),    // 纯新增
-                        (None, None) => String::new(),
-                    };
-                    rows.push((left, middle, right));
+                for i in 0..dels.len().max(adds.len()) {
+                    rows.push((dels.get(i), adds.get(i)));
                 }
                 idx = add_end;
             }
@@ -108,7 +86,7 @@ pub(crate) fn side_by_side_rows(
                     idx += 1;
                 }
                 for line in &lines[add_start..idx] {
-                    rows.push((None, line.content.clone(), Some(line)));
+                    rows.push((None, Some(line)));
                 }
             }
             DiffLineKind::HunkHeader => idx += 1,
@@ -157,8 +135,9 @@ fn code_cell(content: String, color: Hsla, mono: &SharedString, min_w: f32) -> D
         })
 }
 
-/// 并排三栏正文单元格（通用）：`flex_1` + 基线 `min_w` + 半宽内裁剪。
-/// 三栏共享此原语，与内容长度解耦保证三栏始终同时可见。
+/// 并排两栏正文单元格：`flex_1` 填满所在半宽、底色连续；最小宽度
+/// 只取基线值而非内容实际宽度——左右两半因此永远不会被长行撑开
+/// 导致一半滑出视口（那会呈现「上下排列」的观感），长行在半宽内裁剪。
 fn sbs_code(content: String, color: Hsla, mono: &SharedString) -> Div {
     div()
         .h_full()
@@ -180,9 +159,9 @@ fn sbs_code(content: String, color: Hsla, mono: &SharedString) -> Div {
         })
 }
 
-/// 并排三栏的**左/右栏**（带 gutter）：
-/// - left_side=true → 左栏（old/Yours，行号取自 `old_no`）
-/// - left_side=false → 右栏（new/Theirs，行号取自 `new_no`）
+/// 并排两栏的半行：`left_side = true` 为左半（旧行，`old_no` gutter），
+/// 否则为右半（新行，`new_no` gutter）。半宽与内容长度解耦
+/// （基线宽 + flex 平分），保证两半始终并排可见。
 fn sbs_side(
     line: Option<&DiffLine>,
     left_side: bool,
@@ -216,52 +195,24 @@ fn sbs_side(
     half
 }
 
-/// 并排三栏的**中间 Result 栏**（无 gutter）：
-/// 底色表达 "结果行是否存在"（空行=删除生效，透明=保留），
-/// 正文 color 区分保留（base fg）vs 新增/修改（added_color）。
-fn sbs_result(content: String, exists_in_result: bool, mono: &SharedString, fg: Hsla) -> Div {
-    let bg = if exists_in_result {
-        transparent()
-    } else {
-        empty_half_bg()
-    };
-    let color = if exists_in_result {
-        fg
-    } else {
-        fg.opacity(0.4)
-    };
-    div()
-        .flex_1()
-        .min_w_0()
-        .h(px(crate::ui::theme::DIFF_LINE_HEIGHT))
-        .flex()
-        .flex_row()
-        .items_center()
-        .bg(bg)
-        .child(sbs_code(content, color, mono))
-}
-
-/// 并排三栏行：gutter(两列) + 三栏 code_cell，总宽 `DIFF_GUTTER_WIDTH + 3×BASE`。
-/// 视口足够时每栏 flex_1 三等分，任何一栏的长行都在各自半宽内裁剪，
-/// 保证三栏同时可见（IntelliJ merge diff 行为）。
-fn sbs_row3(
+/// 并排两栏行：左右各一个半行（gutter + 正文），总宽基线
+/// `DIFF_GUTTER_WIDTH + 2 × BASE`。视口足够时两半 flex 平分整行，
+/// 长行在半宽内裁剪，不触发整行撑开。
+fn sbs_row(
     left: Option<&DiffLine>,
-    middle: String,
     right: Option<&DiffLine>,
     mono: &SharedString,
     fg: Hsla,
     muted: Hsla,
 ) -> Div {
-    let result_exists = !middle.is_empty();
     div()
         .flex_none()
         .min_w(px(
-            crate::ui::theme::DIFF_GUTTER_WIDTH + 3.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
+            crate::ui::theme::DIFF_GUTTER_WIDTH + 2.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
         ))
         .flex()
         .flex_row()
         .child(sbs_side(left, true, mono, fg, muted))
-        .child(sbs_result(middle, result_exists, mono, fg))
         .child(sbs_side(right, false, mono, fg, muted))
 }
 
@@ -318,13 +269,12 @@ pub fn render_diff_files(
 
         for (hunk_index, hunk) in file.hunks.iter().enumerate() {
             let min_w = code_min_width(max_line_chars(hunk));
-            // 行宽 = gutter 列 + 正文最窄宽度。
-            // - 并排三栏：DIFF_GUTTER_WIDTH(两列 gutter) + 3×BASE（左/中/右 各一栏）
-            //   与内容长度解耦，三栏永远同时可见，长行半宽内裁剪。
-            // - 统一视图：DIFF_GUTTER_WIDTH(两列) + 内容实际宽，长行靠横向滚动。
+            // 行宽 = 行号 gutter 区 + 正文最窄宽度。并排两栏按基线宽计
+            // （与内容长度解耦，保证左右两半同时可见）；统一视图按内容
+            // 实际宽度计（长行靠横向滚动查看）。
             let row_min_w = if side_by_side {
                 crate::ui::theme::DIFF_GUTTER_WIDTH
-                    + 3.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
+                    + 2.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
             } else {
                 crate::ui::theme::DIFF_GUTTER_WIDTH + min_w
             };
@@ -367,8 +317,8 @@ pub fn render_diff_files(
             block = block.child(header_row);
 
             if side_by_side {
-                for (left, middle, right) in side_by_side_rows(hunk) {
-                    block = block.child(sbs_row3(left, middle, right, &mono, fg, muted));
+                for (left, right) in side_by_side_rows(hunk) {
+                    block = block.child(sbs_row(left, right, &mono, fg, muted));
                 }
             } else {
                 for line in &hunk.lines {
@@ -443,14 +393,9 @@ mod tests {
         };
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 2);
-        for (left, middle, right) in &rows {
-            // Context 行三栏相同
-            assert_eq!(left.unwrap().content, *middle);
-            assert_eq!(right.unwrap().content, *middle);
-        }
+        assert!(rows.iter().all(|(l, r)| l.is_some() && r.is_some()));
         assert_eq!(rows[0].0.unwrap().content, "a");
-        assert_eq!(rows[0].2.unwrap().content, "a");
-        assert_eq!(rows[0].1, "a");
+        assert_eq!(rows[0].1.unwrap().content, "a");
     }
 
     #[test]
@@ -466,13 +411,10 @@ mod tests {
         };
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 2);
-        // 修改配对: 左=deleted, 中=new(修改后的结果), 右=added
         assert_eq!(rows[0].0.unwrap().content, "old1");
-        assert_eq!(rows[0].1, "new1");
-        assert_eq!(rows[0].2.unwrap().content, "new1");
+        assert_eq!(rows[0].1.unwrap().content, "new1");
         assert_eq!(rows[1].0.unwrap().content, "old2");
-        assert_eq!(rows[1].1, "new2");
-        assert_eq!(rows[1].2.unwrap().content, "new2");
+        assert_eq!(rows[1].1.unwrap().content, "new2");
     }
 
     #[test]
@@ -488,17 +430,9 @@ mod tests {
         };
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 3);
-        // 第 0 行: 左=old1, 中=new1(修改结果), 右=new1
-        assert_eq!(rows[0].0.unwrap().content, "old1");
-        assert_eq!(rows[0].1, "new1");
-        assert_eq!(rows[0].2.unwrap().content, "new1");
-        // 第 1、2 行: 纯删除 → 中间 Result 为空
-        assert_eq!(rows[1].0.unwrap().content, "old2");
-        assert!(rows[1].1.is_empty());
-        assert!(rows[1].2.is_none());
-        assert_eq!(rows[2].0.unwrap().content, "old3");
-        assert!(rows[2].1.is_empty());
-        assert!(rows[2].2.is_none());
+        assert_eq!(rows[0].1.unwrap().content, "new1");
+        assert!(rows[1].1.is_none());
+        assert!(rows[2].1.is_none());
     }
 
     #[test]
@@ -512,16 +446,11 @@ mod tests {
         };
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 2);
-        for (left, middle, right) in &rows {
-            assert!(left.is_none());
-            assert!(right.is_some());
-            // 纯新增 → 中间 Result = 右栏 new
-            assert_eq!(*middle, right.unwrap().content);
-        }
+        assert!(rows.iter().all(|(l, r)| l.is_none() && r.is_some()));
     }
 
     #[test]
-    fn side_by_side_pure_deletes_middle_empty() {
+    fn side_by_side_pure_deletes_right_none() {
         let hunk = Hunk {
             header: "@@ -1,2 +1,0 @@".to_string(),
             lines: vec![
@@ -531,11 +460,7 @@ mod tests {
         };
         let rows = side_by_side_rows(&hunk);
         assert_eq!(rows.len(), 2);
-        for (left, middle, right) in &rows {
-            assert!(left.is_some());
-            assert!(right.is_none());
-            assert!(middle.is_empty());
-        }
+        assert!(rows.iter().all(|(l, r)| l.is_some() && r.is_none()));
     }
 
     #[test]
