@@ -50,8 +50,9 @@ pub(crate) struct TreeRow {
 
 /// 把扁平路径列表摊平成可见行。
 ///
-/// `files` 必须是按路径升序排好的列表（由 `git ls-files` 排序得到）：
-/// 升序遍历保证父目录总在子节点之前出现。`expanded` 之外的目录视为折叠，
+/// `files` 必须是按 IDEA 项目树顺序排好的列表（目录段优先于文件段、
+/// 同级按名称升序，由 `git::Repository::worktree_files` 排序得到）：
+/// 该顺序保证父目录总在子节点之前出现。`expanded` 之外的目录视为折叠，
 /// 其整棵子树都不产生行。
 pub(crate) fn flatten_tree(files: &[String], expanded: &HashSet<String>) -> Vec<TreeRow> {
     let mut rows: Vec<TreeRow> = Vec::new();
@@ -126,7 +127,12 @@ fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla
     } else {
         theme::file_tree_file_fg(fg)
     };
-    let icon = if row.is_dir { Ic::Folder } else { Ic::File };
+    // IDEA 项目树：目录用文件夹图标，文件按扩展名显示对应类型图标。
+    let icon = if row.is_dir {
+        Ic::Folder
+    } else {
+        crate::ui::icons::file_icon(&row.path)
+    };
     let click = if row.is_dir {
         TreeClick::Dir(row.path.clone())
     } else {
@@ -145,7 +151,7 @@ fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla
         .gap(px(theme::SPACE_XS))
         .pl(px(indent))
         .pr(px(theme::SPACE_SM))
-        .text_size(px(theme::FONT_SIZE_BODY))
+        .text_size(px(theme::font_size_body()))
         .text_color(text_color)
         .whitespace_nowrap()
         .overflow_hidden()

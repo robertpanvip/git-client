@@ -31,7 +31,7 @@ impl Render for RebaseDragPreview {
             .bg(cx.theme().background)
             .border_1()
             .border_color(cx.theme().border)
-            .text_size(px(theme::FONT_SIZE_META))
+            .text_size(px(theme::font_size_meta()))
             .shadow_md()
             .child(self.0.clone())
     }
@@ -61,13 +61,13 @@ impl AppView {
                 div()
                     .flex_none()
                     .px(px(theme::SPACE_MD))
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(format!("{} {short_base}…", tr("onto", "变基到"))),
             )
             .child(
                 div()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(tr(
                         "Click the action to cycle Pick → Squash → Fixup → Drop → Edit → Reword. Drag rows or use ↑ ↓ to reorder.",
@@ -135,7 +135,7 @@ impl AppView {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(theme::FONT_SIZE_BODY))
+                            .text_size(px(theme::font_size_body()))
                             .text_ellipsis()
                             .overflow_hidden()
                             .child(summary),

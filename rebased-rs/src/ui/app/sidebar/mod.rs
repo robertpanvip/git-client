@@ -6,7 +6,6 @@ mod diff;
 mod history;
 mod palette;
 mod rebase;
-mod shelves;
 
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
@@ -42,7 +41,6 @@ impl AppView {
             SidebarMode::Conflicts => base
                 .child(self.render_conflicts_panel(cx))
                 .into_any_element(),
-            SidebarMode::Shelve => base.child(self.render_shelve_panel(cx)).into_any_element(),
             SidebarMode::History => base.child(self.render_history_panel(cx)).into_any_element(),
             SidebarMode::Reflog => base.child(self.render_reflog_panel(cx)).into_any_element(),
             // 工作区变更列表已固定在左侧 Commit 面板，右侧统一承载提交详情。

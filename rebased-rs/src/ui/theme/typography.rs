@@ -3,28 +3,44 @@
 //! 面板不得自行挑选 `text_xs` / `text_sm`，而应使用此处定义的**角色**：
 //! 同类信息在全应用使用同一角色，避免"同一字段在不同面板字号不同"。
 //!
-//! 字号数值定义在 [`super::dimensions`]（`FONT_SIZE_*` 常量），此处提供
-//! **语义化别名**（`FONT_SIZE_META` / `FONT_SIZE_BODY` 等）和 **排版角色系统**
-//! （[`TextRole`] + [`text_role()`] 助手）。
+//! 字号数值定义在 [`super::dimensions`]（`font_size_*()` 运行时函数，支持
+//! 设置面板调整），此处提供**语义化别名**（`font_size_meta()` 等）和
+//! **排版角色系统**（[`TextRole`] + [`text_role()`] 助手）。
+//!
+//! 行高同样是字号派生值：随窗口字号增量联动，保证文字放大后行距不拥挤。
 
 use gpui::{Div, FontWeight, Styled, px};
 
-use super::dimensions::{FONT_SIZE_BASE, FONT_SIZE_MD, FONT_SIZE_MONO, FONT_SIZE_SM};
+use super::dimensions::{font_size_base, font_size_md, font_size_mono, font_size_sm};
 
 // ---------- 字号语义化别名 ----------
-/// 次要信息（时间、哈希、计数、作者、hint）—— 对应 `FONT_SIZE_SM` (12px)。
-pub const FONT_SIZE_META: f32 = FONT_SIZE_SM;
-/// 正文 / 列表行主文本（提交 subject、文件路径、菜单项）—— 对应 `FONT_SIZE_BASE` (13px)。
-pub const FONT_SIZE_BODY: f32 = FONT_SIZE_BASE;
-/// 强调文本（对话框标题、面板主标题）—— 对应 `FONT_SIZE_MD` (14px)。
-pub const FONT_SIZE_TITLE: f32 = FONT_SIZE_MD;
-/// 数值/代码（等宽场景）—— 对应 `FONT_SIZE_MONO` (12.5px)。
-pub const FONT_SIZE_CODE: f32 = FONT_SIZE_MONO;
+/// 次要信息（时间、哈希、计数、作者、hint）—— 对应小字号（默认 12px）。
+pub fn font_size_meta() -> f32 {
+    font_size_sm()
+}
+/// 正文 / 列表行主文本（提交 subject、文件路径、菜单项）—— 对应基础字号（默认 13px）。
+pub fn font_size_body() -> f32 {
+    font_size_base()
+}
+/// 强调文本（对话框标题、面板主标题）—— 对应中等字号（默认 14px）。
+pub fn font_size_title() -> f32 {
+    font_size_md()
+}
+/// 数值/代码（等宽场景）—— 对应等宽字号（默认 12.5px）。
+pub fn font_size_code() -> f32 {
+    font_size_mono()
+}
 
-// ---------- 行高 ----------
-pub const LINE_HEIGHT_META: f32 = 16.0;
-pub const LINE_HEIGHT_BODY: f32 = 18.0;
-pub const LINE_HEIGHT_TITLE: f32 = 20.0;
+// ---------- 行高（字号派生，随窗口字号增量联动）----------
+pub fn line_height_meta() -> f32 {
+    font_size_meta() + 4.0
+}
+pub fn line_height_body() -> f32 {
+    font_size_body() + 5.0
+}
+pub fn line_height_title() -> f32 {
+    font_size_title() + 6.0
+}
 
 // ---------- 字重 ----------
 pub const WEIGHT_REGULAR: FontWeight = FontWeight::NORMAL;
@@ -50,11 +66,11 @@ pub enum TextRole {
 impl TextRole {
     pub fn size(self) -> f32 {
         match self {
-            TextRole::Body => FONT_SIZE_BODY,
-            TextRole::Meta => FONT_SIZE_META,
-            TextRole::SectionHeader => FONT_SIZE_META,
-            TextRole::DialogTitle => FONT_SIZE_TITLE,
-            TextRole::Mono => FONT_SIZE_CODE,
+            TextRole::Body => font_size_body(),
+            TextRole::Meta => font_size_meta(),
+            TextRole::SectionHeader => font_size_meta(),
+            TextRole::DialogTitle => font_size_title(),
+            TextRole::Mono => font_size_code(),
         }
     }
 

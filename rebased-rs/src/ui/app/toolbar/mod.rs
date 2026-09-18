@@ -3,22 +3,18 @@ mod log;
 mod menus;
 
 use gpui::prelude::FluentBuilder;
-use gpui::{
-    Anchor, Context, IntoElement, ParentElement, Styled, WeakEntity, WindowAppearance, div, px,
-};
+use gpui::{Context, IntoElement, ParentElement, Styled, WeakEntity, div, px};
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants, DropdownButton},
-    menu::{DropdownMenu, PopupMenuItem},
-    theme::{Theme, ThemeMode},
+    menu::PopupMenuItem,
 };
 
 use rebased_rs::git::{Branch, MergeMode};
 
 use crate::ui::components::{menu_item, menu_width, v_separator};
-use crate::ui::i18n::{self, Language, tr};
+use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
-use crate::ui::settings;
 use crate::ui::theme;
 
 use super::{AppView, ConfirmAction, PromptKind};
@@ -712,41 +708,12 @@ impl AppView {
             )
             .child(v_separator(fg))
             .child(
-                Button::new("stash")
-                    .ghost()
-                    .compact()
-                    .icon(Ic::Shelve)
-                    .tooltip(tr("Stash", "贮藏"))
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.open_prompt(PromptKind::Stash, cx)),
-                    ),
-            )
-            .child(
-                Button::new("unstash")
-                    .ghost()
-                    .compact()
-                    .icon(Ic::Unshelve)
-                    .tooltip(tr("Unstash", "恢复贮藏"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx)
-                    })),
-            )
-            .child(v_separator(fg))
-            .child(
                 Button::new("conflicts")
                     .ghost()
                     .compact()
                     .icon(Ic::Conflict)
                     .tooltip(tr("Conflicts", "冲突"))
                     .on_click(cx.listener(|this, _, _, cx| this.open_conflicts(cx))),
-            )
-            .child(
-                Button::new("shelves")
-                    .ghost()
-                    .compact()
-                    .icon(Ic::Changes)
-                    .tooltip(tr("Shelves", "搁置"))
-                    .on_click(cx.listener(|this, _, _, cx| this.open_shelves(cx))),
             )
             .child(v_separator(fg))
             .child(
@@ -763,66 +730,11 @@ impl AppView {
                     .compact()
                     .icon(Ic::Settings)
                     .tooltip(tr("Settings", "设置"))
-                    .dropdown_menu_with_anchor(Anchor::TopRight, |menu, _window, cx| {
-                        let is_zh = i18n::current() == Language::Zh;
-                        let is_dark = cx.theme().is_dark();
-                        let result = menu
-                            .item(menu_item(
-                                Ic::Language,
-                                "English",
-                                None,
-                                false,
-                                !is_zh,
-                                |_, _, cx| {
-                                    if i18n::current() != Language::En {
-                                        i18n::set_current(Language::En);
-                                        cx.refresh_windows();
-                                    }
-                                },
-                            ))
-                            .item(menu_item(
-                                Ic::Language,
-                                "中文",
-                                None,
-                                false,
-                                is_zh,
-                                |_, _, cx| {
-                                    if i18n::current() != Language::Zh {
-                                        i18n::set_current(Language::Zh);
-                                        cx.refresh_windows();
-                                    }
-                                },
-                            ))
-                            .separator()
-                            .item(menu_item(
-                                Ic::Settings,
-                                tr("Light Theme", "浅色主题"),
-                                None,
-                                false,
-                                !is_dark,
-                                |_, window, cx| {
-                                    Theme::change(ThemeMode::Light, Some(window), cx);
-                                    cx.set_window_appearance(Some(WindowAppearance::Light));
-                                    settings::persist_theme_mode(ThemeMode::Light);
-                                    cx.refresh_windows();
-                                },
-                            ))
-                            .item(menu_item(
-                                Ic::Settings,
-                                tr("Dark Theme", "深色主题"),
-                                None,
-                                false,
-                                is_dark,
-                                |_, window, cx| {
-                                    Theme::change(ThemeMode::Dark, Some(window), cx);
-                                    theme::apply_jetbrains_palette(cx);
-                                    cx.set_window_appearance(Some(WindowAppearance::Dark));
-                                    settings::persist_theme_mode(ThemeMode::Dark);
-                                    cx.refresh_windows();
-                                },
-                            ));
-                        menu_width(result)
-                    }),
+                    // 设置收敛为单一面板弹窗（对齐 IDEA Settings）：外观 / 语言 / 字体
+                    // 集中在一个对话框里，更改即时生效。
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.open_prompt(PromptKind::Settings, cx)
+                    })),
             )
             .when(self.state.rebase.in_progress(), |bar| {
                 bar.child(

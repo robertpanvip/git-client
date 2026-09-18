@@ -4,7 +4,7 @@
 //! 原实现用普通按钮切换 `.primary()` / `.ghost()` 表达选中，缺少选中指示与键盘语义。
 
 use gpui::prelude::FluentBuilder;
-use gpui::{Div, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, px};
+use gpui::{App, Div, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, px};
 use gpui_kit::component::ActiveTheme;
 
 use crate::ui::theme;
@@ -43,7 +43,7 @@ pub fn segment(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
     active: bool,
-    cx: &impl ActiveTheme,
+    cx: &App,
 ) -> Stateful<Div> {
     let fg = cx.theme().foreground;
     let muted = cx.theme().muted_foreground;
@@ -56,7 +56,7 @@ pub fn segment(
         .items_center()
         .px(px(theme::SPACE_SM))
         .rounded(px(theme::RADIUS_SM))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .cursor_pointer()
         .text_color(if active { fg } else { muted })
         .when(active, |this| this.bg(theme::selection_bg()))

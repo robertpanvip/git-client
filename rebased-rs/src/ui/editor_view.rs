@@ -190,7 +190,7 @@ pub(crate) fn render_editor(
     let mono = cx.theme().mono_font_family.clone();
     let fg = cx.theme().foreground;
     let muted = cx.theme().muted_foreground;
-    let code_width = (content.max_chars.max(1) as f32) * theme::DIFF_CHAR_WIDTH + theme::SPACE_LG;
+    let code_width = (content.max_chars.max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG;
     let row_min_w = theme::EDITOR_CHANGE_BAR_WIDTH
         + theme::EDITOR_BLAME_WIDTH
         + theme::DIFF_GUTTER_COLUMN_WIDTH
@@ -217,6 +217,9 @@ pub(crate) fn render_editor(
         },
     )
     .track_scroll(scroll)
+    // uniform_list 默认样式只有 overflow，不约束尺寸：必须显式撑满父容器
+    // 剩余空间，否则内容为空（如切换文件的瞬间）时高度塌陷、右栏一片空白。
+    .flex_1()
     // 长行超出视口时整表横向滚动（与 diff 视图同策略）。
     .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
 }
@@ -271,7 +274,7 @@ fn render_line(
         .overflow_hidden()
         .whitespace_nowrap()
         .bg(blame_bg)
-        .text_size(px(theme::FONT_SIZE_MONO))
+        .text_size(px(theme::font_size_mono()))
         .font_family(mono.clone())
         .child(div().flex_none().text_color(author_fg).child(author))
         .child(
@@ -291,7 +294,7 @@ fn render_line(
 
     div()
         .flex_none()
-        .h(px(theme::DIFF_LINE_HEIGHT))
+        .h(px(theme::diff_line_height()))
         .min_w(px(row_min_w))
         .flex()
         .flex_row()
@@ -318,7 +321,7 @@ fn render_line(
                 .bg(theme::gutter_bg())
                 .border_r_1()
                 .border_color(theme::gutter_border())
-                .text_size(px(theme::FONT_SIZE_MONO))
+                .text_size(px(theme::font_size_mono()))
                 .text_color(muted.opacity(0.7))
                 .font_family(mono.clone())
                 .child(line.number.to_string()),
@@ -332,7 +335,7 @@ fn render_line(
                 .flex_row()
                 .items_center()
                 .pl(px(theme::SPACE_SM))
-                .text_size(px(theme::FONT_SIZE_MONO))
+                .text_size(px(theme::font_size_mono()))
                 .text_color(fg)
                 .font_family(mono.clone())
                 .child(if line.text.is_empty() {
@@ -345,7 +348,7 @@ fn render_line(
 
 /// 单行正文的最小宽度（按字符数估算，空行也保留一格）。
 fn code_width_of(line: &EditorLine) -> f32 {
-    (line.text.chars().count().max(1) as f32) * theme::DIFF_CHAR_WIDTH + theme::SPACE_LG
+    (line.text.chars().count().max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG
 }
 
 #[cfg(test)]

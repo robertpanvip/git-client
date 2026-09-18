@@ -32,6 +32,18 @@ pub enum Ic {
     Edit,
     Fetch,
     File,
+    FileCss,
+    FileHtml,
+    FileImage,
+    FileJs,
+    FileJson,
+    FileLock,
+    FileMd,
+    FilePy,
+    FileRs,
+    FileTs,
+    FileToml,
+    FileYaml,
     Filter,
     Folder,
     History,
@@ -73,6 +85,18 @@ impl gpui_kit::assets::IconNamed for Ic {
             Ic::Edit => "icons/edit.svg",
             Ic::Fetch => "icons/fetch.svg",
             Ic::File => "icons/file.svg",
+            Ic::FileCss => "icons/fileCss.svg",
+            Ic::FileHtml => "icons/fileHtml.svg",
+            Ic::FileImage => "icons/fileImage.svg",
+            Ic::FileJs => "icons/fileJs.svg",
+            Ic::FileJson => "icons/fileJson.svg",
+            Ic::FileLock => "icons/fileLock.svg",
+            Ic::FileMd => "icons/fileMd.svg",
+            Ic::FilePy => "icons/filePy.svg",
+            Ic::FileRs => "icons/fileRs.svg",
+            Ic::FileTs => "icons/fileTs.svg",
+            Ic::FileToml => "icons/fileToml.svg",
+            Ic::FileYaml => "icons/fileYaml.svg",
             Ic::Filter => "icons/filter.svg",
             Ic::Folder => "icons/folder.svg",
             Ic::History => "icons/history.svg",
@@ -100,6 +124,34 @@ impl gpui_kit::assets::IconNamed for Ic {
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
 struct IconFiles;
+
+/// 按文件扩展名选择 IDEA 风格的类型图标，未识别的扩展名回退通用文件图标。
+///
+/// 渲染管线（`paint_svg` → alpha mask）是单色着色，类型区分依赖形状：
+/// 文件底形挖孔符号（json 的花括号、md 的下箭头等）与纯符号
+/// （rs 齿轮、py 蛇形等），对应 IDEA 的 Monochrome icons 形态。
+pub(crate) fn file_icon(path: &str) -> Ic {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "rs" => Ic::FileRs,
+        "toml" => Ic::FileToml,
+        "lock" => Ic::FileLock,
+        "md" | "markdown" => Ic::FileMd,
+        "json" | "jsonc" | "json5" => Ic::FileJson,
+        "yaml" | "yml" => Ic::FileYaml,
+        "py" | "pyi" | "pyw" => Ic::FilePy,
+        "js" | "mjs" | "cjs" | "jsx" => Ic::FileJs,
+        "ts" | "mts" | "cts" | "tsx" => Ic::FileTs,
+        "html" | "htm" | "xhtml" | "xml" | "svg" => Ic::FileHtml,
+        "css" | "scss" | "sass" | "less" => Ic::FileCss,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => Ic::FileImage,
+        _ => Ic::File,
+    }
+}
 
 /// 资产源：优先命中本地 JetBrains 图标，未命中回退 gpui-kit 内置图标
 /// （组件库 spinner/chevron 等默认图标依赖内置路径）。

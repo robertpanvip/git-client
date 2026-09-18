@@ -33,6 +33,6 @@ pub fn toolbar_label(text: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
         .whitespace_nowrap()
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .child(text.into())
 }

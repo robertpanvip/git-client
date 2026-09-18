@@ -157,7 +157,7 @@ impl Render for DiffWindowView {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_BODY))
+                    .text_size(px(theme::font_size_body()))
                     .text_color(muted)
                     .child(self.title.clone()),
             );
@@ -228,7 +228,7 @@ impl Render for DiffWindowView {
                 .id("dw-error")
                 .child(
                     div()
-                        .text_size(px(theme::FONT_SIZE_BODY))
+                        .text_size(px(theme::font_size_body()))
                         .text_color(crate::ui::theme::error_color())
                         .child(error.clone()),
                 )
@@ -242,7 +242,7 @@ impl Render for DiffWindowView {
                 .id("dw-empty")
                 .child(
                     div()
-                        .text_size(px(theme::FONT_SIZE_BODY))
+                        .text_size(px(theme::font_size_body()))
                         .text_color(muted)
                         .child(tr("No changes", "无更改")),
                 )

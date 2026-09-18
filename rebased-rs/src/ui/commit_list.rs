@@ -94,6 +94,23 @@ impl LogDelegate {
             .map_or(1, |data| data.graph.lane_count)
     }
 
+    /// 已加载提交的去重作者名（日志「用户」过滤下拉的数据源，升序）。
+    pub fn authors(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .data
+            .as_ref()
+            .map(|data| {
+                data.commits
+                    .iter()
+                    .map(|c| c.author.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names.dedup();
+        names
+    }
+
     fn rebuild(&mut self, query: &str) {
         let Some(data) = self.data.clone() else {
             return;
@@ -210,7 +227,7 @@ impl ListDelegate for LogDelegate {
                         .min_w_0()
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .text_size(px(theme::FONT_SIZE_META))
+                        .text_size(px(theme::font_size_meta()))
                         .text_color(fg)
                         .child(commit.subject.clone()),
                 ),
@@ -225,7 +242,7 @@ impl ListDelegate for LogDelegate {
                     .w(px(theme::COL_AUTHOR_WIDTH))
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(commit.author.name.clone()),
             )
@@ -234,7 +251,7 @@ impl ListDelegate for LogDelegate {
                     .flex_none()
                     .w(px(theme::COL_DATE_WIDTH))
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(format_time(commit.time)),
             )
@@ -243,7 +260,7 @@ impl ListDelegate for LogDelegate {
                     .flex_none()
                     .w(px(theme::COL_HASH_WIDTH))
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_MONO))
+                    .text_size(px(theme::font_size_mono()))
                     .text_color(muted)
                     .child(short_id(&commit.id.0).to_string()),
             );

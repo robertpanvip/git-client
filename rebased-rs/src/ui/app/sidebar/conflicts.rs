@@ -33,7 +33,7 @@ impl AppView {
                 div()
                     .flex_none()
                     .px(px(theme::SPACE_MD))
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(if self.state.merge_in_progress {
                         tr(
@@ -64,7 +64,7 @@ impl AppView {
             };
             panel = panel.child(
                 div()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(message),
             );
@@ -98,7 +98,7 @@ impl AppView {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_BODY))
+                    .text_size(px(theme::font_size_body()))
                     .child(file.path.clone()),
             );
             row = row.child(
@@ -126,7 +126,7 @@ impl AppView {
 
         if let Some(path) = self.state.conflict_path.clone() {
             if self.state.conflict_hunks.is_empty() {
-                panel = panel.child(div().text_size(px(theme::FONT_SIZE_META)).text_color(muted).child(tr(
+                panel = panel.child(div().text_size(px(theme::font_size_meta())).text_color(muted).child(tr(
                     "No textual hunks in this file. Use the buttons above to take one side.",
                     "该文件没有文本冲突块。使用上方按钮选择一侧。",
                 )));
@@ -191,7 +191,7 @@ impl AppView {
                         .p(px(theme::SPACE_MD))
                         .child(
                             div()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(format!(
                                     "{} {} · {}",
@@ -258,14 +258,14 @@ impl AppView {
                                         .p(px(theme::SPACE_SM))
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(muted)
                                                 .child(tr("Yours", "你的")),
                                         )
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .child(ours_text),
                                         ),
                                 )
@@ -282,14 +282,14 @@ impl AppView {
                                         .p(px(theme::SPACE_SM))
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(muted)
                                                 .child(result_label),
                                         )
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .child(result_text),
                                         ),
                                 )
@@ -306,14 +306,14 @@ impl AppView {
                                         .p(px(theme::SPACE_SM))
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(muted)
                                                 .child(tr("Theirs", "他们的")),
                                         )
                                         .child(
                                             div()
-                                                .text_size(px(theme::FONT_SIZE_META))
+                                                .text_size(px(theme::font_size_meta()))
                                                 .child(theirs_text),
                                         ),
                                 ),

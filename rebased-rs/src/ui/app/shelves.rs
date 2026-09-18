@@ -2,11 +2,13 @@ use gpui::Context;
 
 use crate::ui::i18n::tr;
 
-use super::{AppView, SidebarMode, use_cases};
+use super::{AppView, ChangesTab, MainView, use_cases};
 
 impl AppView {
+    /// 打开贮藏：贮藏不再是独立面板，而是变更面板的页签（对齐 IDEA）。
     pub(crate) fn open_shelves(&mut self, cx: &mut Context<Self>) {
-        self.state.sidebar = SidebarMode::Shelve;
+        self.state.main_view = MainView::Workspace;
+        self.state.changes_tab = ChangesTab::Shelve;
         self.reload_shelves(cx);
     }
 
@@ -32,7 +34,6 @@ impl AppView {
                 self.state.error = None;
                 self.state.status_message = tr("Unshelved", "已恢复搁置").to_string();
                 self.refresh(cx);
-                self.state.sidebar = SidebarMode::Shelve;
                 self.reload_shelves(cx);
             }
             Err(e) => {

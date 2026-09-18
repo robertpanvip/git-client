@@ -51,7 +51,7 @@ pub fn popup_title(title: impl Into<SharedString>) -> Div {
         .items_center()
         .gap(px(theme::SPACE_MD))
         .px(px(theme::SPACE_MD))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .font_weight(theme::WEIGHT_MEDIUM)
         .text_color(theme::text_muted())
         .child(title.into())

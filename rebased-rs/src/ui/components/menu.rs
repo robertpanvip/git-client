@@ -65,7 +65,7 @@ where
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_BODY))
+                    .text_size(px(theme::font_size_body()))
                     .text_color(fg)
                     .child(label.clone()),
             );
@@ -74,7 +74,7 @@ where
             row = row.child(
                 div()
                     .flex_none()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(accent)
                     .child(shortcut),
             );
@@ -102,13 +102,13 @@ pub fn menu_text(label: impl Into<SharedString>, muted: impl Into<SharedString>)
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_BODY))
+                    .text_size(px(theme::font_size_body()))
                     .child(label.clone()),
             )
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(cx.theme().muted_foreground)
                     .child(muted.clone()),
             )
@@ -171,14 +171,14 @@ pub fn menu_row(
                 .min_w_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .text_size(px(theme::FONT_SIZE_BODY))
+                .text_size(px(theme::font_size_body()))
                 .child(label),
         );
     if let Some(shortcut) = shortcut {
         row = row.child(
             div()
                 .flex_none()
-                .text_size(px(theme::FONT_SIZE_META))
+                .text_size(px(theme::font_size_meta()))
                 .text_color(theme::text_muted())
                 .child(SharedString::from(shortcut)),
         );

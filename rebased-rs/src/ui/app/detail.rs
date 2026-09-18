@@ -379,6 +379,9 @@ impl AppView {
                     );
                 }
             }
+            PromptKind::Settings => {
+                // 设置面板所有更改即时生效，无需确认动作。
+            }
             PromptKind::Stash => {
                 let message = if input.is_empty() { None } else { Some(input) };
                 let (keep_index, include_untracked) = (
@@ -462,9 +465,6 @@ impl AppView {
                 } else {
                     self.goto_revision(input, cx);
                 }
-            }
-            PromptKind::FilterAuthor => {
-                self.set_author_filter(input, cx);
             }
             PromptKind::SetUpstream { branch } => {
                 if input.is_empty() {

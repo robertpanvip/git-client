@@ -29,7 +29,7 @@ pub fn empty_state_with(
         .justify_center()
         .gap(px(theme::SPACE_MD))
         .px(px(theme::SPACE_XL))
-        .text_size(px(theme::FONT_SIZE_BODY))
+        .text_size(px(theme::font_size_body()))
         .text_color(muted);
     if let Some(icon) = icon {
         body = body.child(
@@ -42,7 +42,7 @@ pub fn empty_state_with(
     if let Some(hint) = hint {
         body = body.child(
             div()
-                .text_size(px(theme::FONT_SIZE_META))
+                .text_size(px(theme::font_size_meta()))
                 .text_center()
                 .text_color(muted.opacity(0.75))
                 .child(hint.to_string()),
@@ -56,7 +56,7 @@ pub fn empty_hint(message: impl Into<SharedString>, muted: Hsla) -> Div {
     div()
         .px(px(theme::SPACE_MD))
         .py(px(theme::SPACE_SM))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .text_color(muted)
         .child(message.into())
 }

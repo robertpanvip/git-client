@@ -139,10 +139,8 @@ pub const DIFF_GUTTER_WIDTH: f32 = DIFF_GUTTER_COLUMN_WIDTH * 2.0;
 /// 宽度下都同时可见（IntelliJ 行为）；超宽行在半宽内裁剪，而非把右半
 /// 挤出视口造成「上下排列」的观感。
 pub const DIFF_SBS_CODE_BASE_WIDTH: f32 = 160.0;
-/// diff 单行高度（编辑器行高，比列表行更密 —— IntelliJ ≈18-20）。
-pub const DIFF_LINE_HEIGHT: f32 = 19.0;
-/// 等宽字体在 [`FONT_SIZE_MONO`] 下的单字符近似步进，用于估算横向滚动宽度。
-pub const DIFF_CHAR_WIDTH: f32 = 7.6;
+/// diff 单行高度与等宽字符步进改为**字号派生函数**（见文件末尾
+/// `diff_line_height()` / `diff_char_width()`），随编辑器字号联动。
 
 // ---------- 窗口（Windows）----------
 /// 主窗口初始尺寸（IntelliJ 默认启动尺寸 ≈1440×900）。
@@ -173,15 +171,98 @@ pub const SPACE_LG: f32 = 12.0;
 pub const SPACE_XL: f32 = 16.0;
 
 // ---------- 字体大小（Font Sizes）----------
-/// 超小字号（辅助信息 / 元数据 / 计数）—— **11px**。
-pub const FONT_SIZE_XS: f32 = 11.0;
-/// 小字号（次要文字 / 日期 / 哈希 / placeholder）—— **12px**。
-pub const FONT_SIZE_SM: f32 = 12.0;
-/// 基础字号（正文 / 列表项 / 按钮文字）—— **13px**（IntelliJ UI 字号）。
-pub const FONT_SIZE_BASE: f32 = 13.0;
-/// 中等字号（标题 / 面板头 / 重要标签）—— **14px**。
-pub const FONT_SIZE_MD: f32 = 14.0;
-/// 大字号（主标题 / 对话框标题）—— **16px**。
-pub const FONT_SIZE_LG: f32 = 16.0;
-/// 代码 / 等宽字体字号（编辑器 / diff / 行号 / blame）—— **12-13px**。
-pub const FONT_SIZE_MONO: f32 = 12.5;
+//
+// 字号支持运行时调整（设置面板 → 字体），因此以「默认常量 + 原子全局」实现：
+// - 窗口字号：一组基线 + 全局增量（`ui_font_delta`），XS…LG 同步缩放；
+// - 编辑器/等宽字号（`editor_font_size`）：独立缩放，不受窗口增量影响；
+// - diff 行高/字符宽度是编辑器字号的派生值，随编辑器字号联动。
+//
+// 注意：字号一律通过下方 `font_size_*()` 函数读取，禁止再引用常量。
+
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+
+/// 超小字号默认值（辅助信息 / 元数据 / 计数）—— **11px**。
+pub const DEFAULT_FONT_SIZE_XS: f32 = 11.0;
+/// 小字号默认值（次要文字 / 日期 / 哈希 / placeholder）—— **12px**。
+pub const DEFAULT_FONT_SIZE_SM: f32 = 12.0;
+/// 基础字号默认值（正文 / 列表项 / 按钮文字）—— **13px**（IntelliJ UI 字号）。
+pub const DEFAULT_FONT_SIZE_BASE: f32 = 13.0;
+/// 中等字号默认值（标题 / 面板头 / 重要标签）—— **14px**。
+pub const DEFAULT_FONT_SIZE_MD: f32 = 14.0;
+/// 大字号默认值（主标题 / 对话框标题）—— **16px**。
+pub const DEFAULT_FONT_SIZE_LG: f32 = 16.0;
+/// 代码 / 等宽字号默认值（编辑器 / diff / 行号 / blame）—— **12.5px**。
+pub const DEFAULT_FONT_SIZE_MONO: f32 = 12.5;
+
+/// 窗口字号增量（px，可为负），作用于 XS…LG 全组基线。
+static UI_FONT_DELTA: AtomicI32 = AtomicI32::new(0);
+/// 编辑器/等宽字号，以 **0.5px 半点整数** 存储（12.5 → 25），避免浮点原子。
+static EDITOR_FONT_HALF_PTS: AtomicU32 = AtomicU32::new((DEFAULT_FONT_SIZE_MONO * 2.0) as u32);
+
+/// 窗口字号增量下限：再小文字将不可读。
+pub const UI_FONT_DELTA_MIN: i32 = -2;
+/// 窗口字号增量上限：再大固定行高容器（24px 列表行）会溢出。
+pub const UI_FONT_DELTA_MAX: i32 = 6;
+/// 编辑器字号允许范围（px）。
+pub const EDITOR_FONT_SIZE_MIN: f32 = 9.0;
+pub const EDITOR_FONT_SIZE_MAX: f32 = 28.0;
+
+/// 当前窗口字号增量。
+pub fn ui_font_delta() -> i32 {
+    UI_FONT_DELTA.load(Ordering::Relaxed)
+}
+
+/// 设置窗口字号增量（自动钳制到允许范围）。
+pub fn set_ui_font_delta(delta: i32) {
+    UI_FONT_DELTA.store(delta.clamp(UI_FONT_DELTA_MIN, UI_FONT_DELTA_MAX), Ordering::Relaxed);
+}
+
+/// 当前编辑器/等宽字号。
+pub fn editor_font_size() -> f32 {
+    EDITOR_FONT_HALF_PTS.load(Ordering::Relaxed) as f32 / 2.0
+}
+
+/// 设置编辑器/等宽字号（0.5px 步进，自动钳制到允许范围）。
+pub fn set_editor_font_size(size: f32) {
+    let half = (size.clamp(EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX) * 2.0).round() as u32;
+    EDITOR_FONT_HALF_PTS.store(half, Ordering::Relaxed);
+}
+
+fn ui_size(default: f32) -> f32 {
+    default + ui_font_delta() as f32
+}
+
+/// 超小字号（辅助信息 / 元数据 / 计数）。
+pub fn font_size_xs() -> f32 {
+    ui_size(DEFAULT_FONT_SIZE_XS)
+}
+/// 小字号（次要文字 / 日期 / 哈希 / placeholder）。
+pub fn font_size_sm() -> f32 {
+    ui_size(DEFAULT_FONT_SIZE_SM)
+}
+/// 基础字号（正文 / 列表项 / 按钮文字，IntelliJ UI 字号）。
+pub fn font_size_base() -> f32 {
+    ui_size(DEFAULT_FONT_SIZE_BASE)
+}
+/// 中等字号（标题 / 面板头 / 重要标签）。
+pub fn font_size_md() -> f32 {
+    ui_size(DEFAULT_FONT_SIZE_MD)
+}
+/// 大字号（主标题 / 对话框标题）。
+pub fn font_size_lg() -> f32 {
+    ui_size(DEFAULT_FONT_SIZE_LG)
+}
+/// 代码 / 等宽字号（编辑器 / diff / 行号 / blame）。
+pub fn font_size_mono() -> f32 {
+    editor_font_size()
+}
+
+/// diff 单行高度（编辑器行高）：字号 + 6.5px 的呼吸空间（默认 12.5 → 19）。
+pub fn diff_line_height() -> f32 {
+    font_size_mono() + 6.5
+}
+
+/// 等宽字体的单字符近似步进（≈0.61 × 字号），用于估算横向滚动宽度。
+pub fn diff_char_width() -> f32 {
+    font_size_mono() * 0.608
+}

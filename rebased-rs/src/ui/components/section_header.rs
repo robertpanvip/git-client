@@ -31,7 +31,7 @@ pub fn group_header_controls(
         .items_center()
         .gap(px(theme::SPACE_SM))
         .px(px(theme::ROW_PADDING_X))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .font_weight(theme::WEIGHT_MEDIUM)
         .text_color(muted);
     if let Some(leading) = leading {
@@ -63,7 +63,7 @@ pub fn panel_header(title: impl Into<SharedString>, muted: Hsla, actions: Vec<An
         .flex_row()
         .items_center()
         .gap(px(theme::SPACE_MD))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .font_weight(theme::WEIGHT_MEDIUM)
         .text_color(muted)
         .child(

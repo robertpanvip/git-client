@@ -29,9 +29,15 @@ pub(crate) enum SidebarMode {
     Compare,
     Rebase,
     Conflicts,
-    Shelve,
     History,
     Reflog,
+}
+
+/// 变更面板的页签（对齐 IDEA：Commit 与 Shelve 是同一工具窗口的两个页签）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChangesTab {
+    Changes,
+    Shelve,
 }
 
 impl SidebarMode {
@@ -40,7 +46,7 @@ impl SidebarMode {
     pub(crate) fn default_width(self) -> f32 {
         use crate::ui::theme;
         match self {
-            Self::Workspace | Self::Detail | Self::Shelve => theme::DETAIL_PANEL_WIDTH,
+            Self::Workspace | Self::Detail => theme::DETAIL_PANEL_WIDTH,
             Self::Rebase => theme::REBASE_PANEL_WIDTH,
             Self::Diff
             | Self::Blame
@@ -55,7 +61,7 @@ impl SidebarMode {
     pub(crate) fn min_width(self) -> f32 {
         use crate::ui::theme;
         match self {
-            Self::Workspace | Self::Detail | Self::Shelve => theme::MIN_RIGHT_PANEL_WIDTH,
+            Self::Workspace | Self::Detail => theme::MIN_RIGHT_PANEL_WIDTH,
             _ => theme::MIN_WIDE_PANEL_WIDTH,
         }
     }
@@ -106,13 +112,14 @@ pub(crate) enum PromptKind {
         index: usize,
     },
     GoTo,
-    FilterAuthor,
     /// 添加远程仓库：两个输入框分别为 remote 名字与 URL。
     AddRemote,
     /// 为指定分支设置上游：输入形如 `origin/main`。
     SetUpstream {
         branch: String,
     },
+    /// 设置面板：外观（主题）、语言、字体大小（窗口 / 编辑器），更改即时生效。
+    Settings,
     Confirm(ConfirmAction),
 }
 
@@ -293,6 +300,8 @@ pub(crate) struct AppState {
     pub(crate) detail_files: Vec<Change>,
     pub(crate) detail_branches: Vec<String>,
     pub(crate) sidebar: SidebarMode,
+    /// 变更面板当前页签（Commit 面板内切换变更列表 / 贮藏列表）。
+    pub(crate) changes_tab: ChangesTab,
     /// 主区域视图：工作区（图1 两栏）/ Git 日志（图2 三栏，左栏为分支树）/ 文件树视图。
     pub(crate) main_view: MainView,
     /// 文件视图：工作区文件清单（升序，仓库相对路径）。
@@ -389,6 +398,7 @@ impl Default for AppState {
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
             sidebar: SidebarMode::Workspace,
+            changes_tab: ChangesTab::Changes,
             main_view: MainView::Workspace,
             files: Arc::new(Vec::new()),
             files_loading: false,

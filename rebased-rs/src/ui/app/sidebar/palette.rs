@@ -248,7 +248,7 @@ impl AppView {
                             div()
                                 .px(px(theme::SPACE_SM))
                                 .pb(px(theme::SPACE_XS))
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted)
                                 .child(tr("Alt+` toggle · Esc to close", "Alt+` 切换 · Esc 关闭")),
                         )

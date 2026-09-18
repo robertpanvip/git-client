@@ -67,6 +67,27 @@ pub fn persist_theme_mode(mode: ThemeMode) {
     write_config_value("theme", mode.name());
 }
 
+/// 启动时恢复字体设置：窗口字号增量 + 编辑器/等宽字号（缺省用主题默认基线）。
+pub fn load_font_settings() {
+    if let Some(delta) = read_config_value("ui_font_delta").and_then(|v| v.parse::<i32>().ok()) {
+        crate::ui::theme::set_ui_font_delta(delta);
+    }
+    if let Some(size) = read_config_value("editor_font_size").and_then(|v| v.parse::<f32>().ok())
+    {
+        crate::ui::theme::set_editor_font_size(size);
+    }
+}
+
+/// 持久化窗口字号增量（px，可为负）。
+pub fn persist_ui_font_delta(delta: i32) {
+    write_config_value("ui_font_delta", &delta.to_string());
+}
+
+/// 持久化编辑器/等宽字号（0.5px 步进）。
+pub fn persist_editor_font_size(size: f32) {
+    write_config_value("editor_font_size", &format!("{size:.1}"));
+}
+
 /// 追加一条启动/运行诊断日志到 `<数据目录>/startup.log`；任何失败静默忽略，
 /// 日志属于尽力而为的观测手段，不允许影响主流程。
 pub fn log_event(message: &str) {
@@ -113,5 +134,21 @@ mod tests {
         write_config_value("lang", "en");
         assert_eq!(read_config_value("lang").as_deref(), Some("en"));
         assert_eq!(read_config_value("theme").as_deref(), Some("dark"));
+    }
+
+    #[test]
+    fn font_settings_roundtrip() {
+        let _guard = config_test_lock();
+        persist_ui_font_delta(2);
+        persist_editor_font_size(14.0);
+        load_font_settings();
+        assert_eq!(crate::ui::theme::ui_font_delta(), 2);
+        assert_eq!(crate::ui::theme::editor_font_size(), 14.0);
+        // 恢复默认，避免污染其它测试读取的全局状态。
+        persist_ui_font_delta(0);
+        persist_editor_font_size(crate::ui::theme::DEFAULT_FONT_SIZE_MONO);
+        load_font_settings();
+        assert_eq!(crate::ui::theme::ui_font_delta(), 0);
+        assert_eq!(crate::ui::theme::editor_font_size(), crate::ui::theme::DEFAULT_FONT_SIZE_MONO);
     }
 }

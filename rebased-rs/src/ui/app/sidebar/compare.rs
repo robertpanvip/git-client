@@ -66,7 +66,7 @@ impl AppView {
                     div()
                         .flex_none()
                         .px(px(theme::SPACE_MD))
-                        .text_size(px(theme::FONT_SIZE_META))
+                        .text_size(px(theme::font_size_meta()))
                         .text_color(muted)
                         .child(tr("None", "无")),
                 );
@@ -85,7 +85,7 @@ impl AppView {
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted_fg)
                                 .child(short),
                         )
@@ -95,13 +95,13 @@ impl AppView {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_BODY))
+                                .text_size(px(theme::font_size_body()))
                                 .child(subject),
                         )
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted_fg)
                                 .child(time),
                         ),

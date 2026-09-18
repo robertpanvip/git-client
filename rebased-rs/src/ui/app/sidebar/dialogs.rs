@@ -1,6 +1,6 @@
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, Window, div, px,
+    SharedString, Styled, Window, WindowAppearance, div, px,
 };
 use gpui_kit::base::Disableable;
 use gpui_kit::component::{
@@ -8,13 +8,15 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     input::Textarea,
+    theme::{Theme, ThemeMode},
 };
 
 use rebased_rs::git::{MergeMode, ResetMode};
 
 use crate::ui::app::{AppView, PromptKind};
 use crate::ui::components::{cancel_button, dialog_field, dialog_footer, dialog_shell};
-use crate::ui::i18n::tr;
+use crate::ui::i18n::{self, Language, tr};
+use crate::ui::settings;
 use crate::ui::theme;
 
 impl AppView {
@@ -138,14 +140,6 @@ impl AppView {
                 )
                 .to_string(),
             ),
-            PromptKind::FilterAuthor => (
-                tr("Filter by author", "按作者过滤").to_string(),
-                tr(
-                    "Show only commits whose author matches this text. Leave empty to clear the filter.",
-                    "仅显示作者匹配的提交。留空以清除过滤。",
-                )
-                .to_string(),
-            ),
             PromptKind::AddRemote => (
                 tr("Add remote", "添加远程仓库").to_string(),
                 tr(
@@ -161,6 +155,14 @@ impl AppView {
                     tr("Upstream of", "上游分支：")
                 ),
             ),
+            PromptKind::Settings => (
+                tr("Settings", "设置").to_string(),
+                tr(
+                    "Changes apply immediately and are saved automatically.",
+                    "更改即时生效并自动保存。",
+                )
+                .to_string(),
+            ),
             PromptKind::Confirm(action) => (action.title(), action.hint()),
         };
 
@@ -168,7 +170,7 @@ impl AppView {
         // 动作区交给 `dialog_footer`，保证全应用的按钮顺序/间距一致，
         // 正文单独滚动（超长内容不再把对话框撑出屏幕）。
         // 必填类对话框在输入为空时禁用主按钮（IntelliJ 默认按钮语义）；
-        // Stash / Squash / MergeMessage / FilterAuthor 的输入可选，不禁用。
+        // Stash / Squash / MergeMessage 的输入可选，不禁用。
         let input_empty = self.prompt_input.read(cx).value().trim().is_empty();
         let input2_empty = self.prompt_input2.read(cx).value().trim().is_empty();
         let requires_input = matches!(
@@ -387,6 +389,141 @@ impl AppView {
                     )
                     .into_any_element(),
                 ),
+                PromptKind::Settings => {
+                    let is_dark = cx.theme().is_dark();
+                    let is_zh = i18n::current() == Language::Zh;
+                    let delta = theme::ui_font_delta();
+                    let editor_size = theme::editor_font_size();
+                    let body = div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(theme::SPACE_LG))
+                        .child(settings_section_label(tr("Appearance", "外观")))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap(px(theme::SPACE_MD))
+                                .child(settings_option_button(
+                                    cx,
+                                    "settings-theme-light",
+                                    tr("Light", "浅色").into(),
+                                    !is_dark,
+                                    |_, window, cx| {
+                                        Theme::change(ThemeMode::Light, Some(window), cx);
+                                        cx.set_window_appearance(Some(WindowAppearance::Light));
+                                        settings::persist_theme_mode(ThemeMode::Light);
+                                        cx.refresh_windows();
+                                    },
+                                ))
+                                .child(settings_option_button(
+                                    cx,
+                                    "settings-theme-dark",
+                                    tr("Dark", "深色").into(),
+                                    is_dark,
+                                    |_, window, cx| {
+                                        Theme::change(ThemeMode::Dark, Some(window), cx);
+                                        theme::apply_jetbrains_palette(cx);
+                                        cx.set_window_appearance(Some(WindowAppearance::Dark));
+                                        settings::persist_theme_mode(ThemeMode::Dark);
+                                        cx.refresh_windows();
+                                    },
+                                )),
+                        )
+                        .child(settings_section_label(tr("Language", "语言")))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap(px(theme::SPACE_MD))
+                                .child(settings_option_button(
+                                    cx,
+                                    "settings-lang-en",
+                                    "English".into(),
+                                    !is_zh,
+                                    |_, _, cx| {
+                                        if i18n::current() != Language::En {
+                                            i18n::set_current(Language::En);
+                                            cx.refresh_windows();
+                                        }
+                                    },
+                                ))
+                                .child(settings_option_button(
+                                    cx,
+                                    "settings-lang-zh",
+                                    "中文".into(),
+                                    is_zh,
+                                    |_, _, cx| {
+                                        if i18n::current() != Language::Zh {
+                                            i18n::set_current(Language::Zh);
+                                            cx.refresh_windows();
+                                        }
+                                    },
+                                )),
+                        )
+                        .child(dialog_field(
+                            tr("Window font size", "窗口字号"),
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(theme::SPACE_SM))
+                                .child(settings_font_button(
+                                    cx,
+                                    "settings-ui-minus",
+                                    "−",
+                                    FontTarget::Ui,
+                                    SettingsStep::Decrease,
+                                    delta <= theme::UI_FONT_DELTA_MIN,
+                                ))
+                                .child(settings_value_text(format!("{delta:+} px")))
+                                .child(settings_font_button(
+                                    cx,
+                                    "settings-ui-plus",
+                                    "+",
+                                    FontTarget::Ui,
+                                    SettingsStep::Increase,
+                                    delta >= theme::UI_FONT_DELTA_MAX,
+                                )),
+                            muted,
+                        ))
+                        .child(dialog_field(
+                            tr("Editor font size", "编辑器字号"),
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(theme::SPACE_SM))
+                                .child(settings_font_button(
+                                    cx,
+                                    "settings-editor-minus",
+                                    "−",
+                                    FontTarget::Editor,
+                                    SettingsStep::Decrease,
+                                    editor_size <= theme::EDITOR_FONT_SIZE_MIN,
+                                ))
+                                .child(settings_value_text(format!("{editor_size:.1} px")))
+                                .child(settings_font_button(
+                                    cx,
+                                    "settings-editor-plus",
+                                    "+",
+                                    FontTarget::Editor,
+                                    SettingsStep::Increase,
+                                    editor_size >= theme::EDITOR_FONT_SIZE_MAX,
+                                )),
+                            muted,
+                        ));
+                    // 设置项即时生效，底部只需一个「完成」。
+                    let footer = dialog_footer(
+                        div().into_any_element(),
+                        Button::new("settings-close")
+                            .primary()
+                            .label(tr("Done", "完成"))
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_prompt(cx))),
+                    )
+                    .into_any_element();
+                    (body, footer)
+                }
                 _ => {
                     let ok_label = match &kind {
                         PromptKind::NewBranch { .. } => tr("Create", "创建"),
@@ -399,7 +536,6 @@ impl AppView {
                         PromptKind::Squash { .. } => tr("Squash", "压缩"),
                         PromptKind::RenameBranch => tr("Rename", "重命名"),
                         PromptKind::GoTo => tr("Go", "跳转"),
-                        PromptKind::FilterAuthor => tr("Filter", "过滤"),
                         PromptKind::SetUpstream { .. } => tr("Set", "设置"),
                         _ => tr("OK", "确定"),
                     };
@@ -430,4 +566,87 @@ impl AppView {
                 .into_any_element(),
         )
     }
+}
+
+/// 设置面板分组小标题。
+fn settings_section_label(text: impl Into<SharedString>) -> Div {
+    div()
+        .text_size(px(theme::font_size_meta()))
+        .font_weight(theme::WEIGHT_MEDIUM)
+        .child(text.into())
+}
+
+/// 设置面板互斥选项按钮（当前项 primary 高亮，其余 ghost）。
+fn settings_option_button(
+    cx: &mut Context<AppView>,
+    id: &'static str,
+    label: SharedString,
+    active: bool,
+    on_click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Button {
+    let mut btn = Button::new(id).label(label);
+    btn = if active { btn.primary() } else { btn.ghost() };
+    btn.on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
+}
+
+/// 字号步进方向。
+#[derive(Clone, Copy)]
+enum SettingsStep {
+    Decrease,
+    Increase,
+}
+
+impl SettingsStep {
+    fn delta(self) -> i32 {
+        match self {
+            Self::Decrease => -1,
+            Self::Increase => 1,
+        }
+    }
+}
+
+/// 字号调节目标：窗口字号（1px 步进）/ 编辑器字号（0.5px 步进）。
+#[derive(Clone, Copy)]
+enum FontTarget {
+    Ui,
+    Editor,
+}
+
+/// 设置面板的字号步进按钮：点击立即生效并持久化，全局刷新窗口。
+fn settings_font_button(
+    cx: &mut Context<AppView>,
+    id: &'static str,
+    label: &'static str,
+    target: FontTarget,
+    step: SettingsStep,
+    disabled: bool,
+) -> Button {
+    let mut btn = Button::new(id).ghost().compact().label(label);
+    if disabled {
+        btn = btn.disabled(true);
+    }
+    btn.on_click(cx.listener(move |_, _, _, cx| {
+        match target {
+            FontTarget::Ui => {
+                theme::set_ui_font_delta(theme::ui_font_delta() + step.delta());
+                settings::persist_ui_font_delta(theme::ui_font_delta());
+            }
+            FontTarget::Editor => {
+                let size = theme::editor_font_size() + step.delta() as f32 * 0.5;
+                theme::set_editor_font_size(size);
+                settings::persist_editor_font_size(theme::editor_font_size());
+            }
+        }
+        cx.refresh_windows();
+    }))
+}
+
+/// 步进按钮之间的当前值显示（固定最小宽度，避免加减时按钮跳动）。
+fn settings_value_text(text: String) -> Div {
+    div()
+        .min_w(px(64.0))
+        .flex()
+        .justify_center()
+        .text_size(px(theme::font_size_body()))
+        .child(text)
 }

@@ -1,7 +1,7 @@
 //! 输入控件 re-export 与语义化包装。
 //!
 //! 关键约束：**单行语义的字段必须用单行控件**。原实现把 NewBranch / Rename / GoTo /
-//! FilterAuthor / SetUpstream / EditTag 等单行字段统一用 64px 多行 `Textarea`，
+//! SetUpstream / EditTag 等单行字段统一用 64px 多行 `Textarea`，
 //! 导致 Enter 被解释为换行而非"确认"，与 IntelliJ 的对话框行为相反。
 //!
 //! 注意：placeholder 属于**状态**（`InputState` / `TextareaState` 构造时设置），

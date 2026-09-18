@@ -168,7 +168,7 @@ fn group_header(label: &str, muted: Hsla) -> Div {
         .flex_row()
         .items_center()
         .pl(px(theme::SPACE_SM))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .text_color(muted)
         .whitespace_nowrap()
         .overflow_hidden()
@@ -203,7 +203,7 @@ fn render_row(spec: RowSpec, on_pick: Option<&BranchPick>, fg: Hsla, muted: Hsla
         .gap(px(theme::SPACE_XS))
         .pl(px(indent))
         .pr(px(theme::SPACE_SM))
-        .text_size(px(theme::FONT_SIZE_BODY))
+        .text_size(px(theme::font_size_body()))
         .text_color(text_color)
         .whitespace_nowrap()
         .overflow_hidden();

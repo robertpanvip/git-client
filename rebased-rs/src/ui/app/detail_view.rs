@@ -53,7 +53,7 @@ impl AppView {
                 div()
                     .w(px(theme::ICON_SIZE_SM))
                     .flex_none()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(color)
                     .child(change.status.short_label()),
             )
@@ -63,7 +63,7 @@ impl AppView {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .child(path),
             )
             .child(
@@ -137,7 +137,7 @@ impl AppView {
                             .gap(px(theme::SPACE_SM))
                             .child(
                                 div()
-                                    .text_size(px(theme::FONT_SIZE_BODY))
+                                    .text_size(px(theme::font_size_body()))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(fg)
                                     .child(commit.subject.clone()),
@@ -161,7 +161,7 @@ impl AppView {
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(format!(
                         "{} · {} · {} · {}",
@@ -175,7 +175,7 @@ impl AppView {
                 detail.child(
                     div()
                         .flex_none()
-                        .text_size(px(theme::FONT_SIZE_META))
+                        .text_size(px(theme::font_size_meta()))
                         .text_color(muted)
                         .whitespace_normal()
                         .child(commit.body.clone()),

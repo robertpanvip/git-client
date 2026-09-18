@@ -11,7 +11,7 @@ use gpui_kit::component::{
     menu::ContextMenuExt,
 };
 
-use crate::ui::app::{AppView, ConfirmAction, PromptKind};
+use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{menu_item, menu_width};
 use crate::ui::graph_view::graph_column_width;
 use crate::ui::i18n::tr;
@@ -21,6 +21,7 @@ use crate::ui::theme;
 impl AppView {
     /// 左侧 Commit 面板（对齐原版布局）：工作区变更列表 + 底部提交输入区。
     /// 宽度由外壳的可拖拽分隔条控制（见 `AppView::commit_panel_width`）。
+    /// 贮藏页签下不显示提交输入区（对齐 IDEA：Shelve 页签无提交框）。
     pub(crate) fn render_commit_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .w(px(self.commit_panel_width))
@@ -30,7 +31,9 @@ impl AppView {
             .flex_col()
             .overflow_hidden()
             .child(self.render_workspace(cx))
-            .child(self.render_composer(cx))
+            .when(self.state.changes_tab == ChangesTab::Changes, |sidebar| {
+                sidebar.child(self.render_composer(cx))
+            })
             .into_any_element()
     }
 
@@ -50,7 +53,7 @@ impl AppView {
             .bg(theme::log_list_bg())
             .border_b_1()
             .border_color(theme::separator())
-            .text_size(px(theme::FONT_SIZE_META))
+            .text_size(px(theme::font_size_meta()))
             .font_weight(theme::WEIGHT_MEDIUM)
             .text_color(muted)
             .child(
@@ -121,7 +124,7 @@ impl AppView {
                     .py(px(theme::SPACE_XS))
                     .rounded(px(theme::RADIUS_SM))
                     .bg(theme::log_tag_bg())
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(theme::white())
                     .overflow_hidden()
                     .whitespace_nowrap()
@@ -147,7 +150,7 @@ impl AppView {
             .gap(px(theme::SPACE_XS))
             .px(px(theme::SPACE_SM))
             .rounded(px(theme::RADIUS_SM))
-            .text_size(px(theme::FONT_SIZE_META))
+            .text_size(px(theme::font_size_meta()))
             .text_color(link)
             .cursor_pointer()
             .hover(move |s| s.bg(theme::hover_bg(link)))
@@ -167,7 +170,10 @@ impl AppView {
             .iter()
             .map(|b| b.name.clone())
             .collect();
+        // 「用户」下拉的数据源：已加载日志的去重作者名（IDEA 同样从当前日志取作者集）。
+        let author_names = self.list.read(cx).delegate().authors();
         let filter_branch = self.state.filter_branch.clone();
+        let filter_author = self.state.filter_author.clone();
         let filter_since = self.state.filter_since.clone();
 
         let branch_label = filter_branch
@@ -185,6 +191,8 @@ impl AppView {
 
         let branch_weak = weak.clone();
         let branch_filter = filter_branch.clone();
+        let author_weak = weak.clone();
+        let author_filter = filter_author.clone();
         let date_weak = weak.clone();
         let date_filter = filter_since.clone();
 
@@ -219,7 +227,7 @@ impl AppView {
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
-                            Ic::Filter,
+                            Ic::Branch,
                             tr("All Branches", "所有分支"),
                             None,
                             false,
@@ -237,7 +245,7 @@ impl AppView {
                             let weak = branch_weak.clone();
                             let name = name.clone();
                             result = result.item(menu_item(
-                                Ic::Filter,
+                                Ic::Branch,
                                 name.clone(),
                                 None,
                                 false,
@@ -253,16 +261,50 @@ impl AppView {
                     }),
             )
             .child(
-                Button::new("log-author-filter")
-                    .ghost()
-                    .compact()
-                    .label(author_label)
-                    .dropdown_caret(true)
-                    .on_click(
-                        cx.listener(|this, _, _, cx| {
-                            this.open_prompt(PromptKind::FilterAuthor, cx)
-                        }),
-                    ),
+                // 「用户」过滤 = 下拉选择作者（IDEA 规范），不再是独立弹窗。
+                DropdownButton::new("log-author-filter")
+                    .button(
+                        Button::new("log-author-filter-button")
+                            .ghost()
+                            .compact()
+                            .label(author_label)
+                            .dropdown_caret(true),
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(menu_item(
+                            Ic::User,
+                            tr("All Users", "所有用户"),
+                            None,
+                            false,
+                            author_filter.is_empty(),
+                            {
+                                let weak = author_weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.set_author_filter(String::new(), cx)
+                                    });
+                                }
+                            },
+                        ));
+                        for name in author_names.iter() {
+                            let checked = author_filter.as_str() == name.as_str();
+                            let weak = author_weak.clone();
+                            let name = name.clone();
+                            result = result.item(menu_item(
+                                Ic::User,
+                                name.clone(),
+                                None,
+                                false,
+                                checked,
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.set_author_filter(name.clone(), cx)
+                                    });
+                                },
+                            ));
+                        }
+                        menu_width(result)
+                    }),
             )
             .child(
                 DropdownButton::new("log-date-filter")
@@ -275,7 +317,7 @@ impl AppView {
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
-                            Ic::Filter,
+                            Ic::History,
                             tr("All Time", "全部时间"),
                             None,
                             false,
@@ -299,7 +341,7 @@ impl AppView {
                                 date_filter.as_ref().map(|(_, e)| e.as_str()) == Some(expr);
                             let weak = date_weak.clone();
                             result = result.item(menu_item(
-                                Ic::Filter,
+                                Ic::History,
                                 label,
                                 None,
                                 false,

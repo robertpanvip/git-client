@@ -17,7 +17,7 @@ pub fn status_bar(fg: Hsla) -> Div {
         .items_center()
         .gap(px(theme::SPACE_MD))
         .px(px(theme::SPACE_MD))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
 }
 
 /// 状态栏左侧消息段（占据剩余宽度）。

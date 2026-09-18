@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, px,
+    Stateful, StatefulInteractiveElement, Styled, WeakEntity, div, px,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
@@ -14,11 +14,12 @@ use gpui_kit::component::{
 
 use rebased_rs::git::{Change, ChangeStatus};
 
-use crate::ui::app::{AppView, ConfirmAction, PromptKind};
+use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{
-    Checkbox, empty_state, group_header_controls, list_row, menu_item, menu_width, row_icon_button,
-    selected, status_bar, status_message, status_segment,
+    Checkbox, DropdownButton, empty_state, group_header_controls, list_row, menu_item,
+    menu_width, row_icon_button, selected, status_bar, status_message, status_segment,
 };
+use crate::ui::components::tabs::{segment, segmented};
 use crate::ui::graph_view::status_color;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
@@ -78,7 +79,7 @@ impl AppView {
                 div()
                     .w(px(theme::ICON_SIZE_SM))
                     .flex_none()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .font_weight(theme::WEIGHT_MEDIUM)
                     .text_color(color)
                     .child(change.status.short_label()),
@@ -96,7 +97,7 @@ impl AppView {
                         div()
                             .flex_none()
                             .whitespace_nowrap()
-                            .text_size(px(theme::FONT_SIZE_BODY))
+                            .text_size(px(theme::font_size_body()))
                             .text_color(color)
                             .child(name),
                     )
@@ -107,7 +108,7 @@ impl AppView {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted)
                                 .child(dir),
                         )
@@ -314,15 +315,78 @@ impl AppView {
         out
     }
 
+    /// 变更面板：Commit / Shelve 两个页签（对齐 IDEA 的 Commit 工具窗口）。
     pub(crate) fn render_workspace(&self, cx: &mut Context<Self>) -> Div {
+        let tab = self.state.changes_tab;
+
+        let changes_segment = segment(
+            "tab-changes",
+            tr("Changes", "变更"),
+            tab == ChangesTab::Changes,
+            cx,
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.state.changes_tab = ChangesTab::Changes;
+            cx.notify();
+        }));
+        let shelve_segment = segment(
+            "tab-shelve",
+            tr("Shelve", "贮藏"),
+            tab == ChangesTab::Shelve,
+            cx,
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.state.changes_tab = ChangesTab::Shelve;
+            this.reload_shelves(cx);
+        }));
+
+        let header = segmented(vec![changes_segment, shelve_segment]).flex_1().when(
+            tab == ChangesTab::Shelve,
+            |bar| {
+                bar.child(
+                    row_icon_button("shelve-unstash", Ic::Unshelve, tr("Unstash", "恢复贮藏"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.run_op(tr("Unstashed", "已恢复贮藏"), |repo| repo.stash_pop(), cx)
+                        })),
+                )
+                .child(
+                    row_icon_button("shelve-reload", Ic::Refresh, tr("Reload", "刷新")).on_click(
+                        cx.listener(|this, _, _, cx| this.reload_shelves(cx)),
+                    ),
+                )
+            },
+        );
+
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(theme::SPACE_SM))
+                    .pr(px(theme::SPACE_XS))
+                    .child(header),
+            )
+            .when(tab == ChangesTab::Changes, |panel| {
+                panel.child(self.render_changes_list(cx))
+            })
+            .when(tab == ChangesTab::Shelve, |panel| {
+                panel.child(self.render_shelve_tab(cx))
+            })
+    }
+
+    /// 「变更」页签内容：Unstaged / Staged 分组列表（顺序与 IntelliJ 一致）。
+    fn render_changes_list(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let fg = cx.theme().foreground;
-        let muted = cx.theme().muted_foreground;
         let count = self.state.changes.len();
 
         let unstaged: Vec<&Change> = self.state.changes.iter().filter(|c| !c.staged).collect();
         let staged: Vec<&Change> = self.state.changes.iter().filter(|c| c.staged).collect();
 
-        // 顺序与 IntelliJ 一致：未暂存在上、已暂存在下。
         let mut rows = self.changes_section(
             "chg-select-all-unstaged",
             tr("Unstaged", "未暂存"),
@@ -339,32 +403,73 @@ impl AppView {
         ));
 
         div()
+            .id("changes-list")
             .flex_1()
             .min_h_0()
+            .overflow_y_scroll()
             .flex()
             .flex_col()
-            .child(group_header_controls(
-                format!("{} ({count})", tr("Changes", "变更")),
-                muted,
-                None,
-                None,
-            ))
-            .child(
-                div()
-                    .id("changes-list")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .children(rows)
-                    .when(count == 0, |container| {
-                        container.child(empty_state(
-                            tr("Working tree clean", "工作区干净"),
-                            fg.opacity(0.4),
-                        ))
-                    }),
-            )
+            .pt(px(theme::SPACE_SM))
+            .children(rows)
+            .when(count == 0, |container| {
+                container.child(empty_state(
+                    tr("Working tree clean", "工作区干净"),
+                    fg.opacity(0.4),
+                ))
+            })
+    }
+
+    /// 「贮藏」页签内容：贮藏条目列表 + 空态（原独立 Shelve 面板并入此页签）。
+    fn render_shelve_tab(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let fg = cx.theme().foreground;
+        let muted = cx.theme().muted_foreground;
+        div()
+            .id("shelve-tab-list")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .pt(px(theme::SPACE_SM))
+            .when(self.state.shelves.is_empty(), |list| {
+                list.child(empty_state(
+                    tr(
+                        "Nothing shelved. Use Shelve… in the commit composer.",
+                        "暂无贮藏。在提交区使用“搁置…”。",
+                    ),
+                    muted,
+                ))
+            })
+            .children(self.state.shelves.iter().map(|entry| {
+                let index = entry.index;
+                list_row(format!("shelve-{index}"), fg)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(px(theme::font_size_body()))
+                            .text_ellipsis()
+                            .overflow_hidden()
+                            .child(entry.message.clone()),
+                    )
+                    .child(
+                        row_icon_button(
+                            ("shelve-apply", index),
+                            Ic::Unshelve,
+                            tr("Unshelve", "恢复搁置"),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.unshelve_at(index, cx)
+                        })),
+                    )
+                    .child(
+                        row_icon_button(("shelve-drop", index), Ic::Delete, tr("Drop", "丢弃"))
+                            .danger()
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.drop_shelve_at(index, cx)
+                            })),
+                    )
+            }))
     }
 
     pub(crate) fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -376,6 +481,8 @@ impl AppView {
         } else {
             tr("Commit", "提交").to_string()
         };
+        let push_weak: WeakEntity<Self> = cx.entity().downgrade();
+        let shelve_weak = push_weak.clone();
         div()
             .flex_none()
             .border_t_1()
@@ -385,51 +492,68 @@ impl AppView {
             .flex_col()
             .gap(px(theme::SPACE_SM))
             .child(Textarea::new(&self.message_input).h(px(theme::INPUT_HEIGHT_MULTI)))
+            // 选项行：修正提交为**复选框**（原位保留 IntelliJ 的选项语义），
+            // IDEA 把提交选项放在按钮上方而不是塞进按钮文案里。
             .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(theme::SPACE_MD))
-                    // 左：修正提交为**复选框**（原位保留 IntelliJ 的选项语义），
-                    // 而不是把状态画进按钮文案里的 `✓ Amend` 幽灵按钮。
-                    .child(
-                        Checkbox::new("composer-amend")
-                            .checked(self.state.amend)
-                            .with_size(Size::XSmall)
-                            .label(amend)
-                            .on_click(cx.listener(|this, checked, window, cx| {
-                                this.state.amend = *checked;
-                                if *checked {
-                                    this.prefill_amend_message(window, cx);
-                                }
-                                cx.notify();
+                Checkbox::new("composer-amend")
+                    .checked(self.state.amend)
+                    .with_size(Size::XSmall)
+                    .label(amend)
+                    .on_click(cx.listener(|this, checked, window, cx| {
+                        this.state.amend = *checked;
+                        if *checked {
+                            this.prefill_amend_message(window, cx);
+                        }
+                        cx.notify();
+                    })),
+            )
+            // 主操作：全宽 primary 分裂按钮（对齐 IDEA 的 Commit ▾ 规范），
+            // ▾ 下拉承载 提交并推送 / 贮藏 等次级动作，不再摆 ghost 按钮挤占一行。
+            .child(
+                DropdownButton::new("composer-commit-split")
+                    .button(
+                        Button::new("composer-commit")
+                            .primary()
+                            .label(commit_label)
+                            .flex_1()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.do_commit(window, cx)
                             })),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(theme::SPACE_SM))
-                            .child(
-                                Button::new("shelve")
-                                    .ghost()
-                                    .label(tr("Shelve…", "搁置…"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                    .primary()
+                    .flex_1()
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let result = menu.item(menu_item(
+                            Ic::Push,
+                            tr("Commit and Push…", "提交并推送…"),
+                            None,
+                            false,
+                            false,
+                            {
+                                let weak = push_weak.clone();
+                                move |_, window, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.do_commit_and_push(window, cx)
+                                    });
+                                }
+                            },
+                        ));
+                        result.item(menu_item(
+                            Ic::Shelve,
+                            tr("Shelve…", "贮藏…"),
+                            None,
+                            false,
+                            false,
+                            {
+                                let weak = shelve_weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
                                         this.open_prompt(PromptKind::Stash, cx)
-                                    })),
-                            )
-                            .child(
-                                Button::new("commit")
-                                    .primary()
-                                    .label(commit_label)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.do_commit(window, cx)
-                                    })),
-                            ),
-                    ),
+                                    });
+                                }
+                            },
+                        ))
+                    }),
             )
     }
 
@@ -462,7 +586,7 @@ impl AppView {
                                 Button::new("cancel-op")
                                     .ghost()
                                     .compact()
-                                    .text_size(px(theme::FONT_SIZE_META))
+                                    .text_size(px(theme::font_size_meta()))
                                     .label(tr("Cancel", "取消"))
                                     .on_click(move |_, _, _| {
                                         token.store(true, Ordering::SeqCst);

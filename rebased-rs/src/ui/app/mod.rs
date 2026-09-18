@@ -43,7 +43,7 @@ mod toolbar;
 mod use_cases;
 
 pub(crate) use state::{
-    AppState, ConfirmAction, DiffSource, MainView, PromptKind, RebaseFlow, SidebarMode,
+    AppState, ChangesTab, ConfirmAction, DiffSource, MainView, PromptKind, RebaseFlow, SidebarMode,
 };
 use use_cases::{reload_conflict_state, sync_repo_state};
 
@@ -517,7 +517,7 @@ impl AppView {
         cx.notify();
     }
 
-    /// 左侧 40px 图标条（对齐原版 New UI 竖条）：Git / History / Shelve 快捷入口。
+    /// 左侧 40px 图标条（对齐 IDEA New UI 竖条）：Commit / Files / History / Git log 入口。
     fn render_icon_strip(&self, cx: &mut Context<Self>) -> Div {
         div()
             .w(px(theme::ICON_STRIP_WIDTH))
@@ -532,34 +532,30 @@ impl AppView {
             .border_r_1()
             .border_color(theme::separator())
             .child(self.render_strip_button(
-                "strip-files",
-                icons::Ic::Folder,
-                self.state.main_view == MainView::Files,
-                |this, cx| this.open_files_view(cx),
+                "strip-commit",
+                icons::Ic::Commit,
+                self.state.main_view == MainView::Workspace,
+                Some(self.state.changes.len()),
+                |this, cx| {
+                    // IDEA 的 Commit 工具窗图标：唤出左侧变更面板（工作区视图）。
+                    this.state.main_view = MainView::Workspace;
+                    cx.notify();
+                },
                 cx,
             ))
             .child(self.render_strip_button(
-                "strip-git",
-                icons::Ic::Changes,
-                self.state.main_view == MainView::Log,
-                |this, cx| {
-                    // 主窗口左下角的 Git 图标：在「工作区（图1）」与「Git 日志（图2）」间切换。
-                    eprintln!(
-                        "[diag] strip-git clicked, main_view={:?}",
-                        this.state.main_view
-                    );
-                    this.state.main_view = match this.state.main_view {
-                        MainView::Workspace => MainView::Log,
-                        MainView::Log | MainView::Files => MainView::Workspace,
-                    };
-                    cx.notify();
-                },
+                "strip-files",
+                icons::Ic::Folder,
+                self.state.main_view == MainView::Files,
+                None,
+                |this, cx| this.open_files_view(cx),
                 cx,
             ))
             .child(self.render_strip_button(
                 "strip-history",
                 icons::Ic::History,
                 matches!(self.state.sidebar, SidebarMode::History),
+                None,
                 |this, cx| {
                     // 文件视图不承载侧栏面板：切回工作区视图再打开该面板。
                     eprintln!("[diag] strip-history clicked");
@@ -572,26 +568,26 @@ impl AppView {
                 cx,
             ))
             .child(self.render_strip_button(
-                "strip-shelve",
-                icons::Ic::Shelve,
-                matches!(self.state.sidebar, SidebarMode::Shelve),
+                "strip-log",
+                icons::Ic::Branch,
+                self.state.main_view == MainView::Log,
+                None,
                 |this, cx| {
-                    if this.state.main_view == MainView::Files {
-                        this.state.main_view = MainView::Workspace;
-                    }
-                    this.state.sidebar = SidebarMode::Shelve;
+                    // Git 日志视图独立入口（IDEA 将 Git 工具窗放在底部）。
+                    this.state.main_view = MainView::Log;
                     cx.notify();
                 },
                 cx,
             ))
     }
 
-    /// 图标条单按钮：选中态蓝底白字，未选中悬停淡入。
+    /// 图标条单按钮：选中态蓝底白字，未选中悬停淡入；`badge` 在右下角显示计数。
     fn render_strip_button(
         &self,
         id: &'static str,
         icon: icons::Ic,
         active: bool,
+        badge: Option<usize>,
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -602,6 +598,7 @@ impl AppView {
         };
         div()
             .id(id)
+            .relative()
             .size(px(theme::ICON_STRIP_BUTTON_SIZE))
             .flex_none()
             .flex()
@@ -614,6 +611,37 @@ impl AppView {
             .when(!active, |b| b.hover(move |s| s.bg(theme::hover_bg(fg))))
             .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
             .child(Icon::new(icon))
+            .when_some(badge.filter(|&n| n > 0), |button, count| {
+                let bg = if active {
+                    theme::white()
+                } else {
+                    theme::selection_bg()
+                };
+                let fg_badge = if active { theme::selection_bg() } else { theme::white() };
+                let label = if count > 9 {
+                    "9+".to_string()
+                } else {
+                    count.to_string()
+                };
+                button.child(
+                    div()
+                        .absolute()
+                        .bottom(px(0.0))
+                        .right(px(-2.0))
+                        .min_w(px(14.0))
+                        .h(px(14.0))
+                        .px(px(3.0))
+                        .rounded(px(7.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(bg)
+                        .text_size(px(theme::font_size_xs() - 2.0))
+                        .font_weight(theme::WEIGHT_MEDIUM)
+                        .text_color(fg_badge)
+                        .child(label),
+                )
+            })
     }
 
     /// 左栏分隔条：拖动改变 Commit 面板宽度。
@@ -771,6 +799,8 @@ impl Render for AppView {
 
 pub fn run(repo_path: PathBuf) {
     i18n::load_persisted();
+    // 字体设置先于首帧加载，避免窗口以默认字号闪一帧再跳变。
+    settings::load_font_settings();
     settings::log_event("entering gpui application");
     gpui_kit::application()
         .with_assets(icons::AppAssets)

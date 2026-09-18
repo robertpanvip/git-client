@@ -54,7 +54,7 @@ pub fn badge(id: SharedString, label: impl Into<SharedString>, color: Hsla) -> S
         .px(px(theme::SPACE_SM))
         .rounded(px(theme::RADIUS))
         .bg(theme::badge_bg(color))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .text_color(color)
         .child(label.into())
 }
@@ -74,7 +74,7 @@ pub fn chip(id: SharedString, label: impl Into<SharedString>, color: Hsla) -> St
         .px(px(theme::SPACE_XS))
         .rounded(px(theme::RADIUS_SM))
         .bg(theme::badge_solid_bg(color))
-        .text_size(px(theme::FONT_SIZE_META))
+        .text_size(px(theme::font_size_meta()))
         .text_color(theme::text_primary())
         .overflow_hidden()
         .whitespace_nowrap()

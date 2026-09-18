@@ -3,7 +3,7 @@
 //! 对齐 IntelliJ diff 编辑器的结构：
 //! - **独立行号 gutter**：固定列宽 [`DIFF_GUTTER_COLUMN_WIDTH`]、独立底色、右侧分隔线，
 //!   与正文分离（原实现把行号拼进正文文本里，列宽随内容漂移）；
-//! - 固定行高 [`DIFF_LINE_HEIGHT`]，不是由字号+padding 自动撑开；
+//! - 固定行高 [`diff_line_height()`]，不是由字号+padding 自动撑开；
 //! - 正文不换行，超宽时整体**横向滚动**（按最长行估算内容宽度）；
 //! - hunk 头独立成行（hunk 底色 + 上下分隔线 + 右侧 Stage/Unstage）。
 //!
@@ -110,7 +110,7 @@ fn gutter_cell(no: Option<u32>, mono: &SharedString, muted: Hsla) -> Div {
         .bg(gutter_bg())
         .border_r_1()
         .border_color(gutter_border())
-        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_size(px(crate::ui::theme::font_size_mono()))
         .text_color(muted.opacity(0.7))
         .font_family(mono.clone())
         .child(no.map(|n| n.to_string()).unwrap_or_default())
@@ -126,7 +126,7 @@ fn code_cell(content: String, color: Hsla, mono: &SharedString, min_w: f32) -> D
         .flex_row()
         .items_center()
         .pl(px(crate::ui::theme::SPACE_SM))
-        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_size(px(crate::ui::theme::font_size_mono()))
         .text_color(color)
         .font_family(mono.clone())
         .child(if content.is_empty() {
@@ -150,7 +150,7 @@ fn sbs_code(content: String, color: Hsla, mono: &SharedString) -> Div {
         .pl(px(crate::ui::theme::SPACE_SM))
         .overflow_hidden()
         .whitespace_nowrap()
-        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_size(px(crate::ui::theme::font_size_mono()))
         .text_color(color)
         .font_family(mono.clone())
         .child(if content.is_empty() {
@@ -173,7 +173,7 @@ fn sbs_side(
     let mut half = div()
         .flex_1()
         .min_w_0()
-        .h(px(crate::ui::theme::DIFF_LINE_HEIGHT))
+        .h(px(crate::ui::theme::diff_line_height()))
         .flex()
         .flex_row()
         .items_center();
@@ -260,7 +260,7 @@ pub fn render_diff_files(
                     .bg(stripe_bg(fg))
                     .child(
                         div()
-                            .text_size(px(crate::ui::theme::FONT_SIZE_META))
+                            .text_size(px(crate::ui::theme::font_size_meta()))
                             .text_color(badge_color)
                             .child(badge),
                     )
@@ -269,7 +269,7 @@ pub fn render_diff_files(
                             .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_size(px(crate::ui::theme::FONT_SIZE_META))
+                            .text_size(px(crate::ui::theme::font_size_meta()))
                             .child(file.path.clone()),
                     ),
             );
@@ -295,7 +295,7 @@ pub fn render_diff_files(
                 .items_center()
                 .justify_between()
                 .px(px(crate::ui::theme::SPACE_SM))
-                .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+                .text_size(px(crate::ui::theme::font_size_mono()))
                 .text_color(muted)
                 .bg(hunk_bg())
                 .border_t_1()
@@ -360,7 +360,7 @@ pub fn render_diff_files(
                     block = block.child(
                         div()
                             .flex_none()
-                            .h(px(crate::ui::theme::DIFF_LINE_HEIGHT))
+                            .h(px(crate::ui::theme::diff_line_height()))
                             .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
                             .flex()
                             .flex_row()
@@ -388,7 +388,7 @@ pub fn render_diff_files(
 /// 估算正文所需最小宽度（按最长行字符数 × 单字符步进）。
 fn code_min_width(max_chars: usize) -> f32 {
     let chars = max_chars.max(1) as f32;
-    chars * crate::ui::theme::DIFF_CHAR_WIDTH + crate::ui::theme::SPACE_LG
+    chars * crate::ui::theme::diff_char_width() + crate::ui::theme::SPACE_LG
 }
 
 fn max_line_chars(hunk: &Hunk) -> usize {

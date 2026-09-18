@@ -493,6 +493,8 @@ impl Repository {
     }
 
     /// 工作区文件清单（tracked + untracked，遵循 .gitignore），相对仓库根路径。
+    ///
+    /// 返回顺序为 IDEA 项目树顺序：同级目录在前、文件在后，各自按名称升序。
     pub fn worktree_files(&self) -> Result<Vec<String>> {
         let stdout = self
             .cmd
@@ -502,7 +504,7 @@ impl Repository {
             .filter(|entry| !entry.is_empty())
             .map(str::to_string)
             .collect();
-        files.sort();
+        files.sort_by(|a, b| tree_order(a, b));
         files.dedup();
         Ok(files)
     }
@@ -582,6 +584,32 @@ impl Repository {
     pub fn head_message(&self) -> Result<String> {
         super::log::full_message(&self.cmd, "HEAD")
     }
+}
+
+/// IDEA 项目树排序：同级节点目录在前、文件在后，各自按名称升序。
+///
+/// 相比纯字典序，该顺序同时保证「父目录总在子节点之前」的摊平不变量
+/// （`ui::file_tree::flatten_tree` 依赖），并让文件夹聚合展示在文件之前：
+/// 如 `src.rs`（文件）排在 `src/`（目录）之后。
+fn tree_order(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let sa: Vec<&str> = a.split('/').collect();
+    let sb: Vec<&str> = b.split('/').collect();
+    for i in 0..sa.len().min(sb.len()) {
+        let ord = sa[i].cmp(sb[i]);
+        if ord == Ordering::Equal {
+            continue;
+        }
+        return match (i + 1 == sa.len(), i + 1 == sb.len()) {
+            // a 是文件而 b 是目录：目录在前。
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            _ => ord,
+        };
+    }
+    // 公共前缀全部相同：更短的一方是对方的祖先目录，祖先在前。
+    sa.len().cmp(&sb.len())
 }
 
 #[cfg(test)]
@@ -766,10 +794,29 @@ mod tests {
 
         let repo = Repository::open(&dir.path).unwrap();
         let files = repo.worktree_files().unwrap();
+        // IDEA 顺序：目录段 src 聚合在前，顶层文件按名称排序在后。
         assert_eq!(
             files,
-            vec![".gitignore", "README.md", "notes.txt", "src/main.rs"]
+            vec!["src/main.rs", ".gitignore", "README.md", "notes.txt"]
         );
+    }
+
+    #[test]
+    fn tree_order_matches_idea_conventions() {
+        use std::cmp::Ordering;
+
+        // 同级目录在前、文件在后。
+        assert_eq!(tree_order("src/a.rs", "README.md"), Ordering::Less);
+        // 父目录先于子节点（flatten_tree 依赖的不变量）。
+        assert_eq!(tree_order("src", "src/main.rs"), Ordering::Less);
+        // 目录名与文件名交叉：src/ 排在 src.rs 前。
+        assert_eq!(tree_order("src/main.rs", "src.rs"), Ordering::Less);
+        // 同为文件按名称升序。
+        assert_eq!(tree_order("a.txt", "b.txt"), Ordering::Less);
+        // 同目录下文件让位于子目录。
+        assert_eq!(tree_order("src/aaa.txt", "src/bbb/c.txt"), Ordering::Greater);
+        // 公共前缀相同、目录在文件前。
+        assert_eq!(tree_order("src/ui/mod.rs", "src/ui.txt"), Ordering::Less);
     }
 
     #[test]

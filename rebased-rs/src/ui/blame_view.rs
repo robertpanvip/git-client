@@ -42,19 +42,19 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
             .bg(badge_bg(meta_color))
             .child(
                 div()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .font_family(mono.clone())
                     .text_color(meta_color)
                     .child(short),
             )
             .child(
                 div()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .child(group.author.clone()),
             )
             .child(
                 div()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted)
                     .child(format_time(group.time)),
             )
@@ -63,7 +63,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_size(px(theme::FONT_SIZE_META))
+                    .text_size(px(theme::font_size_meta()))
                     .text_color(muted.opacity(0.8))
                     .child(group.filename.clone()),
             );
@@ -96,7 +96,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted.opacity(0.7))
                                 .font_family(mono.clone())
                                 .child(format!("{:>4}  ", line.number)),
@@ -106,7 +106,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .font_family(mono.clone())
                                 .child(content),
                         )

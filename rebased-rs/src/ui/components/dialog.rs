@@ -67,7 +67,7 @@ pub fn dialog_shell_with_width(
         .child(
             div()
                 .flex_none()
-                .text_size(px(theme::FONT_SIZE_TITLE))
+                .text_size(px(theme::font_size_title()))
                 .font_weight(theme::WEIGHT_MEDIUM)
                 .child(title),
         );
@@ -76,7 +76,7 @@ pub fn dialog_shell_with_width(
         card = card.child(
             div()
                 .flex_none()
-                .text_size(px(theme::FONT_SIZE_META))
+                .text_size(px(theme::font_size_meta()))
                 .child(description),
         );
     }
@@ -131,7 +131,7 @@ pub fn dialog_field(label: impl Into<SharedString>, control: impl IntoElement, m
         .gap(px(theme::SPACE_XS))
         .child(
             div()
-                .text_size(px(theme::FONT_SIZE_META))
+                .text_size(px(theme::font_size_meta()))
                 .text_color(muted)
                 .child(label.into()),
         )
@@ -144,7 +144,7 @@ pub fn dialog_error(message: Option<SharedString>) -> Option<Div> {
     message.map(|message| {
         div()
             .flex_none()
-            .text_size(px(theme::FONT_SIZE_META))
+            .text_size(px(theme::font_size_meta()))
             .text_color(theme::danger_color())
             .child(message)
     })

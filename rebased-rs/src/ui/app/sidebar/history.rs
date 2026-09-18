@@ -59,7 +59,7 @@ impl AppView {
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted_fg)
                                 .child(short),
                         )
@@ -69,13 +69,13 @@ impl AppView {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_BODY))
+                                .text_size(px(theme::font_size_body()))
                                 .child(commit.subject.clone()),
                         )
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted_fg)
                                 .child(time),
                         ),
@@ -135,7 +135,7 @@ impl AppView {
                             div()
                                 .flex_none()
                                 .w(px(theme::COL_SELECTOR_WIDTH))
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted)
                                 .child(SharedString::from(entry.selector.clone())),
                         )
@@ -145,13 +145,13 @@ impl AppView {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .child(SharedString::from(entry.message.clone())),
                         )
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(theme::FONT_SIZE_META))
+                                .text_size(px(theme::font_size_meta()))
                                 .text_color(muted)
                                 .child(SharedString::from(entry.short_id.clone())),
                         ),

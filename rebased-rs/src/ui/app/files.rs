@@ -108,6 +108,9 @@ impl AppView {
             self.state.files_binary = false;
             self.state.files_deleted = false;
             self.state.files_editor = Arc::new(Default::default());
+            // 与 IDEA 一致：打开新文件从顶部阅读，且不残留上一个文件的滚动位置。
+            self.editor_scroll
+                .scroll_to_item(0, gpui::ScrollStrategy::Top);
             cx.notify();
         }
         let task =
@@ -183,13 +186,13 @@ impl AppView {
                             .child("⚠️")
                             .child(
                                 div()
-                                    .text_size(px(theme::FONT_SIZE_SM))
+                                    .text_size(px(theme::font_size_sm()))
                                     .text_color(error_color)
                                     .child(tr("Failed to load files", "文件加载失败")),
                             )
                             .child(
                                 div()
-                                    .text_size(px(theme::FONT_SIZE_XS))
+                                    .text_size(px(theme::font_size_xs()))
                                     .text_color(muted)
                                     .max_w(px(280.0))
                                     .overflow_hidden()
@@ -274,6 +277,7 @@ impl AppView {
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
+                    .flex()
                     .overflow_hidden()
                     .child(render_editor(
                         &self.state.files_editor,
@@ -311,13 +315,13 @@ fn change_legend(cx: &gpui::App) -> AnyElement {
                 .child(
                     div()
                         .w(px(theme::EDITOR_CHANGE_BAR_WIDTH))
-                        .h(px(theme::FONT_SIZE_META))
+                        .h(px(theme::font_size_meta()))
                         .flex_none()
                         .bg(color),
                 )
                 .child(
                     div()
-                        .text_size(px(theme::FONT_SIZE_META))
+                        .text_size(px(theme::font_size_meta()))
                         .text_color(muted)
                         .child(label),
                 ),

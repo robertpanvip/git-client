@@ -195,6 +195,40 @@ impl AppView {
         );
     }
 
+    /// 提交并推送（IDEA Commit 按钮下拉里的 Commit and Push）：单个后台闭包串行完成，
+    /// 保证 busy 状态下不会与后续 push 产生并发写竞争。
+    pub(crate) fn do_commit_and_push(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let message = self.message_input.read(cx).value().to_string();
+        if message.trim().is_empty() {
+            self.state.error = Some("Commit message is empty".to_string());
+            cx.notify();
+            return;
+        }
+        let Some(branch) = self.state.current_branch.clone() else {
+            self.state.error = Some("No current branch".to_string());
+            cx.notify();
+            return;
+        };
+        let set_upstream = self.state.current_upstream.is_none();
+        let amend = self.state.amend;
+        let selected = self.state.selected_changes.clone();
+        self.message_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.state.amend = false;
+        self.run_op(
+            "Committed & pushed",
+            move |repo| {
+                commit_selected(repo, &message, amend, &selected)?;
+                repo.push(&branch, set_upstream)
+            },
+            cx,
+        );
+    }
+
     pub(crate) fn do_push(&mut self, cx: &mut Context<Self>) {
         let Some(branch) = self.state.current_branch.clone() else {
             self.state.error = Some("No current branch".to_string());
@@ -661,6 +695,7 @@ impl AppView {
 
     /// Ctrl+Alt+1..9：直接切换侧栏面板。1 工作区 2 详情 3 Diff 4 历史
     /// 5 分支对比 6 Shelve 7 Rebase 8 冲突 9 Blame（Blame 走「当前文件」回退）。
+    /// 6 的 Shelve 已并入变更面板页签（对齐 IDEA），打开该页签。
     pub(crate) fn on_select_sidebar_panel(
         &mut self,
         action: &SelectSidebarPanel,
@@ -669,6 +704,7 @@ impl AppView {
     ) {
         match action.0 {
             9 => self.blame_current_file(cx),
+            6 => self.open_shelves(cx),
             n @ 1..=8 => {
                 self.state.sidebar = match n {
                     1 => SidebarMode::Workspace,
@@ -676,7 +712,6 @@ impl AppView {
                     3 => SidebarMode::Diff,
                     4 => SidebarMode::History,
                     5 => SidebarMode::Compare,
-                    6 => SidebarMode::Shelve,
                     7 => SidebarMode::Rebase,
                     _ => SidebarMode::Conflicts,
                 };
