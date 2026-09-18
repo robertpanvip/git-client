@@ -448,12 +448,18 @@ impl AppView {
             }
         }
 
+        let weak = cx.entity().downgrade();
         Some(
             div()
                 .absolute()
                 .inset_0()
                 .bg(theme::transparent())
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    let _ = weak.update(cx, |this, cx| {
+                        this.state.branch_popup = false;
+                    });
+                    window.focus(&window.root_focus_handle(), cx);
+                })
                 .child(
                     div()
                         .absolute()

@@ -69,8 +69,7 @@ impl AppView {
                 DropdownButton::new("branch-menu")
                     .button(
                         Button::new("branch-button")
-                            .secondary()
-                            .outline()
+                            .ghost()
                             .compact()
                             .icon(Ic::Branch)
                             .label(branch_label.clone())
