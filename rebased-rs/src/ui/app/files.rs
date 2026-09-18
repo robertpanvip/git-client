@@ -210,8 +210,7 @@ impl AppView {
                         this.state.files_rows = Arc::new(Vec::new());
                         this.open_files_view(cx);
                     });
-                })
-                .full_width();
+                });
             column = column.child(
                 div()
                     .flex_1()
