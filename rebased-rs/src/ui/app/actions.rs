@@ -554,6 +554,15 @@ impl AppView {
                 let message = format!("Discarded {path}");
                 self.run_op(&message, move |repo| repo.discard_changes(&path), cx);
             }
+            ConfirmAction::RollbackChanges { paths } => {
+                let message = format!("Rolled back {} file(s)", paths.len());
+                self.run_op(&message, move |repo| {
+                    for path in &paths {
+                        repo.discard_changes(path)?;
+                    }
+                    Ok(())
+                }, cx);
+            }
         }
     }
 

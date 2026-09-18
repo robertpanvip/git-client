@@ -17,6 +17,7 @@ use gpui::StatefulInteractiveElement;
 use gpui_kit::component::{ActiveTheme, button::Button};
 
 use crate::ui::blame_view::BlameJump;
+use crate::ui::blame_view::BlameToggle;
 use crate::ui::components::empty_state;
 use crate::ui::components::panel_header;
 use crate::ui::editor_view::render_editor;
@@ -113,8 +114,9 @@ impl AppView {
                 .scroll_to_item(0, gpui::ScrollStrategy::Top);
             cx.notify();
         }
-        let task =
-            cx.background_spawn(async move { use_cases::load_worktree_file(repo.as_ref(), &path) });
+        let blame = self.state.files_blame_enabled;
+        let task = cx
+            .background_spawn(async move { use_cases::load_worktree_file(repo.as_ref(), &path, blame) });
         cx.spawn(async move |this, cx| {
             let data = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -129,6 +131,19 @@ impl AppView {
             });
         })
         .detach();
+    }
+
+    /// 切换 blame 注解（编辑器右键 → Annotate with Git / Close Annotations）：
+    /// 置位后按当前开关重新装载当前文件，行级「提交者 + 日期」随之显示/隐藏。
+    pub(crate) fn set_blame_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.state.files_blame_enabled == enabled {
+            return;
+        }
+        self.state.files_blame_enabled = enabled;
+        if let Some(path) = self.state.files_selected.clone() {
+            self.open_file(path, cx);
+        }
+        cx.notify();
     }
 
     /// 文件视图左栏：工作区文件夹树。
@@ -271,6 +286,13 @@ impl AppView {
             })
         };
 
+        let on_toggle_blame: BlameToggle = {
+            let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+            Arc::new(move |enabled, app| {
+                let _ = weak.update(app, |this, cx| this.set_blame_enabled(enabled, cx));
+            })
+        };
+
         base.child(panel_header(path, muted, vec![change_legend(cx)]))
             .child(
                 div()
@@ -283,6 +305,8 @@ impl AppView {
                         &self.state.files_editor,
                         &self.editor_scroll,
                         Some(&on_commit),
+                        self.state.files_blame_enabled,
+                        Some(&on_toggle_blame),
                         cx,
                     )),
             )

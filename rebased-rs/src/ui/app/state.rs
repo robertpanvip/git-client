@@ -120,6 +120,8 @@ pub(crate) enum PromptKind {
     },
     /// 设置面板：外观（主题）、语言、字体大小（窗口 / 编辑器），更改即时生效。
     Settings,
+    /// 提交设置（IDEA Commit ▾ → Commit Settings）：修正提交等提交选项。
+    CommitSettings,
     Confirm(ConfirmAction),
 }
 
@@ -148,6 +150,10 @@ pub(crate) enum ConfirmAction {
     DiscardChanges {
         path: String,
     },
+    /// 批量回滚变更（变更页工具栏的 Rollback，作用于勾选的文件）。
+    RollbackChanges {
+        paths: Vec<String>,
+    },
 }
 
 impl ConfirmAction {
@@ -161,7 +167,9 @@ impl ConfirmAction {
             Self::UndoHeadCommit => tr("Undo HEAD commit", "撤销 HEAD 提交").to_string(),
             Self::DropCommit { .. } => tr("Drop commit", "丢弃提交").to_string(),
             Self::UncommitCommit { .. } => tr("Uncommit commit", "撤销提交").to_string(),
-            Self::DiscardChanges { .. } => tr("Discard changes", "丢弃更改").to_string(),
+            Self::DiscardChanges { .. } | Self::RollbackChanges { .. } => {
+                tr("Rollback Changes", "回滚更改").to_string()
+            }
         }
     }
 
@@ -214,6 +222,12 @@ impl ConfirmAction {
                 tr("All uncommitted changes in", "所有未提交的更改"),
                 tr("will be lost.", "将丢失。")
             ),
+            Self::RollbackChanges { paths } => format!(
+                "{} {} {}",
+                paths.len(),
+                tr("file(s) will be reverted to HEAD.", "个文件的未提交更改将被回滚。"),
+                tr("This cannot be undone.", "该操作无法撤销。")
+            ),
         }
     }
 
@@ -226,7 +240,9 @@ impl ConfirmAction {
             Self::UndoHeadCommit => tr("Undo", "撤销").to_string(),
             Self::DropCommit { .. } => tr("Drop", "丢弃").to_string(),
             Self::UncommitCommit { .. } => tr("Uncommit", "撤销").to_string(),
-            Self::DiscardChanges { .. } => tr("Discard", "丢弃").to_string(),
+            Self::DiscardChanges { .. } | Self::RollbackChanges { .. } => {
+                tr("Rollback", "回滚").to_string()
+            }
         }
     }
 }
@@ -296,6 +312,8 @@ pub(crate) struct AppState {
     pub(crate) ahead: u32,
     pub(crate) behind: u32,
     pub(crate) amend: bool,
+    /// 上次提交的完整信息（提交信息输入框上方展示首行，对齐 IDEA）。
+    pub(crate) last_commit_message: Option<String>,
     pub(crate) selected: Option<Commit>,
     pub(crate) detail_files: Vec<Change>,
     pub(crate) detail_branches: Vec<String>,
@@ -318,6 +336,8 @@ pub(crate) struct AppState {
     pub(crate) files_deleted: bool,
     /// 当前文件的逐行渲染数据（打开文件时构建一次）。
     pub(crate) files_editor: Arc<EditorContent>,
+    /// 文件视图是否显示行级 blame 注解（IDEA Annotate with Git，可经右键菜单开关）。
+    pub(crate) files_blame_enabled: bool,
     pub(crate) diff_files: Vec<FileDiff>,
     pub(crate) diff_title: String,
     pub(crate) diff_path: Option<String>,
@@ -394,6 +414,7 @@ impl Default for AppState {
             ahead: 0,
             behind: 0,
             amend: false,
+            last_commit_message: None,
             selected: None,
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
@@ -407,6 +428,7 @@ impl Default for AppState {
             files_binary: false,
             files_deleted: false,
             files_editor: Arc::new(EditorContent::default()),
+            files_blame_enabled: true,
             diff_files: Vec::new(),
             diff_title: String::new(),
             diff_path: None,

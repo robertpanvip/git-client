@@ -13,18 +13,21 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    App, Div, Hsla, InteractiveElement, ListHorizontalSizingBehavior, ParentElement, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, UniformList, UniformListScrollHandle, div, px,
-    uniform_list,
+    App, AnyElement, Div, Hsla, InteractiveElement, IntoElement, ListHorizontalSizingBehavior,
+    ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, UniformList,
+    UniformListScrollHandle, div, px, uniform_list,
 };
 use gpui_kit::component::ActiveTheme;
 use rebased_rs::git::{BlameGroup, DiffLineKind, FileDiff};
 
-use crate::ui::blame_view::BlameJump;
+use crate::ui::blame_view::{BlameJump, BlameToggle};
 use crate::ui::commit_list::format_time;
+use crate::ui::components::{menu_item, menu_width};
 use crate::ui::graph_view::lane_color;
 use crate::ui::i18n::tr;
+use crate::ui::icons::Ic;
 use crate::ui::theme;
+use gpui_kit::component::menu::ContextMenuExt;
 
 /// 工作区某一行相对 HEAD 的变更类型。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -181,10 +184,15 @@ pub(crate) fn blame_index(groups: &[BlameGroup]) -> HashMap<u32, usize> {
 }
 
 /// 渲染代码区域（`uniform_list` 只构建可视区的行）。
+///
+/// `toggle_blame` 提供右键菜单的注解开关联调：开启时菜单显示「关闭注解」，
+/// 关闭时显示「使用 Git 追溯注解」（对齐 IDEA 的 gutter 右键行为）。
 pub(crate) fn render_editor(
     content: &Arc<EditorContent>,
     scroll: &UniformListScrollHandle,
     on_commit: Option<&BlameJump>,
+    blame_enabled: bool,
+    toggle_blame: Option<&BlameToggle>,
     cx: &App,
 ) -> UniformList {
     let mono = cx.theme().mono_font_family.clone();
@@ -197,6 +205,7 @@ pub(crate) fn render_editor(
         + code_width;
     let content = Arc::clone(content);
     let on_commit = on_commit.cloned();
+    let toggle_blame = toggle_blame.cloned();
 
     uniform_list(
         "editor-lines",
@@ -211,6 +220,8 @@ pub(crate) fn render_editor(
                         muted,
                         row_min_w,
                         on_commit.as_ref(),
+                        blame_enabled,
+                        toggle_blame.as_ref(),
                     )
                 })
                 .collect::<Vec<_>>()
@@ -224,6 +235,7 @@ pub(crate) fn render_editor(
     .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_line(
     line: &EditorLine,
     mono: &SharedString,
@@ -231,7 +243,9 @@ fn render_line(
     muted: Hsla,
     row_min_w: f32,
     on_commit: Option<&BlameJump>,
-) -> Div {
+    blame_enabled: bool,
+    toggle_blame: Option<&BlameToggle>,
+) -> AnyElement {
     let marker_bg = match line.change {
         Some(LineChange::Added) => theme::added_color(),
         Some(LineChange::Modified) => theme::modified_color(),
@@ -292,7 +306,7 @@ fn render_line(
             .on_click(move |_, _, app| jump(id.clone(), app));
     }
 
-    div()
+    let row = div()
         .flex_none()
         .h(px(theme::diff_line_height()))
         .min_w(px(row_min_w))
@@ -343,7 +357,36 @@ fn render_line(
                 } else {
                     line.text.clone()
                 }),
-        )
+        );
+
+    let Some(toggle) = toggle_blame else {
+        return row.into_any_element();
+    };
+    let toggle = Arc::clone(toggle);
+    row.context_menu(move |menu, _window, _app| {
+        let toggle = Arc::clone(&toggle);
+        let m = if blame_enabled {
+            menu.item(menu_item(
+                Ic::Close,
+                tr("Close Annotations", "关闭注解"),
+                None,
+                false,
+                false,
+                move |_, _, app| toggle(false, app),
+            ))
+        } else {
+            menu.item(menu_item(
+                Ic::Blame,
+                tr("Annotate with Git", "使用 Git 追溯注解"),
+                None,
+                false,
+                false,
+                move |_, _, app| toggle(true, app),
+            ))
+        };
+        menu_width(m)
+    })
+    .into_any_element()
 }
 
 /// 单行正文的最小宽度（按字符数估算，空行也保留一格）。

@@ -13,6 +13,9 @@ use crate::ui::theme::{badge_bg, stripe_bg, transparent};
 
 pub type BlameJump = Arc<dyn Fn(String, &mut App)>;
 
+/// blame 注解开关联调（编辑器右键 → Annotate with Git / Close Annotations）。
+pub type BlameToggle = Arc<dyn Fn(bool, &mut App)>;
+
 pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &App) -> Div {
     let mono = cx.theme().mono_font_family.clone();
     let fg = cx.theme().foreground;

@@ -139,8 +139,8 @@ pub const DIFF_GUTTER_WIDTH: f32 = DIFF_GUTTER_COLUMN_WIDTH * 2.0;
 /// 宽度下都同时可见（IntelliJ 行为）；超宽行在半宽内裁剪，而非把右半
 /// 挤出视口造成「上下排列」的观感。
 pub const DIFF_SBS_CODE_BASE_WIDTH: f32 = 160.0;
-/// diff 单行高度与等宽字符步进改为**字号派生函数**（见文件末尾
-/// `diff_line_height()` / `diff_char_width()`），随编辑器字号联动。
+// diff 单行高度与等宽字符步进改为**字号派生函数**（见文件末尾
+// `diff_line_height()` / `diff_char_width()`），随编辑器字号联动。
 
 // ---------- 窗口（Windows）----------
 /// 主窗口初始尺寸（IntelliJ 默认启动尺寸 ≈1440×900）。

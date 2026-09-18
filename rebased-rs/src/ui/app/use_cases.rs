@@ -76,6 +76,12 @@ pub(crate) fn sync_repo_state(
         .or_else(|| repo.current_branch_name().ok());
     state.current_upstream = current.and_then(|branch| branch.upstream.clone());
     state.tags = Arc::new(tags);
+    // 上次提交信息：提交区输入框上方展示（对齐 IDEA 的 last commit 提示）。
+    state.last_commit_message = repo
+        .head_message()
+        .ok()
+        .map(|message| message.trim_end().to_string())
+        .filter(|message| !message.is_empty());
     state.merge_in_progress = repo.is_merge_in_progress();
     sync_rebase_flow(repo, state);
     let rebase_in_progress = state.rebase.in_progress();
@@ -351,13 +357,18 @@ pub(crate) struct WorktreeFileData {
 ///
 /// blame、diff 失败都不视为错误：未跟踪文件在 HEAD 中不存在、分支尚未诞生
 /// （`HEAD` 无法解析）都属正常状态——保留空结果，代码区仍显示文件内容。
+/// `blame` 为 false 时跳过 blame 计算（「关闭注解」），行数据不带提交者。
 /// 逐行数据在这里（后台线程）一次算好，渲染时不再重复解析 diff / blame。
-pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str) -> WorktreeFileData {
+pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str, blame: bool) -> WorktreeFileData {
     let (content, read_failed) = match repo.worktree_file_content(path) {
         Ok(text) => (text, false),
         Err(_) => (String::new(), true),
     };
-    let blame = repo.blame_worktree(path).unwrap_or_default();
+    let blame = if blame {
+        repo.blame_worktree(path).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let diff = parse_unified_diff(&repo.diff_head(Some(path), false).unwrap_or_default());
     let binary = read_failed || diff.iter().any(|file| file.is_binary);
     WorktreeFileData {

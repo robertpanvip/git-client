@@ -382,6 +382,9 @@ impl AppView {
             PromptKind::Settings => {
                 // 设置面板所有更改即时生效，无需确认动作。
             }
+            PromptKind::CommitSettings => {
+                // 提交设置里的选项点击即写入状态，关闭弹窗无需额外动作。
+            }
             PromptKind::Stash => {
                 let message = if input.is_empty() { None } else { Some(input) };
                 let (keep_index, include_untracked) = (

@@ -262,7 +262,7 @@ impl AppView {
         menu.into_any_element()
     }
 
-    /// 一个变更分组（Staged / Unstaged）：标题行 + 文件行。
+    /// 一个变更分组（更改 / 未进行版本管理的文件）：标题行 + 文件行。
     ///
     /// 标题行的前导复选框对该组做全选/全不选，尾部显示条目数——与 IntelliJ
     /// 变更列表的分组行一致（组名左侧可勾选、右侧计数）。
@@ -341,6 +341,57 @@ impl AppView {
         }));
 
         let header = segmented(vec![changes_segment, shelve_segment]).flex_1().when(
+            tab == ChangesTab::Changes,
+            |bar| {
+                // 变更页签工具栏（对齐 IDEA Commit 工具窗口）：回滚 / 刷新 /
+                // 无提示搁置。回滚作用于勾选的已跟踪文件（未勾选则回滚全部）。
+                bar.child(
+                    row_icon_button("chg-rollback", Ic::Revert, tr("Rollback", "回滚"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let selected = &this.state.selected_changes;
+                            let paths: Vec<String> = this
+                                .state
+                                .changes
+                                .iter()
+                                .filter(|change| {
+                                    change.status != ChangeStatus::Untracked
+                                        && (selected.is_empty()
+                                            || selected.contains(&change.path))
+                                })
+                                .map(|change| change.path.clone())
+                                .collect();
+                            if paths.is_empty() {
+                                return;
+                            }
+                            this.open_prompt(
+                                PromptKind::Confirm(ConfirmAction::RollbackChanges { paths }),
+                                cx,
+                            );
+                        })),
+                )
+                .child(
+                    row_icon_button("chg-reload", Ic::Refresh, tr("Refresh", "刷新")).on_click(
+                        cx.listener(|this, _, _, cx| this.refresh(cx)),
+                    ),
+                )
+                .child(
+                    row_icon_button(
+                        "chg-shelve-silent",
+                        Ic::Shelve,
+                        tr("Shelve Silently", "无提示搁置"),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        // 无弹窗、无信息：全部更改（含未跟踪）直接搁置。
+                        this.run_op(
+                            tr("Shelved silently", "已无提示搁置"),
+                            |repo| repo.stash_push(None, false, true),
+                            cx,
+                        );
+                    })),
+                )
+            },
+        )
+        .when(
             tab == ChangesTab::Shelve,
             |bar| {
                 bar.child(
@@ -379,26 +430,40 @@ impl AppView {
             })
     }
 
-    /// 「变更」页签内容：Unstaged / Staged 分组列表（顺序与 IntelliJ 一致）。
+    /// 「变更」页签内容：「更改」+「未进行版本管理的文件」两组（对齐 IDEA
+    /// 变更列表的 Default changelist + Unversioned Files 结构）。
+    ///
+    /// 已暂存与未暂存的已跟踪文件同属「更改」（提交按勾选路径执行，与
+    /// IntelliJ 一致，不依赖暂存区），未跟踪文件单列一组。
     fn render_changes_list(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let fg = cx.theme().foreground;
         let count = self.state.changes.len();
 
-        let unstaged: Vec<&Change> = self.state.changes.iter().filter(|c| !c.staged).collect();
-        let staged: Vec<&Change> = self.state.changes.iter().filter(|c| c.staged).collect();
+        let changes: Vec<&Change> = self
+            .state
+            .changes
+            .iter()
+            .filter(|change| change.status != ChangeStatus::Untracked)
+            .collect();
+        let untracked: Vec<&Change> = self
+            .state
+            .changes
+            .iter()
+            .filter(|change| change.status == ChangeStatus::Untracked)
+            .collect();
 
         let mut rows = self.changes_section(
-            "chg-select-all-unstaged",
-            tr("Unstaged", "未暂存"),
-            &unstaged,
+            "chg-select-all-changes",
+            tr("Changes", "更改"),
+            &changes,
             0,
             cx,
         );
         rows.extend(self.changes_section(
-            "chg-select-all-staged",
-            tr("Staged", "已暂存"),
-            &staged,
-            unstaged.len(),
+            "chg-select-all-unversioned",
+            tr("Unversioned Files", "未进行版本管理的文件"),
+            &untracked,
+            changes.len(),
             cx,
         ));
 
@@ -474,6 +539,7 @@ impl AppView {
 
     pub(crate) fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
+        let muted = cx.theme().muted_foreground;
         let amend = tr("Amend", "修正提交");
         let selected_count = self.state.selected_changes.len();
         let commit_label = if selected_count > 0 {
@@ -483,6 +549,7 @@ impl AppView {
         };
         let push_weak: WeakEntity<Self> = cx.entity().downgrade();
         let shelve_weak = push_weak.clone();
+        let settings_weak = push_weak.clone();
         div()
             .flex_none()
             .border_t_1()
@@ -491,6 +558,29 @@ impl AppView {
             .flex()
             .flex_col()
             .gap(px(theme::SPACE_SM))
+            // 上次提交（对齐 IDEA：输入框上方显示上一条提交信息的首行）。
+            .children(self.state.last_commit_message.as_ref().map(|message| {
+                let first_line = message.lines().next().unwrap_or_default().to_string();
+                div()
+                    .flex_none()
+                    .min_w_0()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(theme::SPACE_XS))
+                    .text_size(px(theme::font_size_meta()))
+                    .text_color(muted)
+                    .child(Icon::new(Ic::Commit).with_size(Size::XSmall))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(first_line),
+                    )
+            }))
             .child(Textarea::new(&self.message_input).h(px(theme::INPUT_HEIGHT_MULTI)))
             // 选项行：修正提交为**复选框**（原位保留 IntelliJ 的选项语义），
             // IDEA 把提交选项放在按钮上方而不是塞进按钮文案里。
@@ -549,6 +639,21 @@ impl AppView {
                                 move |_, _, cx| {
                                     let _ = weak.update(cx, |this, cx| {
                                         this.open_prompt(PromptKind::Stash, cx)
+                                    });
+                                }
+                            },
+                        ))
+                        .item(menu_item(
+                            Ic::Settings,
+                            tr("Commit Settings…", "提交设置…"),
+                            None,
+                            false,
+                            false,
+                            {
+                                let weak = settings_weak.clone();
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.open_prompt(PromptKind::CommitSettings, cx)
                                     });
                                 }
                             },
