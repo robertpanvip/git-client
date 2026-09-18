@@ -25,6 +25,7 @@ use super::{AppView, MainView, use_cases};
 impl AppView {
     /// 进入文件视图；首次进入（或仓库切换后）在后台装载文件清单。
     pub(crate) fn open_files_view(&mut self, cx: &mut Context<Self>) {
+        eprintln!("[diag] open_files_view files={} loading={}", self.state.files.len(), self.state.files_loading);
         self.state.main_view = MainView::Files;
         if self.state.files.is_empty() && !self.state.files_loading {
             self.load_files(cx);
@@ -59,6 +60,7 @@ impl AppView {
 
     /// 展开 / 折叠文件夹树中的一个目录。
     pub(crate) fn toggle_dir(&mut self, path: String, cx: &mut Context<Self>) {
+        eprintln!("[diag] toggle_dir {path}");
         if !self.state.files_expanded.remove(&path) {
             self.state.files_expanded.insert(path);
         }
@@ -77,6 +79,7 @@ impl AppView {
     /// 自动刷新会对当前文件重复调用本函数；只有切换文件时才清空右栏，
     /// 否则每次刷新都会闪一下空白。
     pub(crate) fn open_file(&mut self, path: String, cx: &mut Context<Self>) {
+        eprintln!("[diag] open_file {path}");
         let Some(repo) = self.repo.clone() else {
             return;
         };

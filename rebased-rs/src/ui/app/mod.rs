@@ -546,6 +546,7 @@ impl AppView {
                 self.state.main_view == MainView::Log,
                 |this, cx| {
                     // 主窗口左下角的 Git 图标：在「工作区（图1）」与「Git 日志（图2）」间切换。
+                    eprintln!("[diag] strip-git clicked, main_view={:?}", this.state.main_view);
                     this.state.main_view = match this.state.main_view {
                         MainView::Workspace => MainView::Log,
                         MainView::Log | MainView::Files => MainView::Workspace,
@@ -560,6 +561,7 @@ impl AppView {
                 matches!(self.state.sidebar, SidebarMode::History),
                 |this, cx| {
                     // 文件视图不承载侧栏面板：切回工作区视图再打开该面板。
+                    eprintln!("[diag] strip-history clicked");
                     if this.state.main_view == MainView::Files {
                         this.state.main_view = MainView::Workspace;
                     }
