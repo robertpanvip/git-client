@@ -1,6 +1,6 @@
 [package]
 name = "rebased-rs"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 description = "A git client UI inspired by Rebased, built with Rust + GPUI"
 
