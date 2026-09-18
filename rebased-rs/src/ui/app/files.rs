@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use gpui::{AnyElement, AppContext, Context, IntoElement, ParentElement, Styled, div, px};
-use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::{ActiveTheme, button::Button};
 
 use crate::ui::blame_view::BlameJump;
 use crate::ui::components::empty_state;
@@ -198,7 +198,55 @@ impl AppView {
             .border_color(theme::separator())
             .child(panel_header(tr("Project", "项目"), muted, Vec::new()));
 
-        if self.state.files_loading {
+        if let Some(ref error) = self.state.error {
+            let error_color = theme::error_color();
+            let weak = cx.entity().downgrade();
+            let retry_button = Button::new("retry-files")
+                .label(tr("Retry", "重试"))
+                .on_click(move |_, _window, app| {
+                    let _ = weak.update(app, |this, cx| {
+                        this.state.error = None;
+                        this.state.files = Arc::new(Vec::new());
+                        this.state.files_rows = Arc::new(Vec::new());
+                        this.open_files_view(cx);
+                    });
+                })
+                .full_width();
+            column = column.child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .p(px(theme::SPACE_LG))
+                    .gap(px(theme::SPACE_MD))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap(px(theme::SPACE_SM))
+                            .child("⚠️")
+                            .child(
+                                div()
+                                    .text_size(px(theme::FONT_SIZE_SM))
+                                    .text_color(error_color)
+                                    .child(tr("Failed to load files", "文件加载失败")),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(theme::FONT_SIZE_XS))
+                                    .text_color(muted)
+                                    .max_w(px(280.0))
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .child(error.clone()),
+                            ),
+                    )
+                    .child(retry_button),
+            );
+        } else if self.state.files_loading {
             column = column.child(empty_state(
                 tr("Loading files...", "正在加载文件..."),
                 muted,
@@ -206,6 +254,11 @@ impl AppView {
         } else if self.state.files.is_empty() {
             column = column.child(empty_state(
                 tr("No files to show", "没有可显示的文件"),
+                muted,
+            ));
+        } else if self.state.files_rows.is_empty() {
+            column = column.child(empty_state(
+                tr("File tree is empty (all files filtered)", "文件树为空（所有文件被过滤）"),
                 muted,
             ));
         } else {
