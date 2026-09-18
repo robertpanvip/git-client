@@ -159,6 +159,18 @@ pub fn apply_patch_cached(cmd: &GitCommand, patch: &str, reverse: bool) -> Resul
     cmd.run_with_stdin(&args, patch)
 }
 
+/// 把 patch 直接应用到工作区（不带 `--cached`）。
+/// `reverse = true` 时反向应用——等价于「把工作区该块还原成 index 版本」，
+/// 即 diff 箭头（左栏内容同步到右栏）的 git 语义。
+pub fn apply_patch_worktree(cmd: &GitCommand, patch: &str, reverse: bool) -> Result<()> {
+    let mut args: Vec<&str> = vec!["apply", "--whitespace=nowarn"];
+    if reverse {
+        args.push("-R");
+    }
+    args.push("-");
+    cmd.run_with_stdin(&args, patch)
+}
+
 /// 列出远程仓库（`git remote -v` 的 fetch 行：`name\turl (fetch)`）。
 pub fn remote_list(cmd: &GitCommand) -> Result<Vec<Remote>> {
     let out = cmd.run(&["remote", "-v"])?;

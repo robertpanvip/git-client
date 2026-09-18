@@ -111,6 +111,24 @@ impl DiffWindowView {
         self.error = None;
         self.reload(cx);
     }
+
+    /// 「左栏内容同步到右栏」箭头：仅 Unstaged——把工作区该 hunk 还原成
+    /// index 版本（`git apply -R`，不动 index），随后刷新自身。
+    fn sync_hunk_from_left(&mut self, file_index: usize, hunk_index: usize, cx: &mut Context<Self>) {
+        if self.source != DiffSource::Unstaged {
+            return;
+        }
+        let Some(file) = self.files.get(file_index).cloned() else {
+            return;
+        };
+        if let Err(e) = self.repo.revert_hunk_in_worktree(&file, hunk_index) {
+            self.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.error = None;
+        self.reload(cx);
+    }
 }
 
 impl Render for DiffWindowView {
@@ -180,6 +198,21 @@ impl Render for DiffWindowView {
             DiffSource::Commit => None,
         };
 
+        // 「左栏内容同步到右栏」箭头：仅 Unstaged（右栏 = 工作区当前版本）。
+        let sync_action: Option<crate::ui::diff_view::HunkAction> =
+            if self.source == DiffSource::Unstaged {
+                let weak: gpui::WeakEntity<Self> = cx.entity().downgrade();
+                Some(std::sync::Arc::new(
+                    move |file_index, hunk_index, app: &mut gpui::App| {
+                        let _ = weak.update(app, |this, cx| {
+                            this.sync_hunk_from_left(file_index, hunk_index, cx)
+                        });
+                    },
+                ))
+            } else {
+                None
+            };
+
         let body: gpui::Stateful<gpui::Div> = if let Some(error) = &self.error {
             div()
                 .flex_1()
@@ -222,6 +255,7 @@ impl Render for DiffWindowView {
                     hunk_controls
                         .as_ref()
                         .map(|(label, action)| (*label, action)),
+                    sync_action.as_ref(),
                     cx,
                 ))
         };

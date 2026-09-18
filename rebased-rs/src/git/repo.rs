@@ -264,6 +264,16 @@ impl Repository {
         ops::apply_patch_cached(&self.cmd, &patch, true)
     }
 
+    /// 把工作区中的单个 hunk 还原成 index 版本（`git apply -R`，不动 index）。
+    /// 这是 diff 面板「左栏内容同步到右栏」箭头的 git 语义。
+    pub fn revert_hunk_in_worktree(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        let patch = diff::hunk_patch(file, hunk_index);
+        if patch.is_empty() {
+            return Err(GitError::new("hunk not found"));
+        }
+        ops::apply_patch_worktree(&self.cmd, &patch, true)
+    }
+
     pub fn checkout(&self, target: &str) -> Result<()> {
         ops::checkout(&self.cmd, target)
     }

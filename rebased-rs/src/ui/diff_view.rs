@@ -21,6 +21,7 @@ use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use rebased_rs::git::{DiffLine, DiffLineKind, FileDiff, Hunk};
 
+use crate::ui::icons::Ic;
 use crate::ui::theme;
 use crate::ui::theme::{
     added_color, added_line_bg, binary_color, deleted_color, deleted_line_bg, empty_half_bg,
@@ -220,6 +221,10 @@ pub fn render_diff_files(
     files: &[FileDiff],
     side_by_side: bool,
     hunk_controls: Option<(&'static str, &HunkAction)>,
+    /// 「左栏内容同步到右栏」箭头（对齐 IntelliJ change marker 的 revert
+    /// 箭头）：点击后把右栏（当前版本）该 hunk 还原成左栏（基线）内容。
+    /// 仅 Unstaged 来源提供（Staged 的等价操作是 Unstage；Commit 只读）。
+    sync_action: Option<&HunkAction>,
     cx: &App,
 ) -> Div {
     let mono = cx.theme().mono_font_family.clone();
@@ -302,17 +307,40 @@ pub fn render_diff_files(
                         .font_family(mono.clone())
                         .child(hunk.header.clone()),
                 );
-            if let Some((label, action)) = hunk_controls {
-                let action = Arc::clone(action);
-                header_row = header_row.child(
-                    Button::new(SharedString::from(format!(
-                        "hunk-{file_index}-{hunk_index}"
-                    )))
-                    .ghost()
-                    .compact()
-                    .label(label)
-                    .on_click(move |_, _, app| action(file_index, hunk_index, app)),
-                );
+            if sync_action.is_some() || hunk_controls.is_some() {
+                // 右端按钮组：同步箭头（若有）+ Stage/Unstage（若有）。
+                let mut actions_row = div()
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(crate::ui::theme::SPACE_XS));
+                if let Some(action) = sync_action {
+                    let action = Arc::clone(action);
+                    actions_row = actions_row.child(
+                        Button::new(SharedString::from(format!(
+                            "hunk-sync-{file_index}-{hunk_index}"
+                        )))
+                        .ghost()
+                        .compact()
+                        .icon(Ic::Undo)
+                        .accessibility_label("Sync hunk from left")
+                        .on_click(move |_, _, app| action(file_index, hunk_index, app)),
+                    );
+                }
+                if let Some((label, action)) = hunk_controls {
+                    let action = Arc::clone(action);
+                    actions_row = actions_row.child(
+                        Button::new(SharedString::from(format!(
+                            "hunk-{file_index}-{hunk_index}"
+                        )))
+                        .ghost()
+                        .compact()
+                        .label(label)
+                        .on_click(move |_, _, app| action(file_index, hunk_index, app)),
+                    );
+                }
+                header_row = header_row.child(actions_row);
             }
             block = block.child(header_row);
 

@@ -106,6 +106,38 @@ impl AppView {
         }
     }
 
+    /// hunk 级「左栏内容同步到右栏」（diff 面板箭头按钮，对齐 IntelliJ
+    /// change marker 的 revert 箭头）：Unstaged 来源 = 把工作区该 hunk
+    /// 还原成 index 版本（`git apply -R`，不动 index）；Staged/Commit 只读
+    /// 不提供（Staged 的等价操作是 Unstage）。完成后重开当前 diff 刷新。
+    pub(crate) fn sync_hunk_from_left(
+        &mut self,
+        file_index: usize,
+        hunk_index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(source) = self.state.diff_source else {
+            return;
+        };
+        if source != DiffSource::Unstaged {
+            return;
+        }
+        let Some(file) = self.state.diff_files.get(file_index).cloned() else {
+            return;
+        };
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = repo.revert_hunk_in_worktree(&file, hunk_index) {
+            self.state.error = Some(e.to_string());
+            cx.notify();
+            return;
+        }
+        self.state.error = None;
+        let path = self.state.diff_path.clone();
+        self.open_unstaged_diff(path, cx);
+    }
+
     pub(crate) fn toggle_change_selection(&mut self, path: &str, cx: &mut Context<Self>) {
         if let Some(pos) = self
             .state

@@ -79,6 +79,8 @@ pub trait GitBackend: Send + Sync {
     fn apply_hunk_to_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()>;
     /// 把已暂存 diff 中的单个 hunk 撤回工作区（`git apply --cached -R`）。
     fn revert_hunk_from_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()>;
+    /// 把工作区中的单个 hunk 还原成 index 版本（`git apply -R`，不动 index）。
+    fn revert_hunk_in_worktree(&self, file: &FileDiff, hunk_index: usize) -> Result<()>;
     fn checkout(&self, target: &str) -> Result<()>;
     fn create_branch(&self, name: &str, start_point: Option<&str>) -> Result<()>;
     fn delete_branch(&self, name: &str, force: bool) -> Result<()>;
@@ -299,6 +301,10 @@ impl GitBackend for Repository {
 
     fn revert_hunk_from_index(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
         Repository::revert_hunk_from_index(self, file, hunk_index)
+    }
+
+    fn revert_hunk_in_worktree(&self, file: &FileDiff, hunk_index: usize) -> Result<()> {
+        Repository::revert_hunk_in_worktree(self, file, hunk_index)
     }
 
     fn checkout(&self, target: &str) -> Result<()> {
