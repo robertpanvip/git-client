@@ -245,6 +245,12 @@ impl AppView {
     }
 
     fn apply_data(&mut self, data: RepoData, cx: &mut Context<Self>) {
+        eprintln!(
+            "[diag] apply_data: main_view={:?} files={} files_loading={}",
+            self.state.main_view,
+            self.state.files.len(),
+            self.state.files_loading
+        );
         let Some(repo) = self.repo.clone() else {
             return;
         };
@@ -262,6 +268,7 @@ impl AppView {
         }
         // 文件视图开启时同步刷新文件树与当前文件，避免磁盘变化后显示陈旧内容。
         if self.state.main_view == MainView::Files {
+            eprintln!("[diag] apply_data: main_view is Files, calling load_files");
             self.load_files(cx);
             if let Some(path) = self.state.files_selected.clone() {
                 self.open_file(path, cx);
