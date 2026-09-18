@@ -167,14 +167,16 @@ impl AppView {
             return;
         }
         crate::ui::app::diff_window::open_diff_window(
-            self.state.diff_files.clone(),
-            self.state.diff_title.clone(),
-            source,
-            self.state.diff_path.clone(),
-            self.state.diff_commit.clone().unwrap_or_default(),
-            self.state.ignore_whitespace,
-            self.state.diff_side_by_side,
-            repo,
+            crate::ui::app::diff_window::DiffWindowSpec {
+                repo,
+                title: self.state.diff_title.clone(),
+                source,
+                path: self.state.diff_path.clone(),
+                commit_id: self.state.diff_commit.clone().unwrap_or_default(),
+                ignore_whitespace: self.state.ignore_whitespace,
+                side_by_side: self.state.diff_side_by_side,
+                files: self.state.diff_files.clone(),
+            },
             cx,
         );
         cx.notify();

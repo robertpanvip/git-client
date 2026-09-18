@@ -20,6 +20,18 @@ use crate::ui::theme;
 
 use super::DiffSource;
 
+/// 打开独立 diff 窗口所需的完整上下文（数据 + git 后端 + 显示开关）。
+pub(crate) struct DiffWindowSpec {
+    pub(crate) repo: std::sync::Arc<dyn GitBackend>,
+    pub(crate) title: String,
+    pub(crate) source: DiffSource,
+    pub(crate) path: Option<String>,
+    pub(crate) commit_id: String,
+    pub(crate) ignore_whitespace: bool,
+    pub(crate) side_by_side: bool,
+    pub(crate) files: Vec<FileDiff>,
+}
+
 pub(crate) struct DiffWindowView {
     repo: std::sync::Arc<dyn GitBackend>,
     title: String,
@@ -33,27 +45,16 @@ pub(crate) struct DiffWindowView {
 }
 
 impl DiffWindowView {
-    pub(crate) fn new(
-        repo: std::sync::Arc<dyn GitBackend>,
-        title: String,
-        source: DiffSource,
-        path: Option<String>,
-        commit_id: String,
-        ignore_whitespace: bool,
-        side_by_side: bool,
-        files: Vec<FileDiff>,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> Self {
+    pub(crate) fn new(spec: DiffWindowSpec, _window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self {
-            repo,
-            title,
-            source,
-            path,
-            commit_id,
-            ignore_whitespace,
-            side_by_side,
-            files,
+            repo: spec.repo,
+            title: spec.title,
+            source: spec.source,
+            path: spec.path,
+            commit_id: spec.commit_id,
+            ignore_whitespace: spec.ignore_whitespace,
+            side_by_side: spec.side_by_side,
+            files: spec.files,
             error: None,
         }
     }
@@ -230,17 +231,7 @@ impl Render for DiffWindowView {
 }
 
 /// 在新窗口打开当前 diff。数据克隆进 'static 闭包，构建独立 `DiffWindowView`。
-pub(crate) fn open_diff_window(
-    files: Vec<FileDiff>,
-    title: String,
-    source: DiffSource,
-    path: Option<String>,
-    commit_id: String,
-    ignore_whitespace: bool,
-    side_by_side: bool,
-    repo: std::sync::Arc<dyn GitBackend>,
-    cx: &mut gpui::App,
-) {
+pub(crate) fn open_diff_window(spec: DiffWindowSpec, cx: &mut gpui::App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(gpui::Bounds::centered(
             None,
@@ -248,26 +239,13 @@ pub(crate) fn open_diff_window(
             cx,
         ))),
         titlebar: Some(TitlebarOptions {
-            title: Some(title.clone().into()),
+            title: Some(spec.title.clone().into()),
             ..Default::default()
         }),
         ..Default::default()
     };
     let _ = cx.open_window(options, |w, cx| {
-        let view = cx.new(|cx| {
-            DiffWindowView::new(
-                repo,
-                title,
-                source,
-                path,
-                commit_id,
-                ignore_whitespace,
-                side_by_side,
-                files,
-                w,
-                cx,
-            )
-        });
+        let view = cx.new(|cx| DiffWindowView::new(spec, w, cx));
         cx.new(|cx| Root::new(view, w, cx).bg(cx.theme().background))
     });
 }

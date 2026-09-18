@@ -114,6 +114,10 @@ pub const PALETTE_MAX_HEIGHT: f32 = 460.0;
 pub const DIFF_GUTTER_COLUMN_WIDTH: f32 = 34.0;
 /// 统一视图 gutter 总宽（old + new 两列）。
 pub const DIFF_GUTTER_WIDTH: f32 = DIFF_GUTTER_COLUMN_WIDTH * 2.0;
+/// 并排视图每半正文的基线宽度：与内容长度解耦，保证左右两半在任何视口
+/// 宽度下都同时可见（IntelliJ 行为）；超宽行在半宽内裁剪，而非把右半
+/// 挤出视口造成「上下排列」的观感。
+pub const DIFF_SBS_CODE_BASE_WIDTH: f32 = 160.0;
 /// diff 单行高度（编辑器行高，比列表行更密）。
 pub const DIFF_LINE_HEIGHT: f32 = 18.0;
 /// 等宽字体在 [`FONT_SIZE_MONO`] 下的单字符近似步进，用于估算横向滚动宽度。

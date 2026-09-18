@@ -109,7 +109,7 @@ fn gutter_cell(no: Option<u32>, mono: &SharedString, muted: Hsla) -> Div {
         .child(no.map(|n| n.to_string()).unwrap_or_default())
 }
 
-/// 正文单元格：不换行、不收缩，宽度由 `min_w` 保证横向滚动。
+/// 正文单元格：不换行、不收缩，宽度由 `min_w` 保证横向滚动（统一视图）。
 fn code_cell(content: String, color: Hsla, mono: &SharedString, min_w: f32) -> Div {
     div()
         .h_full()
@@ -119,6 +119,30 @@ fn code_cell(content: String, color: Hsla, mono: &SharedString, min_w: f32) -> D
         .flex_row()
         .items_center()
         .pl(px(crate::ui::theme::SPACE_SM))
+        .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
+        .text_color(color)
+        .font_family(mono.clone())
+        .child(if content.is_empty() {
+            " ".to_string()
+        } else {
+            content
+        })
+}
+
+/// 正文单元格（并排视图）：`flex_1` 填满所在半宽、底色连续；最小宽度
+/// 只取基线值而非内容实际宽度——左右两半因此永远不会被长行撑开
+/// 导致一半滑出视口（那会呈现「旧上新下」的观感）。
+fn code_cell_fill(content: String, color: Hsla, mono: &SharedString) -> Div {
+    div()
+        .h_full()
+        .min_w(px(crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH))
+        .flex_1()
+        .flex()
+        .flex_row()
+        .items_center()
+        .pl(px(crate::ui::theme::SPACE_SM))
+        .overflow_hidden()
+        .whitespace_nowrap()
         .text_size(px(crate::ui::theme::FONT_SIZE_MONO))
         .text_color(color)
         .font_family(mono.clone())
@@ -144,13 +168,13 @@ fn max_line_chars(hunk: &Hunk) -> usize {
 }
 
 /// 并排视图半行：`old_side = true` 为左半（旧行），否则为右半（新行）。
+/// 半宽与内容长度解耦（基线宽 + flex 平分），保证两半始终并排可见。
 fn sbs_half(
     line: Option<&DiffLine>,
     old_side: bool,
     mono: &SharedString,
     fg: Hsla,
     muted: Hsla,
-    min_w: f32,
 ) -> Div {
     let mut half = div()
         .flex_1()
@@ -163,7 +187,7 @@ fn sbs_half(
         return half
             .bg(empty_half_bg())
             .child(gutter_cell(None, mono, muted))
-            .child(code_cell(String::new(), fg, mono, min_w));
+            .child(code_cell_fill(String::new(), fg, mono));
     };
     let bg = match line.kind {
         DiffLineKind::Added if !old_side => added_line_bg(),
@@ -174,11 +198,10 @@ fn sbs_half(
     half = half
         .bg(bg)
         .child(gutter_cell(no, mono, muted))
-        .child(code_cell(
+        .child(code_cell_fill(
             line.content.clone(),
             line_fg(line.kind, fg),
             mono,
-            min_w,
         ));
     half
 }
@@ -189,15 +212,18 @@ fn sbs_row(
     mono: &SharedString,
     fg: Hsla,
     muted: Hsla,
-    min_w: f32,
 ) -> Div {
     div()
         .flex_none()
-        .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w * 2.0))
+        // 行最小宽度与内容长度解耦：仅保证两半的基线宽度 + gutter，
+        // 视口足够时两半平分整行；长行在半宽内裁剪，不触发整行撑开。
+        .min_w(px(
+            crate::ui::theme::DIFF_GUTTER_WIDTH + 2.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
+        ))
         .flex()
         .flex_row()
-        .child(sbs_half(left, true, mono, fg, muted, min_w))
-        .child(sbs_half(right, false, mono, fg, muted, min_w))
+        .child(sbs_half(left, true, mono, fg, muted))
+        .child(sbs_half(right, false, mono, fg, muted))
 }
 
 pub fn render_diff_files(
@@ -253,9 +279,12 @@ pub fn render_diff_files(
 
         for (hunk_index, hunk) in file.hunks.iter().enumerate() {
             let min_w = code_min_width(max_line_chars(hunk));
-            // 行宽 = 行号 gutter 区 + 正文最窄宽度（并排视图左右各一份）。
+            // 行宽 = 行号 gutter 区 + 正文最窄宽度。并排视图按两半基线宽
+            // 计（与内容长度解耦，保证左右两半同时可见）；统一视图按内容
+            // 实际宽度计（长行靠横向滚动查看）。
             let row_min_w = if side_by_side {
-                crate::ui::theme::DIFF_GUTTER_WIDTH + min_w * 2.0
+                crate::ui::theme::DIFF_GUTTER_WIDTH
+                    + 2.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
             } else {
                 crate::ui::theme::DIFF_GUTTER_WIDTH + min_w
             };
@@ -263,7 +292,7 @@ pub fn render_diff_files(
             let mut header_row = div()
                 .flex_none()
                 .h(px(crate::ui::theme::SECTION_HEADER_HEIGHT))
-                .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
+                .min_w(px(row_min_w))
                 .flex()
                 .flex_row()
                 .items_center()
@@ -299,7 +328,7 @@ pub fn render_diff_files(
 
             if side_by_side {
                 for (left, right) in side_by_side_rows(hunk) {
-                    block = block.child(sbs_row(left, right, &mono, fg, muted, min_w));
+                    block = block.child(sbs_row(left, right, &mono, fg, muted));
                 }
             } else {
                 for line in &hunk.lines {
