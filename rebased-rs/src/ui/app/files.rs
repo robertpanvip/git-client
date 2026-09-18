@@ -20,15 +20,24 @@ use crate::ui::file_tree::{TreeClick, TreePick, flatten_tree, render_file_tree};
 use crate::ui::i18n::tr;
 use crate::ui::theme;
 
+use rebased_rs::git::GitBackend;
+
 use super::{AppView, MainView, use_cases};
 
 impl AppView {
     /// 进入文件视图；首次进入（或仓库切换后）在后台装载文件清单。
+    ///
+    /// 即使仓库还在后台加载（`self.repo == None`），也会标记「正在加载」，
+    /// 避免 `apply_data` 仓库就绪后遗漏本次装载。`apply_data` 会在
+    /// `MainView::Files` 时自动补调 `load_files`。
     pub(crate) fn open_files_view(&mut self, cx: &mut Context<Self>) {
-        eprintln!("[diag] open_files_view files={} loading={}", self.state.files.len(), self.state.files_loading);
+        eprintln!("[diag] open_files_view files={} loading={} repo={}", self.state.files.len(), self.state.files_loading, self.repo.is_some());
         self.state.main_view = MainView::Files;
         if self.state.files.is_empty() && !self.state.files_loading {
-            self.load_files(cx);
+            self.state.files_loading = true;
+            if let Some(repo) = self.repo.clone() {
+                self.do_load_files(repo, cx);
+            }
         }
         cx.notify();
     }
@@ -39,6 +48,11 @@ impl AppView {
             return;
         };
         self.state.files_loading = true;
+        self.do_load_files(repo, cx);
+    }
+
+    /// 实际执行后台文件装载（调用方保证 `repo` 非 None 且已置位 `files_loading`）。
+    fn do_load_files(&mut self, repo: Arc<dyn GitBackend>, cx: &mut Context<Self>) {
         let task =
             cx.background_spawn(async move { use_cases::load_worktree_files(repo.as_ref()) });
         cx.spawn(async move |this, cx| {
