@@ -33,6 +33,7 @@ mod conflicts;
 mod detail;
 mod detail_view;
 mod diff_window;
+mod files;
 mod rebase;
 mod shelves;
 mod sidebar;
@@ -252,6 +253,13 @@ impl AppView {
                 });
             }
             Err(e) => self.state.error = Some(e.to_string()),
+        }
+        // 文件视图开启时同步刷新文件树与当前文件，避免磁盘变化后显示陈旧内容。
+        if self.state.main_view == MainView::Files {
+            self.load_files(cx);
+            if let Some(path) = self.state.files_selected.clone() {
+                self.open_file(path, cx);
+            }
         }
         cx.notify();
     }
@@ -520,6 +528,13 @@ impl AppView {
             .border_r_1()
             .border_color(theme::separator())
             .child(self.render_strip_button(
+                "strip-files",
+                icons::Ic::FolderOpen,
+                self.state.main_view == MainView::Files,
+                |this, cx| this.open_files_view(cx),
+                cx,
+            ))
+            .child(self.render_strip_button(
                 "strip-git",
                 icons::Ic::Changes,
                 self.state.main_view == MainView::Log,
@@ -527,7 +542,7 @@ impl AppView {
                     // 主窗口左下角的 Git 图标：在「工作区（图1）」与「Git 日志（图2）」间切换。
                     this.state.main_view = match this.state.main_view {
                         MainView::Workspace => MainView::Log,
-                        MainView::Log => MainView::Workspace,
+                        MainView::Log | MainView::Files => MainView::Workspace,
                     };
                     cx.notify();
                 },
@@ -538,6 +553,10 @@ impl AppView {
                 icons::Ic::History,
                 matches!(self.state.sidebar, SidebarMode::History),
                 |this, cx| {
+                    // 文件视图不承载侧栏面板：切回工作区视图再打开该面板。
+                    if this.state.main_view == MainView::Files {
+                        this.state.main_view = MainView::Workspace;
+                    }
                     this.state.sidebar = SidebarMode::History;
                     cx.notify();
                 },
@@ -548,6 +567,9 @@ impl AppView {
                 icons::Ic::Shelve,
                 matches!(self.state.sidebar, SidebarMode::Shelve),
                 |this, cx| {
+                    if this.state.main_view == MainView::Files {
+                        this.state.main_view = MainView::Workspace;
+                    }
                     this.state.sidebar = SidebarMode::Shelve;
                     cx.notify();
                 },
@@ -703,6 +725,11 @@ impl Render for AppView {
                         .child(self.render_commit_panel(cx))
                         .child(self.render_right_splitter(cx))
                         .child(self.render_sidebar(cx));
+                } else if self.state.main_view == MainView::Files {
+                    // 文件视图：文件夹树（固定窄栏）| 代码区域。
+                    row = row
+                        .child(self.render_files_tree_column(cx))
+                        .child(self.render_files_editor(cx));
                 } else {
                     // 图1 工作区视图：左 = 变更 + 提交信息，右 = 单栏只读预览。
                     // Blame / Compare / Rebase 等宽面板仍以右栏形式出现。

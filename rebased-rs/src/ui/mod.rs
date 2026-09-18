@@ -4,6 +4,8 @@ mod branch_tree;
 mod commit_list;
 mod components;
 mod diff_view;
+mod editor_view;
+mod file_tree;
 mod graph_view;
 pub(crate) mod i18n;
 pub(crate) mod icons;

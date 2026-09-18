@@ -492,6 +492,27 @@ impl Repository {
         Ok(content)
     }
 
+    /// 工作区文件清单（tracked + untracked，遵循 .gitignore），相对仓库根路径。
+    pub fn worktree_files(&self) -> Result<Vec<String>> {
+        let stdout = self
+            .cmd
+            .run(&["ls-files", "-co", "--exclude-standard", "-z"])?;
+        let mut files: Vec<String> = stdout
+            .split('\0')
+            .filter(|entry| !entry.is_empty())
+            .map(str::to_string)
+            .collect();
+        files.sort();
+        files.dedup();
+        Ok(files)
+    }
+
+    /// 工作区版本的逐行 blame（未提交行标记为全 0 commit）。
+    pub fn blame_worktree(&self, path: &str) -> Result<Vec<super::BlameGroup>> {
+        let stdout = blame::blame_worktree(&self.cmd, path)?;
+        Ok(blame::parse_blame(&stdout))
+    }
+
     pub fn write_worktree_file(&self, path: &str, content: &str) -> Result<()> {
         let full = self.cmd.workdir().join(path);
         if let Some(parent) = full.parent() {
@@ -730,6 +751,48 @@ mod tests {
 
         let err = repo.worktree_file_content("missing.txt").unwrap_err();
         assert!(err.to_string().contains("read missing.txt failed"));
+    }
+
+    #[test]
+    fn worktree_files_lists_tracked_and_untracked_sorted() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "README.md", "readme");
+        std::fs::create_dir_all(dir.path.join("src")).unwrap();
+        commit_file(&dir.path, "src/main.rs", "main");
+        std::fs::write(dir.path.join("notes.txt"), "note").unwrap();
+        std::fs::write(dir.path.join(".gitignore"), "ignored/\n").unwrap();
+        std::fs::create_dir_all(dir.path.join("ignored")).unwrap();
+        std::fs::write(dir.path.join("ignored/skip.txt"), "skip").unwrap();
+
+        let repo = Repository::open(&dir.path).unwrap();
+        let files = repo.worktree_files().unwrap();
+        assert_eq!(
+            files,
+            vec![".gitignore", "README.md", "notes.txt", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn blame_worktree_marks_uncommitted_lines() {
+        let dir = TempRepo::new();
+        commit_file(&dir.path, "a.txt", "one\ntwo\n");
+        std::fs::write(dir.path.join("a.txt"), "one\nchanged\nthree\n").unwrap();
+
+        let repo = Repository::open(&dir.path).unwrap();
+        let groups = repo.blame_worktree("a.txt").unwrap();
+        // 行号对应工作区内容 1..=3（而非 HEAD 版本），未提交行由 git 标记为全 0 commit。
+        let mut numbers: Vec<u32> = groups
+            .iter()
+            .flat_map(|group| group.lines.iter().map(|line| line.number))
+            .collect();
+        numbers.sort();
+        assert_eq!(numbers, vec![1, 2, 3]);
+        assert!(
+            groups
+                .iter()
+                .any(|group| group.commit_id.chars().all(|c| c == '0')),
+            "工作区中被修改的行应标记为未提交: {groups:?}"
+        );
     }
 
     #[test]

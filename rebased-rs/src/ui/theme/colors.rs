@@ -340,6 +340,16 @@ pub fn deleted_line_bg() -> Hsla {
     hsla(0.0, 0.65, 0.5, 0.13)
 }
 
+/// 编辑器「已修改行」底色（与 [`modified_color`] 同色相的行底色）。
+pub fn modified_line_bg() -> Hsla {
+    hsla(0.11, 0.8, 0.55, 0.12)
+}
+
+/// 文件树中文件行的文字色（比文件夹名略弱，形成层级）。
+pub fn file_tree_file_fg(fg: Hsla) -> Hsla {
+    hsla(fg.h, fg.s, fg.l, 0.88)
+}
+
 pub fn empty_half_bg() -> Hsla {
     hsla(0.0, 0.0, 0.5, 0.05)
 }

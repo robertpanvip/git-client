@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    Commit, GitBackend, GitError, Graph, HunkChoice, RepoData, conflict_hunks, parse_unified_diff,
+    BlameGroup, Commit, FileDiff, GitBackend, GitError, Graph, HunkChoice, RepoData,
+    conflict_hunks, parse_unified_diff,
 };
 #[cfg(test)]
 use rebased_rs::git::{DEFAULT_LOG_LIMIT, load_repo_data, open_backend};
@@ -328,6 +329,43 @@ pub(crate) fn take_conflict_side(
 pub(crate) fn reload_shelves(repo: &dyn GitBackend, state: &mut AppState) -> Result<(), GitError> {
     state.shelves = repo.stash_list()?;
     Ok(())
+}
+
+/// 文件视图左栏数据：工作区文件清单（升序，仓库相对路径）。
+pub(crate) fn load_worktree_files(repo: &dyn GitBackend) -> Result<Vec<String>, GitError> {
+    repo.worktree_files()
+}
+
+/// 文件视图右栏数据：某个工作区文件的内容 + 逐行 blame + 相对 HEAD 的 diff。
+pub(crate) struct WorktreeFileData {
+    pub(crate) path: String,
+    /// 文件正文；二进制 / 非 UTF-8 时为空串。
+    pub(crate) content: String,
+    /// 文件为二进制或非 UTF-8（含工作区中已删除的文件），代码区改为空态提示。
+    pub(crate) binary: bool,
+    pub(crate) blame: Vec<BlameGroup>,
+    pub(crate) diff: Vec<FileDiff>,
+}
+
+/// 装载文件视图右栏所需数据。
+///
+/// blame、diff 失败都不视为错误：未跟踪文件在 HEAD 中不存在、分支尚未诞生
+/// （`HEAD` 无法解析）都属正常状态——保留空结果，代码区仍显示文件内容。
+pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str) -> WorktreeFileData {
+    let (content, read_failed) = match repo.worktree_file_content(path) {
+        Ok(text) => (text, false),
+        Err(_) => (String::new(), true),
+    };
+    let blame = repo.blame_worktree(path).unwrap_or_default();
+    let diff = parse_unified_diff(&repo.diff_head(Some(path), false).unwrap_or_default());
+    let binary = read_failed || diff.iter().any(|file| file.is_binary);
+    WorktreeFileData {
+        path: path.to_string(),
+        content,
+        binary,
+        blame,
+        diff,
+    }
 }
 
 #[cfg(test)]

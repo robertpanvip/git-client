@@ -79,6 +79,16 @@ pub const COL_SELECTOR_WIDTH: f32 = 92.0;
 /// 树形缩进步长。
 pub const TREE_INDENT: f32 = 14.0;
 
+// ---------- 文件视图（文件夹树 / 编辑器） ----------
+/// 文件视图左栏（文件夹树）宽度。
+pub const FILE_TREE_PANEL_WIDTH: f32 = 272.0;
+/// 编辑器行变更标记条宽度（行首窄色条）。
+pub const EDITOR_CHANGE_BAR_WIDTH: f32 = 3.0;
+/// 编辑器行级 blame 列宽度（短哈希 + 作者）。
+pub const EDITOR_BLAME_WIDTH: f32 = 168.0;
+/// 编辑器单帧最多渲染的行数：超大文件只画前 N 行，避免一帧构建过多元素。
+pub const EDITOR_MAX_LINES: usize = 5000;
+
 // ---------- 图标 ----------
 /// 图标条 / 工具栏图标按钮边长。
 pub const ICON_BUTTON_SIZE: f32 = 24.0;

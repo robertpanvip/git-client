@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use rebased_rs::git::{
@@ -10,10 +11,12 @@ use crate::ui::i18n::tr;
 /// 主区域视图：决定左栏内容与整体分栏方式。
 /// - `Workspace`：图1 主窗口（左 = 工作区变更 + 提交信息，右 = 单栏只读预览）。
 /// - `Log`：图2 Git 日志（左 = 分支树，中 = 提交列表，右 = 改动文件）。
+/// - `Files`：文件视图（左 = 工作区文件夹树，右 = 代码区域 + 行变更 + 行级 blame）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MainView {
     Workspace,
     Log,
+    Files,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -289,8 +292,22 @@ pub(crate) struct AppState {
     pub(crate) detail_files: Vec<Change>,
     pub(crate) detail_branches: Vec<String>,
     pub(crate) sidebar: SidebarMode,
-    /// 主区域视图：工作区（图1 两栏）或 Git 日志（图2 三栏，左栏为分支树）。
+    /// 主区域视图：工作区（图1 两栏）/ Git 日志（图2 三栏，左栏为分支树）/ 文件树视图。
     pub(crate) main_view: MainView,
+    /// 文件视图：工作区文件清单（升序，仓库相对路径）。
+    pub(crate) files: Arc<Vec<String>>,
+    /// 文件视图中已展开的目录路径。
+    pub(crate) files_expanded: HashSet<String>,
+    /// 文件视图当前选中的文件（仓库相对路径）。
+    pub(crate) files_selected: Option<String>,
+    /// 当前文件的工作区内容（二进制 / 非 UTF-8 时为空）。
+    pub(crate) files_content: String,
+    /// 当前文件为二进制 / 非 UTF-8（含工作区中已删除），代码区改为空态提示。
+    pub(crate) files_binary: bool,
+    /// 当前文件的工作区逐行 blame（未提交行标记为全 0 commit）。
+    pub(crate) files_blame: Vec<BlameGroup>,
+    /// 当前文件相对 HEAD 的 diff，用于代码区的行变更标记。
+    pub(crate) files_diff: Vec<FileDiff>,
     pub(crate) diff_files: Vec<FileDiff>,
     pub(crate) diff_title: String,
     pub(crate) diff_path: Option<String>,
@@ -372,6 +389,13 @@ impl Default for AppState {
             detail_branches: Vec::new(),
             sidebar: SidebarMode::Workspace,
             main_view: MainView::Workspace,
+            files: Arc::new(Vec::new()),
+            files_expanded: HashSet::new(),
+            files_selected: None,
+            files_content: String::new(),
+            files_binary: false,
+            files_blame: Vec::new(),
+            files_diff: Vec::new(),
             diff_files: Vec::new(),
             diff_title: String::new(),
             diff_path: None,

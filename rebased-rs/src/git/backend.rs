@@ -142,6 +142,10 @@ pub trait GitBackend: Send + Sync {
     ) -> Result<()>;
     fn stage_file(&self, path: &str) -> Result<()>;
     fn worktree_file_content(&self, path: &str) -> Result<String>;
+    /// 工作区文件清单（tracked + untracked，遵循 .gitignore），相对仓库根路径。
+    fn worktree_files(&self) -> Result<Vec<String>>;
+    /// 工作区版本的逐行 blame（未提交行标记为全 0 commit）。
+    fn blame_worktree(&self, path: &str) -> Result<Vec<BlameGroup>>;
     fn write_worktree_file(&self, path: &str, content: &str) -> Result<()>;
     fn checkout_side(&self, path: &str, ours: bool) -> Result<()>;
     fn stash_list(&self) -> Result<Vec<StashEntry>>;
@@ -492,6 +496,14 @@ impl GitBackend for Repository {
 
     fn worktree_file_content(&self, path: &str) -> Result<String> {
         Repository::worktree_file_content(self, path)
+    }
+
+    fn worktree_files(&self) -> Result<Vec<String>> {
+        Repository::worktree_files(self)
+    }
+
+    fn blame_worktree(&self, path: &str) -> Result<Vec<BlameGroup>> {
+        Repository::blame_worktree(self, path)
     }
 
     fn write_worktree_file(&self, path: &str, content: &str) -> Result<()> {

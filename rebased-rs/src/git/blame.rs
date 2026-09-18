@@ -7,6 +7,12 @@ pub fn blame_file(cmd: &GitCommand, rev: &str, path: &str) -> Result<String> {
     cmd.run(&["blame", "--porcelain", rev, "--", path])
 }
 
+/// blame 工作区版本（不带 rev）：行号对应工作区文件当前内容，
+/// 未提交的行由 git 标记为全 0 commit（author「Not Committed Yet」）。
+pub fn blame_worktree(cmd: &GitCommand, path: &str) -> Result<String> {
+    cmd.run(&["blame", "--porcelain", "--", path])
+}
+
 struct Meta {
     commit: String,
     author: String,
