@@ -207,6 +207,9 @@ pub struct DiffLine {
     pub old_no: Option<u32>,
     pub new_no: Option<u32>,
     pub content: String,
+    /// 该行在源文件末尾无换行（`\ No newline at end of file`）。重建 hunk patch 时需还原，
+    /// 否则 `git apply` 会改变文件末尾换行（见 diff.rs::hunk_patch）。
+    pub no_newline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -222,6 +225,11 @@ pub struct FileDiff {
     pub is_new: bool,
     pub is_deleted: bool,
     pub is_binary: bool,
+    /// 真实文件模式（如 `100755` 可执行、`120000` 符号链接）。解析自 `new file mode` /
+    /// `deleted file mode` / `new mode` 行；为 `None` 时 `hunk_patch` 兜底为 `100644`。
+    pub mode: Option<String>,
+    /// 变更前的文件模式（纯 chmod 时与 `mode` 不同）。解析自 `old mode` 行。
+    pub old_mode: Option<String>,
     /// 文件级 Git 状态（与 Changes 面板同源）：diff 徽章据此取色，
     /// 未标注（`None`）时 UI 按 `is_new`/`is_deleted` 兜底推导。
     pub status: Option<ChangeStatus>,

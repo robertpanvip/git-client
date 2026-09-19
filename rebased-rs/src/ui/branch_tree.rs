@@ -36,6 +36,9 @@ struct RowSpec {
     hit: bool,
     /// 点击后写入过滤器的分支名；`None` = 清除过滤。
     payload: Option<String>,
+    /// 分组标题（group=true）是否仍可点击：仅 HEAD 行为 `true`，
+    /// 用于「点击 HEAD 清除过滤」，与文档承诺一致。
+    pickable: bool,
 }
 
 pub(crate) fn render_branch_tree(
@@ -70,6 +73,8 @@ pub(crate) fn render_branch_tree(
             group: true,
             hit: active.is_none(),
             payload: None,
+            // HEAD 行可点击：点击后清除分支过滤（与文档承诺一致，Bug #6）。
+            pickable: true,
         },
         on_pick,
         fg,
@@ -92,6 +97,7 @@ pub(crate) fn render_branch_tree(
                     group: false,
                     hit: active == Some(branch.name.as_str()),
                     payload: Some(branch.name.clone()),
+                    pickable: false,
                 },
                 on_pick,
                 fg,
@@ -127,6 +133,7 @@ pub(crate) fn render_branch_tree(
                     group: true,
                     hit: false,
                     payload: None,
+                    pickable: false,
                 },
                 None,
                 fg,
@@ -146,6 +153,7 @@ pub(crate) fn render_branch_tree(
                         group: false,
                         hit: active == Some(branch.name.as_str()),
                         payload: Some(branch.name.clone()),
+                        pickable: false,
                     },
                     on_pick,
                     fg,
@@ -183,6 +191,7 @@ fn render_row(spec: RowSpec, on_pick: Option<&BranchPick>, fg: Hsla, muted: Hsla
         group,
         hit,
         payload,
+        pickable,
     } = spec;
     let indent = theme::SPACE_SM + theme::TREE_INDENT * depth as f32;
     let text_color = if hit {
@@ -214,7 +223,7 @@ fn render_row(spec: RowSpec, on_pick: Option<&BranchPick>, fg: Hsla, muted: Hsla
     if hit {
         row = row.bg(theme::list_row_selected());
     }
-    if let Some(pick) = on_pick.filter(|_| !group) {
+    if let Some(pick) = on_pick.filter(|_| !group || pickable) {
         let pick = Arc::clone(pick);
         // 点到已命中的分支 = 清除过滤（IntelliJ 同行为）。
         let next = if hit { None } else { payload };

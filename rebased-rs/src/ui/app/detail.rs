@@ -148,7 +148,7 @@ impl AppView {
                     cx.notify();
                     return;
                 };
-                self.open_commit_diff(id, None, cx);
+                self.open_commit_diff(id, path, cx);
             }
             None => cx.notify(),
         }
@@ -337,6 +337,50 @@ impl AppView {
         self.run_op(&message, move |repo| repo.reset_to(&target, mode), cx);
     }
 
+    /// git 引用名（分支 / 标签 / 上游）客户端校验，返回 `None` 表示合法。
+    /// 规则取自 `git check-ref-format` 的常用子集，避免把非法名直接发给 git。
+    fn validate_ref_name(name: &str) -> Option<&'static str> {
+        if name.is_empty() {
+            return Some("引用名不能为空");
+        }
+        if name.starts_with('/') || name.ends_with('/') || name.contains("//") {
+            return Some("引用名不能以 / 开头或结尾，且不能包含连续的 /");
+        }
+        if name == "@" || name.contains("@{") {
+            return Some("引用名不能包含 @{");
+        }
+        if name.contains("..") {
+            return Some("引用名不能包含 ..");
+        }
+        for ch in name.chars() {
+            if ch.is_control() || ch.is_whitespace() {
+                return Some("引用名不能包含空白或控制字符");
+            }
+            if "~^:?*[\\".contains(ch) {
+                return Some("引用名不能包含 ~ ^ : ? * [ \\ 等字符");
+            }
+        }
+        None
+    }
+
+    /// 远程 URL 客户端校验，返回 `None` 表示合法。
+    fn validate_remote_url(url: &str) -> Option<&'static str> {
+        if url.is_empty() {
+            return Some("远程 URL 不能为空");
+        }
+        // 协议式：http(s)/git/ssh/file://
+        if url.contains("://") {
+            return None;
+        }
+        // scp 风格：user@host:path
+        if let (Some(at), Some(col)) = (url.find('@'), url.find(':')) {
+            if at < col && at > 0 && col + 1 < url.len() {
+                return None;
+            }
+        }
+        Some("远程 URL 需为 http(s)/git/ssh 协议或 git@host:path 形式")
+    }
+
     pub(crate) fn confirm_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(kind) = self.state.prompt.clone() else {
             return;
@@ -349,6 +393,9 @@ impl AppView {
             PromptKind::NewBranch { start_point } => {
                 if input.is_empty() {
                     self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     let message = format!("{} {input}", tr("Created branch", "已创建分支"));
                     self.run_op(
@@ -364,6 +411,9 @@ impl AppView {
             PromptKind::NewTag { commit_id } => {
                 if input.is_empty() {
                     self.state.error = Some(tr("Tag name is empty", "标签名称为空").to_string());
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     let message = format!("{} {input}", tr("Created tag", "已创建标签"));
                     self.run_op(
@@ -438,6 +488,9 @@ impl AppView {
                 };
                 if input.is_empty() {
                     self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     let message = format!("{} {old} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&old, &input), cx);
@@ -446,6 +499,9 @@ impl AppView {
             PromptKind::RenameBranchByName { name } => {
                 if input.is_empty() {
                     self.state.error = Some(tr("Branch name is empty", "分支名称为空").to_string());
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     let message = format!("{} {name} → {input}", tr("Renamed", "已重命名"));
                     self.run_op(&message, move |repo| repo.rename_branch(&name, &input), cx);
@@ -456,7 +512,12 @@ impl AppView {
                 let mode = self.state.prompt_merge_mode;
                 self.merge_branch_into_current(name, mode, message, cx);
             }
-            PromptKind::Reset { .. } | PromptKind::Confirm(_) => {}
+            PromptKind::Reset { commit_id } => {
+                // Reset 弹窗按 Enter 默认执行 Mixed 重置（与 `git reset <commit>` 一致）；
+                // 具体模式（Soft/Mixed/Hard）也可点击弹窗按钮选择（dialogs.rs）。
+                self.reset_branch_to(commit_id, ResetMode::Mixed, cx);
+            }
+            PromptKind::Confirm(_) => {}
             PromptKind::RebaseEdit { index } => {
                 if input.is_empty() {
                     self.state.error =
@@ -479,6 +540,9 @@ impl AppView {
                 if input.is_empty() {
                     self.state.error = Some(tr("Upstream is empty", "上游为空").to_string());
                     cx.notify();
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     self.set_branch_upstream(branch, input, cx);
                 }
@@ -495,6 +559,12 @@ impl AppView {
                         )
                         .to_string(),
                     );
+                } else if let Some(err) = Self::validate_ref_name(&input) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
+                } else if let Some(err) = Self::validate_remote_url(&url) {
+                    self.state.error = Some(err.to_string());
+                    cx.notify();
                 } else {
                     let message = format!("{} {input}", tr("Added remote", "已添加远程"));
                     self.run_op(&message, move |repo| repo.remote_add(&input, &url), cx);

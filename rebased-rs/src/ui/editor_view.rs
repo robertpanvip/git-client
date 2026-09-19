@@ -406,6 +406,7 @@ mod tests {
             old_no: old,
             new_no: new,
             content: content.to_string(),
+            no_newline: false,
         }
     }
 
@@ -416,6 +417,8 @@ mod tests {
             is_new: false,
             is_deleted: false,
             is_binary: false,
+            mode: None,
+            old_mode: None,
             status: None,
             hunks,
         }

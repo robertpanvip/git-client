@@ -47,6 +47,11 @@ pub(crate) use state::{
 };
 use use_cases::{reload_conflict_state, sync_repo_state};
 
+use futures::future::{select, Either};
+
+/// 后台 git 写操作的看门狗超时：超过则解除 busy 写锁，避免卡死永久锁操作（Bug #8）。
+const GIT_OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 struct Loaded {
     repo: Arc<dyn GitBackend>,
     data: RepoData,
@@ -388,9 +393,22 @@ impl AppView {
         let message = message.to_string();
         self.state.busy = Some(message.clone());
         cx.notify();
-        let task = cx.background_spawn(async move { op(repo.as_ref()) });
+        // 看门狗：后台 git 任务卡死（凭据提示 / 文件锁 / 远程无响应）时，
+        // 不再永久锁住写操作——超时后解除 busy 并提示用户排查重试。
+        // catch_unwind 兜住 op 内部的 panic，避免 panic 直接跳过 busy=None 而永久锁写。
+        let op_task = cx.background_spawn(async move {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| op(repo.as_ref())))
+                .unwrap_or_else(|_| Err(GitError::new("后台 git 操作发生内部错误（panic），已解除写锁。")))
+        });
+        let watchdog = cx.background_executor().timer(GIT_OP_TIMEOUT);
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            let outcome = select(Box::pin(op_task), Box::pin(watchdog)).await;
+            let result = match outcome {
+                Either::Left((r, _)) => r,
+                Either::Right((_, _)) => Err(GitError::new(
+                    "后台 git 操作超时（可能被凭据提示或文件锁卡住），已解除写锁。请排查后重试。",
+                )),
+            };
             let _ = this.update(cx, |this, cx| {
                 this.state.busy = None;
                 match result {
@@ -449,8 +467,22 @@ impl AppView {
 
         let executor = cx.background_executor().clone();
         cx.spawn(async move |this, cx| {
+            let start = std::time::Instant::now();
             loop {
                 executor.timer(Duration::from_millis(250)).await;
+                if start.elapsed() >= GIT_OP_TIMEOUT {
+                    let _ = this.update(cx, |this, cx| {
+                        this.state.busy = None;
+                        this.state.cancel_token = None;
+                        this.state.progress_text = None;
+                        this.state.error = Some(
+                            "后台 git 操作超时（可能被凭据提示或文件锁卡住），已解除写锁。请排查后重试。"
+                                .to_string(),
+                        );
+                        this.refresh(cx);
+                    });
+                    break;
+                }
                 let (result, text) = {
                     let result = done.lock().ok().and_then(|mut slot| slot.take());
                     let text = progress_watch
