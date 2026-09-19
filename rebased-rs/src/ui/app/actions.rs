@@ -458,23 +458,9 @@ impl AppView {
         .detach();
     }
 
-    pub(crate) fn cherry_pick_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.state.selected.clone() else {
-            return;
-        };
-        self.cherry_pick_commit(commit.id.0, cx);
-    }
-
     pub(crate) fn cherry_pick_commit(&mut self, id: String, cx: &mut Context<Self>) {
         let message = format!("Cherry-picked {}", &id[..id.len().min(7)]);
         self.run_op(&message, move |repo| repo.cherry_pick(&id), cx);
-    }
-
-    pub(crate) fn revert_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.state.selected.clone() else {
-            return;
-        };
-        self.revert_commit(commit.id.0, cx);
     }
 
     pub(crate) fn revert_commit(&mut self, id: String, cx: &mut Context<Self>) {
@@ -609,13 +595,6 @@ impl AppView {
         self.state.error = None;
         self.state.status_message = "Commit SHA copied".to_string();
         cx.notify();
-    }
-
-    pub(crate) fn copy_commit_sha(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.state.selected.clone() else {
-            return;
-        };
-        self.copy_commit_id(commit.id.0, cx);
     }
 
     pub(crate) fn confirm_action(&mut self, action: ConfirmAction, cx: &mut Context<Self>) {

@@ -321,6 +321,8 @@ pub(crate) struct AppState {
     pub(crate) selected: Option<Commit>,
     pub(crate) detail_files: Vec<Change>,
     pub(crate) detail_branches: Vec<String>,
+    /// 详情面板文件树中折叠的目录路径（单链折叠后的展示路径）；不在集合内即展开。
+    pub(crate) detail_tree_collapsed: HashSet<String>,
     pub(crate) sidebar: SidebarMode,
     /// 变更面板当前页签（Commit 面板内切换变更列表 / 贮藏列表）。
     pub(crate) changes_tab: ChangesTab,
@@ -445,6 +447,7 @@ impl Default for AppState {
             selected: None,
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
+            detail_tree_collapsed: HashSet::new(),
             sidebar: SidebarMode::Workspace,
             changes_tab: ChangesTab::Changes,
             changes_collapsed: HashSet::new(),

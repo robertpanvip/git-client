@@ -138,6 +138,7 @@ fn sync_views_on_refresh(state: &mut AppState, commits: &[Commit], rebase_in_pro
         state.selected = None;
         state.detail_files.clear();
         state.detail_branches.clear();
+        state.detail_tree_collapsed.clear();
     }
     if state.selected.is_none() && state.sidebar == SidebarMode::Detail {
         state.sidebar = SidebarMode::Workspace;
@@ -168,6 +169,7 @@ pub(crate) fn load_commit_detail(
     state.selected = Some(commit);
     state.detail_files = files;
     state.detail_branches = branches;
+    state.detail_tree_collapsed.clear();
     state.sidebar = SidebarMode::Detail;
     state.error = None;
     Ok(())
@@ -177,6 +179,7 @@ pub(crate) fn clear_detail(state: &mut AppState) {
     state.selected = None;
     state.detail_files.clear();
     state.detail_branches.clear();
+    state.detail_tree_collapsed.clear();
     state.sidebar = SidebarMode::Workspace;
 }
 
