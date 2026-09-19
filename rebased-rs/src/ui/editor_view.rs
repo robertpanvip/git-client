@@ -201,8 +201,10 @@ pub(crate) fn render_editor(
     let fg = cx.theme().foreground;
     let muted = cx.theme().muted_foreground;
     let code_width = (content.max_width.max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG;
+    // 行最小宽度需与实际渲染的列一致：关闭注解时 blame 列不渲染，
+    // 若仍计入其宽度，横向滚动条会虚长一截（代码区“变多”也体现在这里）。
     let row_min_w = theme::EDITOR_CHANGE_BAR_WIDTH
-        + theme::EDITOR_BLAME_WIDTH
+        + if blame_enabled { theme::EDITOR_BLAME_WIDTH } else { 0.0 }
         + theme::DIFF_GUTTER_COLUMN_WIDTH
         + code_width;
     let content = Arc::clone(content);
@@ -260,55 +262,11 @@ fn render_line(
         _ => theme::transparent(),
     };
 
-    let (blame_bg, author_fg, author, time, commit_id) = match &line.blame {
-        Some(blame) => (
-            theme::badge_bg(lane_color(blame.color_index)),
-            lane_color(blame.color_index),
-            blame.author.clone(),
-            blame.time.clone(),
-            blame.commit_id.clone(),
-        ),
-        None => (
-            theme::transparent(),
-            theme::ghost_text(muted),
-            String::new(),
-            String::new(),
-            None,
-        ),
-    };
-
-    let mut blame_cell: Stateful<Div> = div()
-        .id(("ed-blame", line.number as usize))
-        .w(px(theme::EDITOR_BLAME_WIDTH))
-        .h_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(theme::SPACE_SM))
-        .px(px(theme::SPACE_SM))
-        .overflow_hidden()
-        .whitespace_nowrap()
-        .bg(blame_bg)
-        .text_size(px(theme::font_size_code()))
-        .font_family(mono.clone())
-        .child(div().flex_none().text_color(author_fg).child(author))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .text_color(theme::meta_faint(muted))
-                .child(time),
-        );
-    if let (Some(id), Some(jump)) = (commit_id, on_commit) {
-        let jump = Arc::clone(jump);
-        blame_cell = blame_cell
-            .cursor_pointer()
-            .on_click(move |_, _, app| jump(id.clone(), app));
-    }
-
-    let row = div()
+    let mut row = div()
+        // 行必须有唯一 id：ContextMenu 的元素状态按 GlobalElementId 存取，
+        // uniform_list 不为虚拟行提供独立 id 上下文，无 id 时所有可见行共享
+        // 同一个菜单状态（同一把 hitbox / open / menu_view），点击菜单项无效。
+        .id(("ed-line", line.number as usize))
         .flex_none()
         .h(px(theme::diff_line_height()))
         .min_w(px(row_min_w))
@@ -322,8 +280,61 @@ fn render_line(
                 .h_full()
                 .flex_none()
                 .bg(marker_bg),
-        )
-        .child(blame_cell)
+        );
+    // 关闭注解时整列不渲染（IDEA 行为：列消失、代码区变宽）。
+    // 仅清空 blame 数据不够——cell 自身仍占 EDITOR_BLAME_WIDTH，
+    // 会留下一条空白列，看起来「关了没变化」。
+    if blame_enabled {
+        let (blame_bg, author_fg, author, time, commit_id) = match &line.blame {
+            Some(blame) => (
+                theme::badge_bg(lane_color(blame.color_index)),
+                lane_color(blame.color_index),
+                blame.author.clone(),
+                blame.time.clone(),
+                blame.commit_id.clone(),
+            ),
+            None => (
+                theme::transparent(),
+                theme::ghost_text(muted),
+                String::new(),
+                String::new(),
+                None,
+            ),
+        };
+        let mut blame_cell: Stateful<Div> = div()
+            .id(("ed-blame", line.number as usize))
+            .w(px(theme::EDITOR_BLAME_WIDTH))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(theme::SPACE_SM))
+            .px(px(theme::SPACE_SM))
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .bg(blame_bg)
+            .text_size(px(theme::font_size_code()))
+            .font_family(mono.clone())
+            .child(div().flex_none().text_color(author_fg).child(author))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_color(theme::meta_faint(muted))
+                    .child(time),
+            );
+        if let (Some(id), Some(jump)) = (commit_id, on_commit) {
+            let jump = Arc::clone(jump);
+            blame_cell = blame_cell
+                .cursor_pointer()
+                .on_click(move |_, _, app| jump(id.clone(), app));
+        }
+        row = row.child(blame_cell);
+    }
+
+    let row = row
         .child(
             div()
                 .w(px(theme::DIFF_GUTTER_COLUMN_WIDTH))

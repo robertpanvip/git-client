@@ -110,7 +110,9 @@ pub fn file_tab_bar(
     bar
 }
 
-/// Tab 内的关闭 ×（独立命中区：GPUI 事件命中最深元素，不会触发 Tab 本体激活）。
+/// Tab 内的关闭 ×。GPUI 的事件按命中 hitbox 全链路派发（子→父冒泡），
+/// 必须用 block_mouse_except_scroll 隔离，否则 × 的 click 会继续冒泡到
+/// Tab 本体触发 activate，把刚关闭的文件重新打开。
 fn close_button(
     id: String,
     muted: gpui::Hsla,
@@ -119,6 +121,7 @@ fn close_button(
 ) -> Stateful<Div> {
     div()
         .id(id)
+        .block_mouse_except_scroll()
         .flex_none()
         .h(px(theme::ICON_BUTTON_SIZE))
         .w(px(theme::ICON_BUTTON_SIZE))

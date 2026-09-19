@@ -4,6 +4,7 @@ use gpui_kit::component::list::{ListEvent, ListState};
 use rebased_rs::git::{Commit, MergeMode, RebaseActionKind, ResetMode};
 
 use crate::ui::commit_list::LogDelegate;
+use crate::ui::components::neighbor_after_close;
 use crate::ui::i18n::tr;
 
 use super::{AppView, DiffSource, PromptKind, SidebarMode, use_cases};
@@ -67,6 +68,57 @@ impl AppView {
             self.state.error = Some(e.to_string());
         }
         cx.notify();
+    }
+
+    /// 双击变更行：在预览区登记「提交:文件」Tab 并内嵌打开该文件 diff
+    /// （IDEA Commit 双击语义；同一 (路径, 暂存态) 只保留一个 Tab）。
+    /// 打开 Tab 同时作废挂起的单击暂存定时器。
+    pub(crate) fn open_commit_diff_tab(
+        &mut self,
+        path: String,
+        staged: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.pending_stage_gen = self.state.pending_stage_gen.wrapping_add(1);
+        let exists = self
+            .state
+            .commit_diff_tabs
+            .iter()
+            .any(|tab| tab.0 == path && tab.1 == staged);
+        if !exists {
+            self.state.commit_diff_tabs.push((path.clone(), staged));
+        }
+        let index = self
+            .state
+            .commit_diff_tabs
+            .iter()
+            .position(|tab| tab.0 == path && tab.1 == staged);
+        let Some(index) = index else {
+            return;
+        };
+        self.activate_commit_diff_tab(index, cx);
+    }
+
+    /// 激活第 index 个提交 diff Tab：按暂存态重开内嵌 diff。
+    pub(crate) fn activate_commit_diff_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some((path, staged)) = self.state.commit_diff_tabs.get(index).cloned() else {
+            return;
+        };
+        if staged {
+            self.open_staged_diff(Some(path), cx);
+        } else {
+            self.open_unstaged_diff(Some(path), cx);
+        }
+    }
+
+    /// 关闭第 index 个提交 diff Tab：右邻优先、无右邻取左邻；全部关闭时收起
+    /// diff 面板回到预览空态（IDEA 关闭最后一个编辑器 Tab 的语义）。
+    pub(crate) fn close_commit_diff_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.state.commit_diff_tabs.remove(index);
+        match neighbor_after_close(self.state.commit_diff_tabs.len(), index) {
+            Some(next) => self.activate_commit_diff_tab(next, cx),
+            None => self.sidebar_back(cx),
+        }
     }
 
     pub(crate) fn open_commit_diff(
@@ -197,6 +249,16 @@ impl AppView {
             return;
         };
         if let Err(e) = use_cases::open_file_history(repo.as_ref(), &mut self.state, path) {
+            self.state.error = Some(e.to_string());
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_dir_history(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = use_cases::open_dir_history(repo.as_ref(), &mut self.state, path) {
             self.state.error = Some(e.to_string());
         }
         cx.notify();

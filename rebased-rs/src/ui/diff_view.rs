@@ -546,10 +546,10 @@ pub(crate) fn scroll_hunk_into_view(
     handle.set_offset(Point::new(handle.offset().x, px(-y)));
 }
 
-/// 估算正文所需最小宽度（按最长行字符数 × 单字符步进）。
-fn code_min_width(max_chars: usize) -> f32 {
-    let chars = max_chars.max(1) as f32;
-    chars * crate::ui::theme::diff_char_width() + crate::ui::theme::SPACE_LG
+/// 估算正文所需最小宽度（按最长行**显示列宽** × 单字符步进）。
+fn code_min_width(cols: usize) -> f32 {
+    let cols = cols.max(1) as f32;
+    cols * crate::ui::theme::diff_char_width() + crate::ui::theme::SPACE_LG
 }
 
 /// 行在编辑器中的显示宽度（列数）：tab 按 4 列制表位展开，CJK/宽字符计 2 列。

@@ -360,6 +360,12 @@ pub(crate) struct AppState {
     pub(crate) diff_folded: HashSet<(usize, usize)>,
     /// F7 / Shift+F7 最近定位的 hunk（循环导航的起点）。
     pub(crate) diff_nav: Option<(usize, usize)>,
+    /// 提交区双击打开的 diff Tab（(路径, 是否暂存)，按打开顺序）。
+    pub(crate) commit_diff_tabs: Vec<(String, bool)>,
+    /// 行单击延迟暂存的代号：双击/打开 diff Tab 时递增，使未触发的定时任务作废。
+    pub(crate) pending_stage_gen: u64,
+    /// 提交设置：允许空提交信息（IDEA 关闭空信息检查的对应项）。
+    pub(crate) allow_empty_commit_message: bool,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
@@ -403,6 +409,10 @@ pub(crate) struct AppState {
     pub(crate) vcs_palette: bool,
     /// 工具栏分支部件主按钮唤起的「搜索分支和操作」弹层是否可见。
     pub(crate) branch_popup: bool,
+    /// 分支弹层「本地」分组是否展开（IDEA 折叠 chevron）。
+    pub(crate) branch_popup_locals_expanded: bool,
+    /// 分支弹层「远程」分组是否展开。
+    pub(crate) branch_popup_remotes_expanded: bool,
     /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
     pub(crate) compare_mine: String,
     pub(crate) compare_theirs: String,
@@ -455,6 +465,9 @@ impl Default for AppState {
             diff_commit: None,
             diff_folded: HashSet::new(),
             diff_nav: None,
+            commit_diff_tabs: Vec::new(),
+            pending_stage_gen: 0,
+            allow_empty_commit_message: false,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
@@ -485,6 +498,8 @@ impl Default for AppState {
             cancel_token: None,
             vcs_palette: false,
             branch_popup: false,
+            branch_popup_locals_expanded: true,
+            branch_popup_remotes_expanded: true,
             compare_mine: String::new(),
             compare_theirs: String::new(),
             compare_ahead: Vec::new(),

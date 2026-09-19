@@ -581,6 +581,16 @@ impl Repository {
         Ok(super::log::parse_log(&output.stdout))
     }
 
+    pub fn log_path(&self, limit: usize, path: &str) -> Result<Vec<Commit>> {
+        let args = super::log::log_path_args(limit, path);
+        let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let output = self.cmd.execute(&args)?;
+        if !output.success {
+            return Err(GitError::with_stderr("git log -- path failed", output.stderr));
+        }
+        Ok(super::log::parse_log(&output.stdout))
+    }
+
     pub fn head_message(&self) -> Result<String> {
         super::log::full_message(&self.cmd, "HEAD")
     }

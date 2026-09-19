@@ -160,7 +160,11 @@ impl AppView {
     }
 
     /// Log 过滤行（对齐图2）：搜索框「文本或哈希」+
-    /// 分支 / 用户 / 日期 三个文本过滤下拉 + 已激活过滤 chip（点击清除）。
+    /// 分支 / 用户 / 日期 三个过滤下拉（固定显示过滤器名）+
+    /// 已激活过滤 chip（显示选中值，点击清除）。
+    ///
+    /// 注意：caret 由 [`DropdownButton`] 自带的 popup 半区渲染，
+    /// 内层 [`Button`] 不得再设 `dropdown_caret`，否则出现双箭头。
     fn render_log_filter_row(&self, cx: &mut Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
         let weak: WeakEntity<Self> = cx.entity().downgrade();
@@ -176,18 +180,12 @@ impl AppView {
         let filter_author = self.state.filter_author.clone();
         let filter_since = self.state.filter_since.clone();
 
-        let branch_label = filter_branch
-            .clone()
-            .unwrap_or_else(|| tr("Branch", "分支").to_string());
-        let author_label = if self.state.filter_author.is_empty() {
-            tr("User", "用户").to_string()
-        } else {
-            self.state.filter_author.clone()
-        };
-        let date_label = filter_since
-            .as_ref()
-            .map(|(label, _)| label.clone())
-            .unwrap_or_else(|| tr("Date", "日期").to_string());
+        // IDEA 语义：下拉按钮固定显示过滤器名（Branch / User / Date），
+        // 选中值只通过右侧的 active filter chip 呈现——同一过滤条件
+        // 绝不同时作为按钮 label 和 chip 重复展示。
+        let branch_label = tr("Branch", "分支").to_string();
+        let author_label = tr("User", "用户").to_string();
+        let date_label = tr("Date", "日期").to_string();
 
         let branch_weak = weak.clone();
         let branch_filter = filter_branch.clone();
@@ -222,8 +220,7 @@ impl AppView {
                         Button::new("log-branch-filter-button")
                             .ghost()
                             .compact()
-                            .label(branch_label)
-                            .dropdown_caret(true),
+                            .label(branch_label),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
@@ -267,8 +264,7 @@ impl AppView {
                         Button::new("log-author-filter-button")
                             .ghost()
                             .compact()
-                            .label(author_label)
-                            .dropdown_caret(true),
+                            .label(author_label),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
@@ -312,8 +308,7 @@ impl AppView {
                         Button::new("log-date-filter-button")
                             .ghost()
                             .compact()
-                            .label(date_label)
-                            .dropdown_caret(true),
+                            .label(date_label),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(

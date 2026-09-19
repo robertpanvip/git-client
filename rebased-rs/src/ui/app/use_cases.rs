@@ -266,6 +266,19 @@ pub(crate) fn open_file_history(
     Ok(())
 }
 
+/// 目录树历史：`git log -- path`（无 `--follow`），对齐 IDEA 目录级 Show History。
+pub(crate) fn open_dir_history(
+    repo: &dyn GitBackend,
+    state: &mut AppState,
+    path: String,
+) -> Result<(), GitError> {
+    state.history_commits = repo.log_path(100, &path)?;
+    state.history_path = path;
+    state.sidebar = SidebarMode::History;
+    state.error = None;
+    Ok(())
+}
+
 pub(crate) fn open_blame(
     repo: &dyn GitBackend,
     state: &mut AppState,

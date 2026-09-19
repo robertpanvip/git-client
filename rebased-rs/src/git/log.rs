@@ -45,6 +45,17 @@ pub fn log_follow_args(limit: usize, path: &str) -> Vec<String> {
     ]
 }
 
+/// History of commits touching a path（`-- path`，目录/路径过滤，不做 rename 跟随）。
+pub fn log_path_args(limit: usize, path: &str) -> Vec<String> {
+    vec![
+        "log".to_string(),
+        format!("--max-count={limit}"),
+        "--format=".to_string() + LOG_FORMAT,
+        "--".to_string(),
+        path.to_string(),
+    ]
+}
+
 /// Full message（%B）of a revision，例如 HEAD 用于 Amend 预填。
 pub fn full_message(cmd: &super::command::GitCommand, revision: &str) -> Result<String> {
     let output = cmd.run(&["log", "-1", "--format=%B", revision])?;
@@ -195,6 +206,17 @@ mod tests {
         assert_eq!(args[3], "--follow");
         assert_eq!(args[4], "--");
         assert_eq!(args[5], "src/main.rs");
+    }
+
+    #[test]
+    fn log_path_args_scoped_without_follow() {
+        let args = log_path_args(50, "src/ui");
+        assert_eq!(args[0], "log");
+        assert_eq!(args[1], "--max-count=50");
+        assert!(args[2].starts_with("--format="));
+        assert_eq!(args[3], "--");
+        assert_eq!(args[4], "src/ui");
+        assert!(!args.iter().any(|a| a == "--follow"));
     }
 
     #[test]
