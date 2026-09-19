@@ -86,6 +86,9 @@ mod tests {
 
     #[test]
     fn tr_picks_by_language() {
+        // `set_current` 会写全局 LANG 并落盘配置；`persist_roundtrip` 同样在改这两者。
+        // 两者必须串行，否则并发下断言会读到对方刚写入的语言（间歇性失败）。
+        let _guard = crate::ui::settings::config_test_lock();
         set_current(Language::En);
         assert_eq!(tr("Fetch", "拉取"), "Fetch");
         set_current(Language::Zh);

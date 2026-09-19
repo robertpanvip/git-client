@@ -554,7 +554,8 @@ fn code_min_width(max_chars: usize) -> f32 {
 
 /// 行在编辑器中的显示宽度（列数）：tab 按 4 列制表位展开，CJK/宽字符计 2 列。
 /// 用于估算横向滚动宽度，避免含 tab / 宽字符的长行被按字符数低估而横向裁切（Bug #9）。
-fn display_width(s: &str) -> usize {
+/// diff 面板与文件视图编辑器（`editor_view`）共用同一套列宽口径。
+pub(crate) fn display_width(s: &str) -> usize {
     use unicode_width::UnicodeWidthChar;
     let mut col = 0usize;
     for c in s.chars() {
@@ -707,6 +708,18 @@ mod tests {
         };
         assert!(code_min_width(max_line_width(&long)) > code_min_width(max_line_width(&short)));
         assert_eq!(max_line_width(&long), 200);
+    }
+
+    /// Bug #9：列宽口径必须是"显示列"而非字符数——tab 展开到制表位、CJK 计 2 列。
+    #[test]
+    fn display_width_expands_tabs_and_wide_chars() {
+        assert_eq!(display_width("abcd"), 4);
+        // tab 展开到下一个 4 列制表位
+        assert_eq!(display_width("\tx"), 5);
+        assert_eq!(display_width("abc\tx"), 5);
+        // 4 个汉字 = 8 列，远比字符数 4 宽
+        assert_eq!(display_width("中文中文"), 8);
+        assert!(display_width("中文中文") > "中文中文".chars().count());
     }
 
     fn ctx(n: u32) -> DiffLine {
