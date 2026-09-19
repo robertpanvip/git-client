@@ -360,6 +360,12 @@ pub(crate) struct AppState {
     pub(crate) diff_folded: HashSet<(usize, usize)>,
     /// F7 / Shift+F7 最近定位的 hunk（循环导航的起点）。
     pub(crate) diff_nav: Option<(usize, usize)>,
+    /// 提交区双击打开的 diff Tab（(路径, 是否暂存)，按打开顺序）。
+    pub(crate) commit_diff_tabs: Vec<(String, bool)>,
+    /// 行单击延迟暂存的代号：双击/打开 diff Tab 时递增，使未触发的定时任务作废。
+    pub(crate) pending_stage_gen: u64,
+    /// 提交设置：允许空提交信息（IDEA 关闭空信息检查的对应项）。
+    pub(crate) allow_empty_commit_message: bool,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
@@ -455,6 +461,9 @@ impl Default for AppState {
             diff_commit: None,
             diff_folded: HashSet::new(),
             diff_nav: None,
+            commit_diff_tabs: Vec::new(),
+            pending_stage_gen: 0,
+            allow_empty_commit_message: false,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,

@@ -73,5 +73,7 @@
 
 | R-8 | Editor Blame 显隐 | R-7 修复「菜单点不动」后暴露的第二层问题：`render_line` 虽接收 `blame_enabled` 却只用于切换右键菜单文案，blame_cell 无条件 `.child()` 进行——数据层（`load_worktree_file(_, _, false)` → `line.blame=None`）只是把 cell 内容清空（透明背景 + 空文字），cell 自身仍占 `EDITOR_BLAME_WIDTH`，关闭注解后留下一条空白列、代码区不变宽；`row_min_w` 亦无条件计入 blame 宽，横向滚动长度虚大 | `blame_enabled=false` 时整列不构建不追加（IDEA 行为：列消失、代码区左移扩展）；`row_min_w` 条件计入 `EDITOR_BLAME_WIDTH` | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅。
+| R-9 | Commit 工具窗 | 用户三项反馈：① 每文件行的「查看差异/回滚」图标按钮应移除，双击文件应在右侧开「提交：文件名」diff Tab——但原行单击直接 `toggle_stage`（真实 git 操作），无法与双击意图区分；② 变更文件应收在「变更」分组下且列表与分组间有 gap；③ 底部提交操作原为分裂按钮（Commit ▾ 下拉藏 提交并推送/设置），应平铺为双按钮 + 设置齿轮最右，设置弹出框对齐 IDEA | ① 行点击改「生成号 + 240ms 定时器」消歧：单击延迟暂存（`pending_stage_gen` 代号校验后才 `toggle_stage`），双击递增代号作废定时器并 `open_commit_diff_tab` 在预览区登记「提交：文件名」Tab（(路径, 暂存态) 去重；Tab 条序号 id 防同文件双 Tab 重复 ElementId；关闭走右邻优先/左邻回退，最后一个关闭收起 diff 面板）；Tab 条复用编辑器 Tab 样式（diff 图标 + active 下划线 + ×，`block_mouse_except_scroll` 防冒泡误激活）；行内 查看差异/回滚 按钮删除（右键菜单保留全部操作）；② 变更/未版本管理两组已由 `collapsible_group_header` 分组承载，组头 `mt(SM)` 与列表留 gap（确认既有结构满足，无需改动）；③ 提交区改「提交」primary(flex_1) + 「提交并推送」+ 右端设置齿轮；CommitSettings 弹出框对齐 IDEA 分组「提交选项 / 提交信息检查」，新增「允许空提交信息」开关，`do_commit`/`do_commit_and_push` 尊重该开关；贮藏入口收敛至 Alt+` 快切与 Shelve 页签 | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅。
 > 验证：cargo check / clippy / test 全绿。

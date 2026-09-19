@@ -533,17 +533,35 @@ impl AppView {
                     (body, footer)
                 }
                 PromptKind::CommitSettings => {
-                    // 提交设置（IDEA Commit ▾ → Commit Settings）：修正提交
-                    // 选项在此开关，与提交区复选框共享同一状态。
-                    let body = div().flex().flex_col().gap(px(theme::SPACE_MD)).child(
-                        Checkbox::new("commit-settings-amend")
-                            .checked(self.state.amend)
-                            .label(tr("Amend previous commit", "修正上一次提交"))
-                            .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                this.state.amend = *checked;
-                                cx.notify();
-                            })),
-                    );
+                    // 提交设置（提交区右侧齿轮）：分组对齐 IDEA 的
+                    // 「提交选项 / 提交信息检查」，设置项即时生效，与提交区共享状态。
+                    let body = div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(theme::SPACE_MD))
+                        .child(settings_section_label(tr("Commit Options", "提交选项")))
+                        .child(
+                            Checkbox::new("commit-settings-amend")
+                                .checked(self.state.amend)
+                                .label(tr("Amend previous commit", "修正上一次提交"))
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.state.amend = *checked;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(settings_section_label(tr(
+                            "Commit Message Checks",
+                            "提交信息检查",
+                        )))
+                        .child(
+                            Checkbox::new("commit-settings-allow-empty")
+                                .checked(self.state.allow_empty_commit_message)
+                                .label(tr("Allow empty commit message", "允许空提交信息"))
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.state.allow_empty_commit_message = *checked;
+                                    cx.notify();
+                                })),
+                        );
                     let footer = dialog_footer(
                         div().into_any_element(),
                         Button::new("commit-settings-done")

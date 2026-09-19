@@ -1,9 +1,10 @@
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
-    Stateful, StatefulInteractiveElement, Styled, WeakEntity, div, px,
+    AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    Stateful, StatefulInteractiveElement, Styled, div, px,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
@@ -16,7 +17,7 @@ use rebased_rs::git::{Change, ChangeStatus};
 
 use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{
-    Checkbox, DropdownButton, collapsible_group_header, empty_state, list_row, menu_item,
+    Checkbox, collapsible_group_header, empty_state, list_row, menu_item,
     menu_width, row_icon_button, selected, status_bar, status_message, status_segment,
 };
 use crate::ui::components::tabs::{segment, segmented};
@@ -49,7 +50,6 @@ impl AppView {
         let staged = change.staged;
         let is_untracked = change.status == ChangeStatus::Untracked;
         let change_for_click = change.clone();
-        let diff_path = change.path.clone();
         let checkbox_path = change.path.clone();
         let checked = self.state.selected_changes.contains(&change.path);
         let weak = cx.entity().downgrade();
@@ -63,7 +63,28 @@ impl AppView {
             .pl(px(theme::ROW_PADDING_X + theme::TREE_INDENT))
             .gap(px(theme::SPACE_SM))
             .when(checked, |row| selected(row, true, fg))
-            .on_click(cx.listener(move |this, _, _, cx| this.toggle_stage(&change_for_click, cx)))
+            // IDEA Commit 语义：单击 = 切换暂存，双击 = 右侧打开「提交:文件」diff Tab。
+            // 双击的第一次 mouseup 会先以 count==1 派发，故单击走 240ms 延迟定时器；
+            // 双击分支递增 pending_stage_gen，使未触发的单击定时任务作废（避免误暂存）。
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if event.click_count() >= 2 {
+                    this.open_commit_diff_tab(change_for_click.path.clone(), staged, cx);
+                    return;
+                }
+                let stage_gen = this.state.pending_stage_gen.wrapping_add(1);
+                this.state.pending_stage_gen = stage_gen;
+                let click_change = change_for_click.clone();
+                cx.spawn(async move |this, cx| {
+                    let executor = cx.background_executor().clone();
+                    executor.timer(Duration::from_millis(240)).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if this.state.pending_stage_gen == stage_gen {
+                            this.toggle_stage(&click_change, cx);
+                        }
+                    });
+                })
+                .detach();
+            }))
             .child(
                 Checkbox::new(format!("chg-select-{index}"))
                     .checked(checked)
@@ -119,43 +140,6 @@ impl AppView {
                 .child(change.status.short_label()),
         );
 
-        let row = row.child(
-            row_icon_button(
-                format!("chg-diff-{index}"),
-                Ic::Diff,
-                tr("Show Diff", "查看差异"),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                cx.stop_propagation();
-                let path = diff_path.clone();
-                if staged {
-                    this.open_staged_diff_window(Some(path), cx);
-                } else {
-                    this.open_unstaged_diff_window(Some(path), cx);
-                }
-            })),
-        );
-        let row = if !staged && !is_untracked {
-            let discard_path = change.path.clone();
-            row.child(
-                row_icon_button(
-                    format!("chg-discard-{index}"),
-                    Ic::Revert,
-                    tr("Rollback…", "回滚…"),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.open_prompt(
-                        PromptKind::Confirm(ConfirmAction::DiscardChanges {
-                            path: discard_path.clone(),
-                        }),
-                        cx,
-                    );
-                })),
-            )
-        } else {
-            row
-        };
         let row = if is_untracked {
             let remove_path = change.path.clone();
             row.child(
@@ -566,9 +550,6 @@ impl AppView {
         } else {
             tr("Commit", "提交").to_string()
         };
-        let push_weak: WeakEntity<Self> = cx.entity().downgrade();
-        let shelve_weak = push_weak.clone();
-        let settings_weak = push_weak.clone();
         div()
             .flex_none()
             .border_t_1()
@@ -616,68 +597,41 @@ impl AppView {
                         cx.notify();
                     })),
             )
-            // 主操作：全宽 primary 分裂按钮（对齐 IDEA 的 Commit ▾ 规范），
-            // ▾ 下拉承载 提交并推送 / 贮藏 等次级动作，不再摆 ghost 按钮挤占一行。
+            // 主操作区（IDEA Commit 工具窗）：「提交」primary 主按钮占满剩余宽度，
+            // 右侧「提交并推送」次级按钮，最右为提交设置齿轮。
+            // 贮藏入口收敛在 Alt+` VCS 快切与 Shelve 页签，不再挤占提交操作区。
             .child(
-                DropdownButton::new("composer-commit-split")
-                    .button(
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .gap(px(theme::SPACE_SM))
+                    .child(
                         Button::new("composer-commit")
                             .primary()
-                            .label(commit_label)
                             .flex_1()
+                            .label(commit_label)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.do_commit(window, cx)
                             })),
                     )
-                    .primary()
-                    .flex_1()
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let result = menu.item(menu_item(
-                            Ic::Push,
-                            tr("Commit and Push…", "提交并推送…"),
-                            None,
-                            false,
-                            false,
-                            {
-                                let weak = push_weak.clone();
-                                move |_, window, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.do_commit_and_push(window, cx)
-                                    });
-                                }
-                            },
-                        ));
-                        result.item(menu_item(
-                            Ic::Shelve,
-                            tr("Shelve…", "贮藏…"),
-                            None,
-                            false,
-                            false,
-                            {
-                                let weak = shelve_weak.clone();
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.open_prompt(PromptKind::Stash, cx)
-                                    });
-                                }
-                            },
-                        ))
-                        .item(menu_item(
+                    .child(
+                        Button::new("composer-commit-push")
+                            .label(tr("Commit and Push…", "提交并推送…"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.do_commit_and_push(window, cx)
+                            })),
+                    )
+                    .child(
+                        row_icon_button(
+                            "composer-commit-settings",
                             Ic::Settings,
                             tr("Commit Settings…", "提交设置…"),
-                            None,
-                            false,
-                            false,
-                            {
-                                let weak = settings_weak.clone();
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.open_prompt(PromptKind::CommitSettings, cx)
-                                    });
-                                }
-                            },
-                        ))
-                    }),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open_prompt(PromptKind::CommitSettings, cx)
+                        })),
+                    ),
             )
     }
 

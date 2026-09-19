@@ -185,7 +185,8 @@ impl AppView {
 
     pub(crate) fn do_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let message = self.message_input.read(cx).value().to_string();
-        if message.trim().is_empty() {
+        // 「允许空提交信息」开启时跳过 IDEA 的空信息检查（提交设置项）。
+        if message.trim().is_empty() && !self.state.allow_empty_commit_message {
             self.state.error = Some("Commit message is empty".to_string());
             cx.notify();
             return;
@@ -210,7 +211,7 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         let message = self.message_input.read(cx).value().to_string();
-        if message.trim().is_empty() {
+        if message.trim().is_empty() && !self.state.allow_empty_commit_message {
             self.state.error = Some("Commit message is empty".to_string());
             cx.notify();
             return;
