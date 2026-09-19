@@ -269,6 +269,14 @@ impl ListDelegate for LogDelegate {
         // 远程 tip 严格祖先在作者名后缀 `*`（原版同款标记）。
         let starred = data.starred.contains(&commit.id.0);
 
+        // merge 提交整行降为次要色（原版实测 `#6F737A`），普通行用主文字色。
+        let is_merge = commit.is_merge();
+        let row_fg = if is_merge {
+            theme::text_muted()
+        } else {
+            fg
+        };
+
         let mut row = div()
             .id(SharedString::from(format!("commit-row-{}", ix.row)))
             .h(px(ROW_HEIGHT))
@@ -282,7 +290,7 @@ impl ListDelegate for LogDelegate {
         row = row.child(lane_canvas(
             graph_row,
             data.graph.lane_count,
-            commit.is_merge(),
+            is_merge,
             is_head,
             // merge 环形节点的挖空色 = Log 列表真实背景，避免与容器色差。
             theme::log_list_bg(),
@@ -296,7 +304,7 @@ impl ListDelegate for LogDelegate {
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_size(px(theme::font_size_meta()))
-                .text_color(fg)
+                .text_color(row_fg)
                 .child(commit.subject.clone()),
         );
 
@@ -312,8 +320,9 @@ impl ListDelegate for LogDelegate {
         }
         row = row.child(refs_col);
 
-        // 列式布局：graph | subject(flex) | refs | author | date。
-        // 与原版一致——无哈希列，作者加粗，author/date 纵向对齐。
+        // 列式布局：graph | subject(flex) | refs | author | date | hash。
+        // 与原版截图一致——作者加粗（未推送加 `*`），日期左对齐（今天/昨天/年月日），
+        // 末列 8 位短哈希；merge 提交整行（含哈希）变暗。
         row = row
             .child(
                 div()
@@ -323,7 +332,7 @@ impl ListDelegate for LogDelegate {
                     .whitespace_nowrap()
                     .text_size(px(theme::font_size_meta()))
                     .font_weight(theme::WEIGHT_BOLD)
-                    .text_color(fg)
+                    .text_color(row_fg)
                     .child(if starred {
                         format!("{}*", commit.author.name)
                     } else {
@@ -336,8 +345,19 @@ impl ListDelegate for LogDelegate {
                     .w(px(theme::COL_DATE_WIDTH))
                     .whitespace_nowrap()
                     .text_size(px(theme::font_size_meta()))
-                    .text_color(fg)
+                    .text_color(row_fg)
                     .child(format_time(commit.time)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(theme::COL_HASH_WIDTH))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_size(px(theme::font_size_code()))
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_color(row_fg)
+                    .child(short_id(&commit.id.0).to_string()),
             );
 
         // 双击 commit = Checkout（IntelliJ 惯例）。行选中由 ListState 统一处理，
