@@ -5454,7 +5454,7 @@ dependencies = [
 
 [[package]]
 name = "rebased-rs"
-version = "0.7.11"
+version = "0.7.12"
 dependencies = [
  "async-channel",
  "chrono",
