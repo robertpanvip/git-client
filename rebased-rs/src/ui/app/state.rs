@@ -409,6 +409,10 @@ pub(crate) struct AppState {
     pub(crate) vcs_palette: bool,
     /// 工具栏分支部件主按钮唤起的「搜索分支和操作」弹层是否可见。
     pub(crate) branch_popup: bool,
+    /// 分支弹层「本地」分组是否展开（IDEA 折叠 chevron）。
+    pub(crate) branch_popup_locals_expanded: bool,
+    /// 分支弹层「远程」分组是否展开。
+    pub(crate) branch_popup_remotes_expanded: bool,
     /// 分支对比面板：mine/theirs 分支名与两侧独有提交。
     pub(crate) compare_mine: String,
     pub(crate) compare_theirs: String,
@@ -494,6 +498,8 @@ impl Default for AppState {
             cancel_token: None,
             vcs_palette: false,
             branch_popup: false,
+            branch_popup_locals_expanded: true,
+            branch_popup_remotes_expanded: true,
             compare_mine: String::new(),
             compare_theirs: String::new(),
             compare_ahead: Vec::new(),

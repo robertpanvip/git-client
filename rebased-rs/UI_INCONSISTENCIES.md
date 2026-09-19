@@ -75,5 +75,7 @@
 
 | R-9 | Commit 工具窗 | 用户三项反馈：① 每文件行的「查看差异/回滚」图标按钮应移除，双击文件应在右侧开「提交：文件名」diff Tab——但原行单击直接 `toggle_stage`（真实 git 操作），无法与双击意图区分；② 变更文件应收在「变更」分组下且列表与分组间有 gap；③ 底部提交操作原为分裂按钮（Commit ▾ 下拉藏 提交并推送/设置），应平铺为双按钮 + 设置齿轮最右，设置弹出框对齐 IDEA | ① 行点击改「生成号 + 240ms 定时器」消歧：单击延迟暂存（`pending_stage_gen` 代号校验后才 `toggle_stage`），双击递增代号作废定时器并 `open_commit_diff_tab` 在预览区登记「提交：文件名」Tab（(路径, 暂存态) 去重；Tab 条序号 id 防同文件双 Tab 重复 ElementId；关闭走右邻优先/左邻回退，最后一个关闭收起 diff 面板）；Tab 条复用编辑器 Tab 样式（diff 图标 + active 下划线 + ×，`block_mouse_except_scroll` 防冒泡误激活）；行内 查看差异/回滚 按钮删除（右键菜单保留全部操作）；② 变更/未版本管理两组已由 `collapsible_group_header` 分组承载，组头 `mt(SM)` 与列表留 gap（确认既有结构满足，无需改动）；③ 提交区改「提交」primary(flex_1) + 「提交并推送」+ 右端设置齿轮；CommitSettings 弹出框对齐 IDEA 分组「提交选项 / 提交信息检查」，新增「允许空提交信息」开关，`do_commit`/`do_commit_and_push` 尊重该开关；贮藏入口收敛至 Alt+` 快切与 Shelve 页签 | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅。
+| R-10 | 分支搜索弹层 | 工具栏分支按钮打开的弹层（`branch_popup`）已有搜索框 + 动作列表 + 本地/远程分支，但与 IDEA Git 工具窗的「分支和操作」弹层差距：① 动作列表缺「签出标记或修订...」；② 本地/远程是扁平分组 header，不是可折叠 chevron（截图里 `▼ 本地` 展开、`> 远程` 折叠）；③ 当前分支行没有强调色、ahead/behind 计数 badge、upstream tracking（`origin/main >`）显示 | ① 新增第 5 项动作「签出标记或修订...」（Ic::Checkout，无快捷键）；② 替换 `group_header` 为可折叠 chevron 分组（`branch_popup_locals_expanded` / `branch_popup_remotes_expanded` 两个布尔状态，默认展开）；③ 抽离 `render_branch_popup_local_row` 渲染本地行：当前分支金色强调（h=48, s=0.85, l=0.62）、upstream 绿色 tracking 提示（`origin/main >`）、ahead/behind badge（`↑2 ↓1`）；远程分组保留普通 `menu_row`；删除独立的「标签」分组（签出标记统一走第 5 项动作） | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅。
 > 验证：cargo check / clippy / test 全绿。
