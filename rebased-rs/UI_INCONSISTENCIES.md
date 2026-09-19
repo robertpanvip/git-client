@@ -71,5 +71,7 @@
 
 | R-7 | 交互正确性 | 两个「关不掉」同属 GPUI 事件/身份机制误用：① Tab × 关不掉——GPUI bubble 阶段把 click 派发给命中链上全部 hitbox（子→父），× 的 on_click 关闭后 Tab 本体 on_click（activate）随即将刚关闭的文件重新插回 tabs（close_button 原注释「事件命中最深元素」假设错误）；② 关闭注解菜单失效——编辑器行 div 无 `.id()` 且 `.context_menu()` 对所有行是同一调用点，ContextMenuExt 回退 `ElementId::CodeLocation(caller)`，而 uniform_list 不为虚拟行提供独立 id 上下文（gpui-pre element.rs 仅当元素有 id 才压栈派生 GlobalElementId）→ 所有可见行共享同一 ContextMenuState（同一 Rc<RefCell>：hitbox/open/position/menu_view），open 时每行各渲染一个重叠浮层菜单，点击在 N 个实例间竞争失效。旁证：chip（badge.rs 有 id）/list_row（有 id）/log.rs 单实例容器的右键菜单均正常 | ① close_button 加 `.block_mouse_except_scroll()`（阻断非滚动鼠标事件冒泡到 Tab 本体，保留滚轮穿透）；② 行 div 加 `.id(("ed-line", line.number as usize))`，ContextMenuExt 派生唯一 Name id，每行获得独立菜单状态 | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅。
+| R-8 | Editor Blame 显隐 | R-7 修复「菜单点不动」后暴露的第二层问题：`render_line` 虽接收 `blame_enabled` 却只用于切换右键菜单文案，blame_cell 无条件 `.child()` 进行——数据层（`load_worktree_file(_, _, false)` → `line.blame=None`）只是把 cell 内容清空（透明背景 + 空文字），cell 自身仍占 `EDITOR_BLAME_WIDTH`，关闭注解后留下一条空白列、代码区不变宽；`row_min_w` 亦无条件计入 blame 宽，横向滚动长度虚大 | `blame_enabled=false` 时整列不构建不追加（IDEA 行为：列消失、代码区左移扩展）；`row_min_w` 条件计入 `EDITOR_BLAME_WIDTH` | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅。
 > 验证：cargo check / clippy / test 全绿。
