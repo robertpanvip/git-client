@@ -27,6 +27,7 @@ impl AppView {
         let width = self.right_panel_width;
         let base = div()
             .w(px(width))
+            .h_full()
             .flex_none()
             .p(px(theme::SPACE_MD))
             .flex()
