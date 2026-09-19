@@ -21,6 +21,11 @@ impl TempRepo {
         std::fs::create_dir_all(&path).expect("create temp dir");
         let repo = Self { path };
         repo.git(&["init", "-b", "main"]);
+        // 夹具必须自洽：Windows 上 Git for Windows 常把全局/系统 core.autocrlf 设为 true，
+        // 检出时会把写入的 "\n" 转成 "\r\n"，让断言文件内容的用例依赖主机配置。
+        // 临时仓库显式关闭换行转换，保证任何平台上行为一致。
+        repo.git(&["config", "core.autocrlf", "false"]);
+        repo.git(&["config", "core.eol", "lf"]);
         repo.git(&["config", "user.name", "Test User"]);
         repo.git(&["config", "user.email", "test@example.com"]);
         repo
