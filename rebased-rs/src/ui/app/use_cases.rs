@@ -409,7 +409,7 @@ pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str, blame: bool)
         path: path.to_string(),
         binary,
         deleted: diff.iter().any(|file| file.is_deleted),
-        editor: build_content(&content, &diff, &blame),
+        editor: build_content(&content, &diff, &blame, path),
     }
 }
 

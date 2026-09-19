@@ -24,6 +24,7 @@ use crate::ui::blame_view::{BlameJump, BlameToggle};
 use crate::ui::commit_list::format_time;
 use crate::ui::components::{menu_item, menu_width};
 use crate::ui::graph_view::lane_color;
+use crate::ui::highlight::{HighlightState, Span, TokenKind, highlight_line, lang_of};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -54,6 +55,8 @@ pub(crate) struct EditorBlame {
 pub(crate) struct EditorLine {
     pub(crate) number: u32,
     pub(crate) text: String,
+    /// 语法高亮切片（`spans` 拼接还原 `text`；纯文本语言只有一段）。
+    pub(crate) spans: Vec<Span>,
     pub(crate) change: Option<LineChange>,
     pub(crate) blame: Option<EditorBlame>,
 }
@@ -66,13 +69,18 @@ pub(crate) struct EditorContent {
 }
 
 /// 构建编辑器逐行数据（内容 + 相对 HEAD 的 diff + 工作区 blame）。
+///
+/// `path` 用于按扩展名识别语言并做语法高亮。
 pub(crate) fn build_content(
     content: &str,
     diff: &[FileDiff],
     blame: &[BlameGroup],
+    path: &str,
 ) -> EditorContent {
     let changes = line_changes(diff);
     let index = blame_index(blame);
+    let lang = lang_of(path);
+    let mut state = HighlightState::default();
     let mut lines = Vec::new();
     let mut max_chars = 0;
     for (offset, text) in content.lines().enumerate() {
@@ -82,9 +90,11 @@ pub(crate) fn build_content(
             Some(slot) => blame.get(*slot).map(|group| editor_blame(group, *slot)),
             None => None,
         };
+        let spans = highlight_line(text, lang, &mut state);
         lines.push(EditorLine {
             number,
             text: text.to_string(),
+            spans,
             change: changes.get(&number).copied(),
             blame,
         });
@@ -351,24 +361,7 @@ fn render_line(
                 .font_family(mono.clone())
                 .child(line.number.to_string()),
         )
-        .child(
-            div()
-                .h_full()
-                .min_w(px(code_width_of(line)))
-                .flex_none()
-                .flex()
-                .flex_row()
-                .items_center()
-                .pl(px(theme::SPACE_SM))
-                .text_size(px(theme::font_size_code()))
-                .text_color(fg)
-                .font_family(mono.clone())
-                .child(if line.text.is_empty() {
-                    " ".to_string()
-                } else {
-                    line.text.clone()
-                }),
-        );
+        .child(render_code(line, code_width_of(line), fg, mono.clone()));
 
     let Some(toggle) = toggle_blame else {
         return row.into_any_element();
@@ -398,6 +391,47 @@ fn render_line(
         menu_width(m)
     })
     .into_any_element()
+}
+
+/// 渲染代码正文：按高亮切片着色（纯文本语言退化为单段正文色）。
+fn render_code(line: &EditorLine, width: f32, fg: Hsla, mono: SharedString) -> Div {
+    let mut code = div()
+        .h_full()
+        .min_w(px(width))
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .pl(px(theme::SPACE_SM))
+        .text_size(px(theme::font_size_code()))
+        .text_color(fg)
+        .font_family(mono);
+    if line.spans.is_empty() {
+        return code.child(" ");
+    }
+    for span in &line.spans {
+        code = code.child(
+            div()
+                .text_color(span_color(span.kind, fg))
+                .child(span.text.clone()),
+        );
+    }
+    code
+}
+
+/// token 类别 -> Darcula 色板（正文类别沿用主题前景色）。
+fn span_color(kind: TokenKind, fg: Hsla) -> Hsla {
+    match kind {
+        TokenKind::Plain => fg,
+        TokenKind::Keyword => theme::syntax_keyword(),
+        TokenKind::Type => theme::syntax_type(),
+        TokenKind::Function => theme::syntax_function(),
+        TokenKind::Str => theme::syntax_string(),
+        TokenKind::Number => theme::syntax_number(),
+        TokenKind::Comment => theme::syntax_comment(),
+        TokenKind::Doc => theme::syntax_doc(),
+        TokenKind::Attr => theme::syntax_attr(),
+    }
 }
 
 /// 单行正文的最小宽度（按字符数估算，空行也保留一格）。
@@ -542,7 +576,7 @@ mod tests {
                 content: "new".to_string(),
             }],
         }];
-        let content = build_content("new\ntail\n", &diff, &groups);
+        let content = build_content("new\ntail\n", &diff, &groups, "a.txt");
         assert_eq!(content.lines.len(), 2);
         assert_eq!(content.lines[0].change, Some(LineChange::Modified));
         let blame = content.lines[0].blame.as_ref().expect("首行应有 blame");

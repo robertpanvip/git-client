@@ -466,3 +466,47 @@ pub fn gutter_bg() -> Hsla {
 pub fn gutter_border() -> Hsla {
     hsla(0.0, 0.0, 1.0, 0.10)
 }
+
+// ==================== 语法高亮（编辑器预览）====================
+// 精确取自 IntelliJ Darcula 官方编辑器配色（Settings > Editor > Color Scheme
+// Defaults），与 New UI 暗色背景搭配保持原版观感。
+
+/// 关键字 —— Darcula `Keyword #CC7832`。
+pub fn syntax_keyword() -> Hsla {
+    rgb(0xCC7832)
+}
+
+/// 类型 / 生命周期 / 属性键 —— Darcula `Instance reference #9876AA`。
+pub fn syntax_type() -> Hsla {
+    rgb(0x9876AA)
+}
+
+/// 函数调用 / 宏 / Markdown 标题 —— Darcula `Function call #FFC66D`。
+pub fn syntax_function() -> Hsla {
+    rgb(0xFFC66D)
+}
+
+/// 字符串 / 字符字面量 —— Darcula `String #6A8759`。
+pub fn syntax_string() -> Hsla {
+    rgb(0x6A8759)
+}
+
+/// 数字 —— Darcula `Number #6897BB`。
+pub fn syntax_number() -> Hsla {
+    rgb(0x6897BB)
+}
+
+/// 普通注释 —— Darcula `Line comment #808080`。
+pub fn syntax_comment() -> Hsla {
+    rgb(0x808080)
+}
+
+/// 文档注释（/// //!）与 shebang —— Darcula `Doc comment #629755`。
+pub fn syntax_doc() -> Hsla {
+    rgb(0x629755)
+}
+
+/// 注解 / 属性（#[..]、@decorator、@media）—— Darcula `Annotation #BBB529`。
+pub fn syntax_attr() -> Hsla {
+    rgb(0xBBB529)
+}

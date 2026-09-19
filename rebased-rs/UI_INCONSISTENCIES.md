@@ -79,5 +79,11 @@
 
 | R-11 | 历史记录入口 | 独立入口位置不对齐 IDEA：左侧竖条挂「历史记录」图标（`strip-history`）直接打开侧栏 History 面板，而 IDEA 的文件/目录历史从项目树右键 Git 子菜单触发（Show History），竖条上没有独立历史入口 | 删除 `strip-history`；文件树每行（`render_row`，含 `.id("ft-{path}")` 稳定身份，R-7 经验）追加 `context_menu` → Git 子菜单 → 显示历史记录：文件走 `log_follow`（`--follow -- path`），目录走新增 `log_path`（`-- path` 无 follow，trait + Repository + use_case `open_dir_history` + AppView 包装）；从文件视图触发时切回工作区视图再开侧栏面板（沿袭原 strip 行为，侧栏不承载于 Files 视图）；历史面板本体、Ctrl+Alt+4 快捷键、detail 面板单文件历史按钮均保留 | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅ / 历史记录入口 ✅。
+| R-12 | Code 编辑区高亮 | 编辑器纯单色渲染：逐行 `div().child(code)`，关键字/字符串/注释/数字与普通代码同色，与 IDEA Darcula 语法配色差距明显 | 新增 `ui/highlight.rs` 轻量分词器（Rust/JS/TS/Python 关键字表 + 字符串/字符/注释/数字/装饰器规则，逐字符扫描产出 `HighlightSpan`）+ Darcula 语义色板（keyword 橙 `#CC7832`、string 绿 `#6A8759`、comment 灰 `#808080`、number 蓝 `#6897BB`、fn 黄 `#FFC66D`）；`editor_view::render_line` 按行分词并把 span 渲染为着色 span，`use_cases::load_worktree_file` 传入文件路径供语言判定 | ✅ |
+
+| R-13 | Changes 三态复选框 | 分组头复选框是布尔 `Checkbox`，无法表达「部分选中」：组内勾选一部分时组头显示全不选（IDEA 为半选短横）；选中态勾形由 base 指示器承载但受控模型缺失 | 新增 `TriStateCheckbox` 组件：包装 `gpui_kit::base::Checkbox`（`CheckboxState::Unchecked/Indeterminate/Checked` 原生三态 + `activated()` 恰为 IDEA 切换语义「半选/全不选→全选，全选→全不选」），视觉复刻 facade Checkbox XSmall（12px 指示器/1px 描边/4px 圆角/白色 Check 或 Dash 字形 spring 淡入）；`changes_section` 分组头改传 `selected_count` 推导三态（0→未选、全部→勾、部分→半选），`on_click` 按下一语义态全选/清空整组 | ✅ |
+
+| R-14 | Cherry-Pick 入口 | Log 列表右键菜单已有摘取提交（log.rs），但侧栏 History / Reflog 面板的提交行无任何右键菜单；用户预期「日志面板某一项的右键菜单」有摘取入口（reflog 摘取更是找回丢失提交的经典路径） | `sidebar/history.rs` 两面板行加 `context_menu`（行 id `history-{id}` / `reflog-{selector}` 唯一，R-7 经验）：History 行 = 检出 {short} / 摘取提交 / 回滚提交 / 查看差异 / 复制 SHA；Reflog 行 = 检出 / 摘取提交 / 查看差异 / 复制 SHA；全部复用既有 actions（`checkout_commit`/`cherry_pick_commit`/`revert_commit`/`copy_commit_id`/`open_commit_diff_window`）与 `menu_item`/`menu_width` 原语，菜单宽度对齐 log.rs | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅ / 历史记录入口 ✅ / Code 编辑区高亮 ✅ / Changes 三态复选框 ✅ / Cherry-Pick 入口 ✅。
 > 验证：cargo check / clippy / test 全绿。
