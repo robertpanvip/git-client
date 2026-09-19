@@ -164,6 +164,8 @@ pub trait GitBackend: Send + Sync {
     fn uncommit_commit(&self, commit: &str) -> Result<()>;
     /// History of commits touching `path`（follow renames）。
     fn log_follow(&self, limit: usize, path: &str) -> Result<Vec<Commit>>;
+    /// History of commits touching `path`（目录/路径过滤，不做 rename 跟随）。
+    fn log_path(&self, limit: usize, path: &str) -> Result<Vec<Commit>>;
     /// Full message（%B）of HEAD，用于 Amend 预填原提交消息。
     fn head_message(&self) -> Result<String>;
 }
@@ -552,6 +554,10 @@ impl GitBackend for Repository {
 
     fn log_follow(&self, limit: usize, path: &str) -> Result<Vec<Commit>> {
         Repository::log_follow(self, limit, path)
+    }
+
+    fn log_path(&self, limit: usize, path: &str) -> Result<Vec<Commit>> {
+        Repository::log_path(self, limit, path)
     }
 
     fn head_message(&self) -> Result<String> {

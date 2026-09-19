@@ -254,6 +254,16 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn open_dir_history(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.repo.clone() else {
+            return;
+        };
+        if let Err(e) = use_cases::open_dir_history(repo.as_ref(), &mut self.state, path) {
+            self.state.error = Some(e.to_string());
+        }
+        cx.notify();
+    }
+
     pub(crate) fn open_reflog(&mut self, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {
             return;

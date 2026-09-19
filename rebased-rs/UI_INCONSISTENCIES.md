@@ -77,5 +77,7 @@
 
 | R-10 | 分支搜索弹层 | 工具栏分支按钮打开的弹层（`branch_popup`）已有搜索框 + 动作列表 + 本地/远程分支，但与 IDEA Git 工具窗的「分支和操作」弹层差距：① 动作列表缺「签出标记或修订...」；② 本地/远程是扁平分组 header，不是可折叠 chevron（截图里 `▼ 本地` 展开、`> 远程` 折叠）；③ 当前分支行没有强调色、ahead/behind 计数 badge、upstream tracking（`origin/main >`）显示 | ① 新增第 5 项动作「签出标记或修订...」（Ic::Checkout，无快捷键）；② 替换 `group_header` 为可折叠 chevron 分组（`branch_popup_locals_expanded` / `branch_popup_remotes_expanded` 两个布尔状态，默认展开）；③ 抽离 `render_branch_popup_local_row` 渲染本地行：当前分支金色强调（h=48, s=0.85, l=0.62）、upstream 绿色 tracking 提示（`origin/main >`）、ahead/behind badge（`↑2 ↓1`）；远程分组保留普通 `menu_row`；删除独立的「标签」分组（签出标记统一走第 5 项动作） | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅。
+| R-11 | 历史记录入口 | 独立入口位置不对齐 IDEA：左侧竖条挂「历史记录」图标（`strip-history`）直接打开侧栏 History 面板，而 IDEA 的文件/目录历史从项目树右键 Git 子菜单触发（Show History），竖条上没有独立历史入口 | 删除 `strip-history`；文件树每行（`render_row`，含 `.id("ft-{path}")` 稳定身份，R-7 经验）追加 `context_menu` → Git 子菜单 → 显示历史记录：文件走 `log_follow`（`--follow -- path`），目录走新增 `log_path`（`-- path` 无 follow，trait + Repository + use_case `open_dir_history` + AppView 包装）；从文件视图触发时切回工作区视图再开侧栏面板（沿袭原 strip 行为，侧栏不承载于 Files 视图）；历史面板本体、Ctrl+Alt+4 快捷键、detail 面板单文件历史按钮均保留 | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅ / 历史记录入口 ✅。
 > 验证：cargo check / clippy / test 全绿。

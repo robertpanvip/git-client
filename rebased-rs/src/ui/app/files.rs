@@ -203,6 +203,20 @@ impl AppView {
                 });
             })
         };
+        // 右键 → Git → Show History（R-11，对齐 IDEA 项目树的触发位置）。
+        let on_history: TreePick = {
+            let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+            Arc::new(move |click: TreeClick, app: &mut gpui::App| {
+                let _ = weak.update(app, |this, cx| {
+                    // 文件视图不承载侧栏面板：切回工作区视图再打开历史面板。
+                    this.state.main_view = MainView::Workspace;
+                    match click {
+                        TreeClick::File(path) => this.open_file_history(path, cx),
+                        TreeClick::Dir(path) => this.open_dir_history(path, cx),
+                    }
+                });
+            })
+        };
 
         let mut column = div()
             .w(px(theme::FILE_TREE_PANEL_WIDTH))
@@ -265,6 +279,7 @@ impl AppView {
                         &status_of,
                         self.state.files_selected.as_deref(),
                         &on_pick,
+                        &on_history,
                         cx,
                     )),
             );

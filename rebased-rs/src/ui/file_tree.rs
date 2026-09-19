@@ -3,7 +3,8 @@
 //! 对齐 IntelliJ「项目」工具窗口的经典树形呈现：
 //! - 目录行 = 展开箭头 + IDEA 文件夹图标，点击切换展开；
 //! - 文件行 = JetBrains 官方彩色类型图标（按扩展名），点击在右栏打开；
-//! - 缩进按层级递增，选中文件用统一的列表选中底色高亮。
+//! - 缩进按层级递增，选中文件用统一的列表选中底色高亮；
+//! - 右键行 = Git 子菜单 → Show History（R-11，对齐 IDEA 项目树的触发位置）。
 //!
 //! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平）。
 //! 摊平在渲染时现算（纯内存遍历，微秒级），不引入缓存——
@@ -14,7 +15,7 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, Div, Hsla, InteractiveElement, ParentElement, Stateful, StatefulInteractiveElement,
+    App, Div, Hsla, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
     Styled, div, px,
 };
 use gpui_kit::component::ActiveTheme;
@@ -22,6 +23,8 @@ use gpui_kit::component::Icon;
 
 use rebased_rs::git::ChangeStatus;
 
+use crate::ui::components::{ContextMenuExt, menu_item, menu_width};
+use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
 
@@ -114,12 +117,13 @@ pub(crate) fn render_file_tree(
     status_of: &HashMap<String, ChangeStatus>,
     selected: Option<&str>,
     on_pick: &TreePick,
+    on_history: &TreePick,
     cx: &App,
 ) -> Div {
     let fg = cx.theme().foreground;
     let mut tree = div().flex().flex_col().w_full().py(px(theme::SPACE_XS));
     for row in flatten_tree(files, expanded) {
-        tree = tree.child(render_row(row, status_of, selected, on_pick, fg));
+        tree = tree.child(render_row(row, status_of, selected, on_pick, on_history, fg));
     }
     tree
 }
@@ -129,8 +133,9 @@ fn render_row(
     status_of: &HashMap<String, ChangeStatus>,
     selected: Option<&str>,
     on_pick: &TreePick,
+    on_history: &TreePick,
     fg: Hsla,
-) -> Stateful<Div> {
+) -> impl IntoElement {
     let indent = theme::SPACE_SM + theme::TREE_INDENT * row.depth as f32;
     let is_selected = !row.is_dir && selected == Some(row.path.as_str());
     // IDEA 项目树：有 Git 状态的文件名按状态着色（选中态除外），其余走默认层级色。
@@ -160,6 +165,8 @@ fn render_row(
         TreeClick::File(row.path.clone())
     };
     let pick = Arc::clone(on_pick);
+    let history_pick = Arc::clone(on_history);
+    let history_click = click.clone();
 
     let mut element = div()
         .id(format!("ft-{}", row.path))
@@ -201,7 +208,26 @@ fn render_row(
     } else {
         element = element.hover(|style| style.bg(theme::tree_row_hover()));
     }
-    element.on_click(move |_, _, app| pick(click.clone(), app))
+    // IDEA 项目树：右键 → Git 子菜单 → Show History（文件 --follow，目录按路径过滤）。
+    element
+        .on_click(move |_, _, app| pick(click.clone(), app))
+        .context_menu(move |menu, window, cx| {
+            let pick = Arc::clone(&history_pick);
+            let click = history_click.clone();
+            menu_width(menu.submenu(tr("Git", "Git"), window, cx, move |menu, _window, _cx| {
+                // submenu 闭包为 Fn（可能多次打开）：每次打开重新克隆捕获值。
+                let pick = Arc::clone(&pick);
+                let click = click.clone();
+                menu.item(menu_item(
+                    Ic::History,
+                    tr("Show History", "显示历史记录"),
+                    None,
+                    false,
+                    false,
+                    move |_, _, app| pick(click.clone(), app),
+                ))
+            }))
+        })
 }
 
 #[cfg(test)]

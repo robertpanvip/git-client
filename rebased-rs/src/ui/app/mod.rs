@@ -521,7 +521,8 @@ impl AppView {
     }
 
     /// 左侧 40px 图标条（对齐 IDEA New UI 竖条）：
-    /// Project(Files) / Commit / History / Git log 入口——Project 居首。
+    /// Project(Files) / Commit / Git log 入口——Project 居首。
+    /// 历史记录不在竖条（R-11）：对齐 IDEA，从项目树右键 Git → Show History 触发。
     fn render_icon_strip(&self, cx: &mut Context<Self>) -> Div {
         div()
             .w(px(theme::ICON_STRIP_WIDTH))
@@ -552,22 +553,6 @@ impl AppView {
                 |this, cx| {
                     // IDEA 的 Commit 工具窗图标：唤出左侧变更面板（工作区视图）。
                     this.state.main_view = MainView::Workspace;
-                    cx.notify();
-                },
-                cx,
-            ))
-            .child(self.render_strip_button(
-                "strip-history",
-                icons::Ic::History,
-                matches!(self.state.sidebar, SidebarMode::History),
-                None,
-                |this, cx| {
-                    // 文件视图不承载侧栏面板：切回工作区视图再打开该面板。
-                    eprintln!("[diag] strip-history clicked");
-                    if this.state.main_view == MainView::Files {
-                        this.state.main_view = MainView::Workspace;
-                    }
-                    this.state.sidebar = SidebarMode::History;
                     cx.notify();
                 },
                 cx,
