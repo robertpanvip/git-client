@@ -6,6 +6,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
     Stateful, StatefulInteractiveElement, Styled, div, px,
 };
+use gpui_kit::base::CheckboxState;
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
     button::{Button, ButtonVariants},
@@ -17,7 +18,7 @@ use rebased_rs::git::{Change, ChangeStatus};
 
 use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{
-    Checkbox, collapsible_group_header, empty_state, list_row, menu_item,
+    Checkbox, TriStateCheckbox, collapsible_group_header, empty_state, list_row, menu_item,
     menu_width, row_icon_button, selected, status_bar, status_message, status_segment,
 };
 use crate::ui::components::tabs::{segment, segmented};
@@ -252,9 +253,10 @@ impl AppView {
 
     /// 一个变更分组（更改 / 未进行版本管理的文件）：标题行 + 文件行。
     ///
-    /// 标题行的前导复选框对该组做全选/全不选，尾部显示条目数——与 IntelliJ
-    /// 变更列表的分组行一致（组名左侧可勾选、右侧计数）。组头带 chevron，
-    /// 整行可点击折叠/展开；折叠时不渲染子行。
+    /// 标题行的前导复选框是 IDEA 式三态：组内全勾 → 勾、部分勾选 → 半选
+    /// （蓝底短横）、全不选 → 空框；点击半选/空框全选、点击勾全不选。
+    /// 尾部显示条目数——与 IntelliJ 变更列表的分组行一致（组名左侧可勾选、
+    /// 右侧计数）。组头带 chevron，整行可点击折叠/展开；折叠时不渲染子行。
     fn changes_section(
         &self,
         id: &'static str,
@@ -268,9 +270,17 @@ impl AppView {
         }
         let muted = cx.theme().muted_foreground;
         let expanded = !self.state.changes_collapsed.contains(id);
-        let all_selected = group
+        let selected_count = group
             .iter()
-            .all(|change| self.state.selected_changes.contains(&change.path));
+            .filter(|change| self.state.selected_changes.contains(&change.path))
+            .count();
+        let group_state = if selected_count == 0 {
+            CheckboxState::Unchecked
+        } else if selected_count == group.len() {
+            CheckboxState::Checked
+        } else {
+            CheckboxState::Indeterminate
+        };
         let paths: Vec<String> = group.iter().map(|change| change.path.clone()).collect();
         let weak = cx.entity().downgrade();
 
@@ -280,13 +290,14 @@ impl AppView {
             muted,
             expanded,
             Some(
-                Checkbox::new(id)
-                    .checked(all_selected)
+                TriStateCheckbox::new(id)
+                    .state(group_state)
                     .with_size(Size::XSmall)
-                    .on_click(move |_, _, app| {
+                    .on_click(move |next, _, _, app| {
                         app.stop_propagation();
+                        let select_all = next == CheckboxState::Checked;
                         let _ = weak.update(app, |this, cx| {
-                            this.set_changes_selection(&paths, !all_selected, cx)
+                            this.set_changes_selection(&paths, select_all, cx)
                         });
                     })
                     .into_any_element(),

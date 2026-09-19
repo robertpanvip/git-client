@@ -47,7 +47,7 @@ pub mod tooltip;
 // ---------- 扁平 re-export（调用方直接 `components::xxx`） ----------
 pub use badge::{badge, chip, ref_style, ref_style_with_remotes};
 pub use button::DropdownButton;
-pub use checkbox::Checkbox;
+pub use checkbox::{Checkbox, TriStateCheckbox};
 pub use context_menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 pub use dialog::{cancel_button, dialog_field, dialog_footer, dialog_shell};
 pub use empty_state::{empty_state, empty_state_with, error_state};

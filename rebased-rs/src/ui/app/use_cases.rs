@@ -420,7 +420,7 @@ pub(crate) fn load_worktree_file(
         path: path.to_string(),
         binary,
         deleted: diff.iter().any(|file| file.is_deleted),
-        editor: build_content(&content, &diff, &blame),
+        editor: build_content(&content, &diff, &blame, path),
     }
 }
 

@@ -7,6 +7,7 @@ mod diff_view;
 mod editor_view;
 mod file_tree;
 mod graph_view;
+mod highlight;
 pub(crate) mod i18n;
 pub(crate) mod icons;
 pub(crate) mod settings;

@@ -530,6 +530,9 @@ impl AppView {
                         .flex_col()
                         .gap(px(theme::SPACE_XS))
                         .shadow_lg()
+                        // 面板内按下不冒泡到遮罩：否则 mousedown 先触发遮罩关闭，
+                        // 弹层子树在 mouseup 前被移除，行内 on_click 永远无法完成。
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .child(
                             div()
                                 .flex_none()
