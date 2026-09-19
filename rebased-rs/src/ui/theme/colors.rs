@@ -314,11 +314,23 @@ pub fn overlay_bg() -> Hsla {
 }
 
 // ---------- Git 语义色 ----------
-/// 泳道色相（首色对齐原版品红 #993D69，其余按 JetBrains log 色系排布）。
-const HUES: [f32; MAX_COLORS] = [0.92, 0.13, 0.33, 0.61, 0.0, 0.45, 0.55, 0.78];
+/// 泳道配色（JetBrains 暗色日志风格）：色相顺序对齐原版（首色品红系 = HEAD 语义，
+/// lane 2 绿 = 本地分支、lane 5 青 = 远程分支，见下方 ref 语义色）；
+/// 每条泳道独立 (s, l) —— 深色底上需要比正文更亮更饱和，统一低明度会发灰。
+const LANES: [(f32, f32, f32); MAX_COLORS] = [
+    (0.92, 0.52, 0.56), // 玫红（HEAD / 原版首色系提亮）
+    (0.13, 0.90, 0.62), // 琥珀黄
+    (0.36, 0.68, 0.54), // 草绿（本地分支）
+    (0.58, 0.88, 0.64), // 天蓝
+    (0.00, 0.85, 0.66), // 珊瑚红
+    (0.47, 0.85, 0.60), // 青（远程分支）
+    (0.75, 0.85, 0.68), // 紫罗兰
+    (0.07, 0.95, 0.62), // 橙
+];
 
 pub fn lane_color(index: usize) -> Hsla {
-    hsla(HUES[index % MAX_COLORS], 0.43, 0.42, 1.0)
+    let (h, s, l) = LANES[index % MAX_COLORS];
+    hsla(h, s, l, 1.0)
 }
 
 pub fn status_color(status: &ChangeStatus) -> Hsla {

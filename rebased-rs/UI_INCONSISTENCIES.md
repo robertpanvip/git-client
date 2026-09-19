@@ -54,3 +54,18 @@
 > 台账但代码未落地），本次全量代码复核后已改回真实状态，并按上述顺序重新实施。
 > 截至 2026-09-19：重新实施已完成至 C-1（P0 全部 + P1 全部，check/test/clippy 全绿），
 > 剩余 P2 项（I-6/I-7/S-1/E-1）均已收敛为共享原语落地。
+
+## R 系列：IDEA 精调（2026-09-19，P2 之后）
+
+> 背景：P0/P1/P2 收敛后整体已接近，但对照 IDEA 仍有精度差距。
+> 逐区审计结论与修复：
+
+| ID | Area | 审计结论（根因） | 修复 | Status |
+|----|------|------------------|------|--------|
+| R-1 | Typography | 双 token 源：dimensions `font_size_*` 原始刻度与 typography 语义别名并存，约百处调用点直连原始刻度；`TextRole` 零采纳；badge 处 `font_size_xs() - 2.0` 魔法算术；commit hash 列缺 mono 字体族 | 原始刻度锁 `pub(crate)`（仅供 typography 派生），全部调用点收敛到语义别名（`font_size_meta/body/title/code`）；新增 `font_size_badge()`；hash 列 `font_size_code()` + `.font_family(mono)`；diff/editor 7 处 mono 直连改 `font_size_code()` | ✅ |
+| R-2 | Toolbar | `render_toolbar` 手写根容器，缺 IDEA 底部 1px 分隔线；`components::toolbar()` 为零调用死原语 | 根容器切换到共享原语 `toolbar(fg)`（chrome 底色 + `border_b_1` + `chrome_divider`）；原语间距对齐实际值（gap XS + px SM），视觉零回归；工具栏构造唯一口径 | ✅ |
+| R-3 | Commit Graph | 几何已对齐（半径/弯道/合并双节点），差距在配色：泳道统一 s=0.43/l=0.42，深色底上发灰，非 JetBrains 暗色高饱和风格 | `HUES` 统一明度 → `LANES` 每色独立 (s, l)（玫红/琥珀/草绿/天蓝/珊瑚/青/紫/橙）；保留语义色相：lane0 品红=HEAD、lane2 绿=本地分支、lane5 青=远程分支 | ✅ |
+| R-4 | Detail | 动作栏 4 组按钮扁平挂在外层（gap SM），无分组容器，组间距与组内距无差 | 每组包进共享 `toolbar_group()`（组内 gap XS），组间 `v_separator`；4 组语义：提交操作（cherry-pick/revert/undo/drop）、历史改写（rebase/reset/reword/checkout）、ref 操作（branch/tag/copy-sha）、查看（diff/compare） | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅。
+> 验证：cargo check / clippy / test 全绿。

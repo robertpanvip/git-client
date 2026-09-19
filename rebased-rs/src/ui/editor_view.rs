@@ -288,7 +288,7 @@ fn render_line(
         .overflow_hidden()
         .whitespace_nowrap()
         .bg(blame_bg)
-        .text_size(px(theme::font_size_mono()))
+        .text_size(px(theme::font_size_code()))
         .font_family(mono.clone())
         .child(div().flex_none().text_color(author_fg).child(author))
         .child(
@@ -335,7 +335,7 @@ fn render_line(
                 .bg(theme::gutter_bg())
                 .border_r_1()
                 .border_color(theme::gutter_border())
-                .text_size(px(theme::font_size_mono()))
+                .text_size(px(theme::font_size_code()))
                 .text_color(theme::gutter_number_fg(muted))
                 .font_family(mono.clone())
                 .child(line.number.to_string()),
@@ -349,7 +349,7 @@ fn render_line(
                 .flex_row()
                 .items_center()
                 .pl(px(theme::SPACE_SM))
-                .text_size(px(theme::font_size_mono()))
+                .text_size(px(theme::font_size_code()))
                 .text_color(fg)
                 .font_family(mono.clone())
                 .child(if line.text.is_empty() {

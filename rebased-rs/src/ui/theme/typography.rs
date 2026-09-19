@@ -30,6 +30,11 @@ pub fn font_size_title() -> f32 {
 pub fn font_size_code() -> f32 {
     font_size_mono()
 }
+/// 图标角标计数（右上 9+ 徽标）—— 比 meta 再小一档（meta − 2，默认 10px），
+/// 随设置字号联动。禁止在面板里写 `font_size_meta() - 2.0` 之类算术。
+pub fn font_size_badge() -> f32 {
+    font_size_meta() - 2.0
+}
 
 // ---------- 行高（字号派生，随窗口字号增量联动）----------
 pub fn line_height_meta() -> f32 {

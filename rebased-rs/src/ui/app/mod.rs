@@ -641,7 +641,7 @@ impl AppView {
                         .items_center()
                         .justify_center()
                         .bg(bg)
-                        .text_size(px(theme::font_size_xs() - 2.0))
+                        .text_size(px(theme::font_size_badge()))
                         .font_weight(theme::WEIGHT_MEDIUM)
                         .text_color(fg_badge)
                         .child(label),

@@ -240,28 +240,29 @@ fn ui_size(default: f32) -> f32 {
     default + ui_font_delta() as f32
 }
 
-/// 超小字号（辅助信息 / 元数据 / 计数）。
-pub fn font_size_xs() -> f32 {
+/// 超小字号（辅助信息 / 元数据 / 计数）。原始刻度仅供
+/// [`super::typography`] 派生语义别名，面板一律走 `typography`。
+pub(crate) fn font_size_xs() -> f32 {
     ui_size(DEFAULT_FONT_SIZE_XS)
 }
 /// 小字号（次要文字 / 日期 / 哈希 / placeholder）。
-pub fn font_size_sm() -> f32 {
+pub(crate) fn font_size_sm() -> f32 {
     ui_size(DEFAULT_FONT_SIZE_SM)
 }
 /// 基础字号（正文 / 列表项 / 按钮文字，IntelliJ UI 字号）。
-pub fn font_size_base() -> f32 {
+pub(crate) fn font_size_base() -> f32 {
     ui_size(DEFAULT_FONT_SIZE_BASE)
 }
 /// 中等字号（标题 / 面板头 / 重要标签）。
-pub fn font_size_md() -> f32 {
+pub(crate) fn font_size_md() -> f32 {
     ui_size(DEFAULT_FONT_SIZE_MD)
 }
 /// 大字号（主标题 / 对话框标题）。
-pub fn font_size_lg() -> f32 {
+pub(crate) fn font_size_lg() -> f32 {
     ui_size(DEFAULT_FONT_SIZE_LG)
 }
 /// 代码 / 等宽字号（编辑器 / diff / 行号 / blame）。
-pub fn font_size_mono() -> f32 {
+pub(crate) fn font_size_mono() -> f32 {
     editor_font_size()
 }
 

@@ -169,6 +169,7 @@ impl ListDelegate for LogDelegate {
         let selected = self.selected == Some(ix);
         let fg = cx.theme().foreground;
         let muted = cx.theme().muted_foreground;
+        let mono = cx.theme().mono_font_family.clone();
         let app = self.app.clone();
         // 精确区分本地/远程分支：本地分支名可能含 `/`（如 `feature/x`），
         // 只靠名字启发式会误判，这里读仓库的 remote 列表。
@@ -260,7 +261,8 @@ impl ListDelegate for LogDelegate {
                     .flex_none()
                     .w(px(theme::COL_HASH_WIDTH))
                     .whitespace_nowrap()
-                    .text_size(px(theme::font_size_mono()))
+                    .text_size(px(theme::font_size_code()))
+                    .font_family(mono)
                     .text_color(muted)
                     .child(short_id(&commit.id.0).to_string()),
             );

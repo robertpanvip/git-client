@@ -3,7 +3,7 @@ mod log;
 mod menus;
 
 use gpui::prelude::FluentBuilder;
-use gpui::{Context, IntoElement, ParentElement, Styled, WeakEntity, div, px};
+use gpui::{Context, IntoElement, ParentElement, WeakEntity};
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants, DropdownButton},
@@ -12,10 +12,9 @@ use gpui_kit::component::{
 
 use rebased_rs::git::{Branch, MergeMode};
 
-use crate::ui::components::{menu_item, menu_width, v_separator};
+use crate::ui::components::{menu_item, menu_width, toolbar, v_separator};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
-use crate::ui::theme;
 
 use super::{AppView, ConfirmAction, PromptKind};
 
@@ -54,15 +53,8 @@ impl AppView {
             branch_label.push_str(&format!(" ↓{}", self.state.behind));
         }
 
-        div()
-            .h(px(theme::TOOLBAR_HEIGHT))
-            .flex_none()
-            .bg(theme::bg_chrome())
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(theme::SPACE_XS))
-            .px(px(theme::SPACE_SM))
+        // 共享原语：chrome 底色 + 底部 1px 分隔线（IDEA 工具栏特征）。
+        toolbar(fg)
             .child(
                 DropdownButton::new("branch-menu")
                     .button(
