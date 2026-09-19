@@ -322,6 +322,78 @@ impl AppView {
         self.refresh(cx);
     }
 
+    /// 设置路径过滤器并重新加载日志（None = 所有路径）。
+    pub(crate) fn set_path_filter(&mut self, path: Option<String>, cx: &mut Context<Self>) {
+        self.state.filter_path = path;
+        self.refresh(cx);
+    }
+
+    /// 路径过滤下拉的数据源：仓库根目录的顶层条目（跳过 `.git`），升序。
+    pub(crate) fn filter_path_candidates(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.repo_path.join("."))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                (name != ".git").then_some(name)
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// `.*` 通配模式开关（原版搜索框同款）：切换后按当前搜索词立即重过滤。
+    pub(crate) fn toggle_log_regex(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let on = !self.list.read(cx).delegate().regex;
+        self.list
+            .update(cx, |list, _| list.delegate_mut().set_regex(on));
+        let query = self.log_query.read(cx).value().to_string();
+        self.list
+            .update(cx, |list, cx| list.set_query(&query, window, cx));
+        cx.notify();
+    }
+
+    /// `Cc`：清空日志搜索框并回到全量列表。
+    pub(crate) fn clear_log_query(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.log_query
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.list
+            .update(cx, |list, cx| list.set_query("", window, cx));
+        cx.notify();
+    }
+
+    /// 🔍：聚焦日志搜索框（原版工具栏放大镜按钮同义）。
+    pub(crate) fn focus_log_query(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.log_query.update(cx, |state, cx| {
+            state.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    /// 👁：选中并滚动到 HEAD 提交（快速回到当前分支顶端）。
+    pub(crate) fn reveal_head_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(head) = self.state.head_id.clone() else {
+            return;
+        };
+        let Some(row) = self.list.read(cx).delegate().row_of_commit(&head) else {
+            return;
+        };
+        self.list.update(cx, |list, cx| {
+            list.set_selected_index(
+                Some(IndexPath {
+                    section: 0,
+                    row,
+                    column: 0,
+                }),
+                window,
+                cx,
+            );
+            list.scroll_to_selected_item(window, cx);
+        });
+        cx.notify();
+    }
+
     /// Go to Hash/Branch/Tag：把输入解析为提交 id 并在日志中选中。
     pub(crate) fn goto_revision(&mut self, input: String, cx: &mut Context<Self>) {
         let Some(repo) = self.repo.clone() else {

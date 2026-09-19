@@ -13,6 +13,7 @@ pub fn log_args(
     from: Option<&str>,
     author: Option<&str>,
     since: Option<&str>,
+    path: Option<&str>,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "log".to_string(),
@@ -29,6 +30,10 @@ pub fn log_args(
     }
     if let Some(since) = since {
         args.push(format!("--since={since}"));
+    }
+    if let Some(path) = path {
+        args.push("--".to_string());
+        args.push(path.to_string());
     }
     args
 }
@@ -221,10 +226,10 @@ mod tests {
 
     #[test]
     fn log_args_includes_since() {
-        let args = log_args(50, None, None, Some("midnight"));
+        let args = log_args(50, None, None, Some("midnight"), None);
         assert!(args.contains(&"--since=midnight".to_string()));
 
-        let args = log_args(50, None, None, None);
+        let args = log_args(50, None, None, None, None);
         assert!(!args.iter().any(|a| a.starts_with("--since")));
     }
 }

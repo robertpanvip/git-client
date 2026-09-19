@@ -49,61 +49,64 @@ pub fn white() -> Hsla {
 
 // ==================== 基准背景色（Backgrounds）====================
 
-/// 主背景（编辑器 / Log / 左右面板）—— Islands Dark `#313234`。
-/// 比 Darcula (#2B2D30) 略亮，符合 New UI "清晰分区"设计理念。
+/// 主背景（编辑器 / Log / 左右面板）—— 原版 Rebased 实测 `#191A1C`。
+/// 全窗口（工具栏 / 列表 / 侧栏 / 详情）同一底色，仅靠 1px 分隔线分区。
 pub fn bg_main() -> Hsla {
-    rgb(0x313234)
+    rgb(0x191A1C)
 }
 
-/// 工具栏 / 图标条 / 状态栏底色 —— Islands Dark `#45494A`。
-/// 与主背景形成明确层级分隔（New UI 核心特征）。
+/// 工具栏 / 图标条 / 状态栏底色 —— 原版与主背景同色 `#191A1C`。
 pub fn bg_chrome() -> Hsla {
-    rgb(0x45494A)
+    rgb(0x191A1C)
 }
 
-/// 面板分隔线 / 边框 —— Islands Dark `#6E7073`（12% alpha on fg）。
+/// 面板分隔线 / 边框 —— 原版实测 `#26282C`（比背景略亮一档）。
 pub fn separator() -> Hsla {
-    rgb(0x6E7073)
+    rgb(0x26282C)
 }
 
-/// 弹层 / 下拉菜单 / 对话框底色 —— Islands Dark `#3C3F41`。
+/// 弹层 / 下拉菜单 / 对话框底色 —— 在主背景上提亮一档 `#1F2023`。
 pub fn popover_bg() -> Hsla {
-    rgb(0x3C3F41)
+    rgb(0x1F2023)
 }
 
-/// 输入框底色 —— Darcula `ComboBox.background #3C3F41`。
+/// 输入框底色 —— 原版搜索框与背景同色，仅靠描边区分。
 pub fn input_bg() -> Hsla {
-    rgb(0x3C3F41)
+    rgb(0x191A1C)
+}
+
+/// 输入框描边 —— 原版搜索框实测 `#73767C`（明显亮于分隔线）。
+pub fn input_border() -> Hsla {
+    rgb(0x73767C)
 }
 
 // ==================== 交互态（Interactive States）====================
 
-/// 列表悬停底色 —— Islands Dark `#404248`（约 6% alpha on fg）。
+/// 列表悬停底色 —— 原版实测 HEAD 行高亮同档 `#232427`。
 /// 全应用**唯一**的悬停来源，禁止再出现 `fg@4%` 或字面量 `#2E3033`。
 pub fn hover_solid() -> Hsla {
-    rgb(0x404248)
+    rgb(0x232427)
 }
 
-/// 列表选中行底色（非焦点态）—— Islands Dark `#495055`。
+/// 列表选中行底色 —— 原版 Log 选中行实测 `#2A4371`。
 pub fn list_row_selected() -> Hsla {
-    rgb(0x495055)
+    rgb(0x2A4371)
 }
 
 /// 分支树 / 文件树悬停行底色 —— 比通用 hover 更淡，避免与选中态混淆。
 pub fn tree_row_hover() -> Hsla {
-    rgb(0x3A3C3E)
+    rgb(0x27282A)
 }
 
-/// Log 提交列表专属底色 —— 比面板底略深，把"表格区"与两侧区分开。
-/// 对应 IntelliJ Git Log 的蓝色调背景。
+/// Log 提交列表专属底色 —— 原版与主背景同色 `#191A1C`。
 pub fn log_list_bg() -> Hsla {
-    rgb(0x292D38)
+    rgb(0x191A1C)
 }
 
-/// 强选中 / 焦点态底色 —— JetBrains 蓝色 `#214283`（约 12% alpha）。
+/// 强选中 / 焦点态底色 —— 原版 Log 选中行实测 `#2A4371`。
 /// 用于图标条按钮激活、Log 当前行、主操作按钮。
 pub fn selection_bg() -> Hsla {
-    rgb(0x214283)
+    rgb(0x2A4371)
 }
 
 /// Log 标题蓝色标签底色 —— `#1A3B73`。
@@ -113,19 +116,20 @@ pub fn log_tag_bg() -> Hsla {
 
 // ==================== 文字色（Foregrounds）====================
 
-/// 主文字色 —— Islands Dark `#BBBBBB`（非纯白，降低视觉疲劳）。
+/// 主文字色 —— 原版实测 `#D1D3D9`（列表行 / 工具栏文字同一亮度）。
 pub fn text_primary() -> Hsla {
-    rgb(0xBBBBBB)
+    rgb(0xD1D3D9)
 }
 
-/// 次要文字色（日期 / 哈希 / 计数 / placeholder）—— `#8C8C8C`。
+/// 次要文字色（日期 / 哈希 / 计数 / placeholder / 远程 ref 文字）
+/// —— 原版 `origin/main` 文字实测 `#6F737A`。
 pub fn text_muted() -> Hsla {
-    rgb(0x8C8C8C)
+    rgb(0x6F737A)
 }
 
-/// 禁用 / 占位文字 —— `#6E7073`（与 separator 同级灰度）。
+/// 禁用 / 占位文字 —— `#55585E`（比 muted 再弱一档）。
 pub fn text_disabled() -> Hsla {
-    rgb(0x6E7073)
+    rgb(0x55585E)
 }
 
 // ==================== 文本层级派生（透明度收敛点）====================
@@ -314,8 +318,9 @@ pub fn overlay_bg() -> Hsla {
 }
 
 // ---------- Git 语义色 ----------
-/// 泳道配色（JetBrains 暗色日志风格）：色相顺序对齐原版（首色品红系 = HEAD 语义，
-/// lane 2 绿 = 本地分支、lane 5 青 = 远程分支，见下方 ref 语义色）；
+/// 泳道配色：原版 Rebased 日志按「推送状态」二色渲染——
+/// 未推送提交 = 青（teal），其余 = 紫（purple），HEAD = 同色环形节点；
+/// 多泳道仓库回退到下方的多色板（lane 0..MAX_COLORS）。
 /// 每条泳道独立 (s, l) —— 深色底上需要比正文更亮更饱和，统一低明度会发灰。
 const LANES: [(f32, f32, f32); MAX_COLORS] = [
     (0.92, 0.52, 0.56), // 玫红（HEAD / 原版首色系提亮）
@@ -328,8 +333,21 @@ const LANES: [(f32, f32, f32); MAX_COLORS] = [
     (0.07, 0.95, 0.62), // 橙
 ];
 
+/// 追加的原版语义色（不占 lane 色板索引，通过 `lane_color_ex` 访问）。
+const EXTRA_LANES: [(f32, f32, f32); 2] = [
+    (0.52, 0.44, 0.42), // 未推送提交：teal `#3D8A99`（原版实测）
+    (0.69, 0.43, 0.45), // 已推送提交：purple `#4D3D99`（原版实测）
+];
+
+/// 追加语义色在 `lane_color` 索引空间中的下标。
+pub const LANE_UNPUSHED: usize = MAX_COLORS;
+pub const LANE_PUSHED: usize = MAX_COLORS + 1;
+
 pub fn lane_color(index: usize) -> Hsla {
-    let (h, s, l) = LANES[index % MAX_COLORS];
+    let (h, s, l) = match index.checked_sub(MAX_COLORS) {
+        Some(extra) if extra < EXTRA_LANES.len() => EXTRA_LANES[extra],
+        _ => LANES[index % MAX_COLORS],
+    };
     hsla(h, s, l, 1.0)
 }
 
@@ -399,26 +417,32 @@ pub fn error_color() -> Hsla {
 }
 
 // ---------- ref 标签语义色 ----------
-// IntelliJ Log 中四类 ref 视觉互异：HEAD/当前分支、本地分支、远程分支、tag。
+// 原版 Log 中三类 ref 视觉互异（实测色值）：
+// 本地分支 = 金色双 tag 图标 + 亮文字；远程分支 = 紫罗兰 tag 图标 + 弱文字。
 
-/// HEAD / 当前分支 —— 品红（lane 0）。
-pub fn head_color() -> Hsla {
-    lane_color(0)
-}
-
-/// 普通本地分支 —— 绿（lane 2，与 added 同色相）。
+/// 本地分支 ref —— 金色 `#F5D273`（原版 main 徽章图标色）。
 pub fn branch_local_color() -> Hsla {
-    lane_color(2)
+    rgb(0xF5D273)
 }
 
-/// 远程分支 —— 青（lane 5）。
+/// 远程分支 ref —— 紫罗兰 `#B589EC`（原版 origin/main 徽章图标色）。
 pub fn branch_remote_color() -> Hsla {
-    lane_color(5)
+    rgb(0xB589EC)
 }
 
 /// tag —— 中性灰 `#A0A0A0`，与「新增」绿明确区分。
 pub fn tag_color() -> Hsla {
     rgb(0xA0A0A0)
+}
+
+/// 「领先 upstream N」徽章绿 —— 原版实测 `#57965C`。
+pub fn ahead_green() -> Hsla {
+    rgb(0x57965C)
+}
+
+/// HEAD / 当前分支 —— 跟随本地分支金色（原版无独立 HEAD 徽章色）。
+pub fn head_color() -> Hsla {
+    branch_local_color()
 }
 
 /// 兼容旧调用点：原 `remote_color` 语义即"非 HEAD 的远程 ref"。

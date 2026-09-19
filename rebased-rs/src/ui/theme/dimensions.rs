@@ -70,12 +70,18 @@ pub const MIN_RIGHT_PANEL_WIDTH: f32 = 320.0;
 pub const MIN_WIDE_PANEL_WIDTH: f32 = 420.0;
 
 // ---------- 图形泳道（Graph Geometry）----------
-/// 单条泳道占宽。IntelliJ 参考实现单列内容宽 ≈22px（`2*GRAPH_NODE_WIDTH + HGAP`）。
+/// 单条泳道占宽（第 2 条及以后的泳道间距）。
 pub const LANE_WIDTH: f32 = 18.0;
-/// 提交节点半径。**IntelliJ `GRAPH_NODE_WIDTH = JBUI.scale(8)` → 直径 8px → 半径 4px**。
-pub const DOT_RADIUS: f32 = 4.0;
-/// 连线宽度（IntelliJ = 1.5px）。
-pub const LINE_WIDTH: f32 = 1.5;
+/// 首泳道圆心到图列左缘的距离（原版实测：行内缩 4px + 圆心 15px）。
+pub const FIRST_LANE_CENTER: f32 = 15.0;
+/// 提交节点半径。原版实测实心圆直径 ≈10px → 半径 5px；
+/// HEAD 提交为外径 12px 的环形节点（见 `graph_view::paint`）。
+pub const DOT_RADIUS: f32 = 5.0;
+/// HEAD 环形节点外半径与环厚（原版实测：外径 ≈12px，环厚 ≈2px）。
+pub const HEAD_RING_RADIUS: f32 = 6.0;
+pub const HEAD_RING_WIDTH: f32 = 2.0;
+/// 连线宽度（原版实测 1px 细线）。
+pub const LINE_WIDTH: f32 = 1.0;
 
 // ---------- 列表列宽（List Column Widths）----------
 /// 状态列（A/M/D/R… 图标）宽度。

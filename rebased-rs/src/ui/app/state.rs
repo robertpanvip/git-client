@@ -307,6 +307,8 @@ pub(crate) struct AppState {
     pub(crate) filter_branch: Option<String>,
     /// 日期过滤器：(展示名, git `--since` 表达式)，None = 不限时间。
     pub(crate) filter_since: Option<(String, String)>,
+    /// 路径过滤器（None = 所有路径），`git log -- <path>`。
+    pub(crate) filter_path: Option<String>,
     pub(crate) tags: Arc<Vec<Tag>>,
     pub(crate) changes: Vec<Change>,
     pub(crate) selected_changes: Vec<String>,
@@ -431,6 +433,7 @@ impl Default for AppState {
             filter_author: String::new(),
             filter_branch: None,
             filter_since: None,
+            filter_path: None,
             tags: Arc::new(Vec::new()),
             changes: Vec::new(),
             selected_changes: Vec::new(),

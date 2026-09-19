@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, Local};
@@ -7,16 +8,14 @@ use gpui::{
 };
 use gpui_kit::base::IndexPath;
 use gpui_kit::component::{
-    ActiveTheme,
+    ActiveTheme, Icon, Sizable, Size,
     list::{ListDelegate, ListItem, ListState},
     menu::{ContextMenuExt, PopupMenu},
 };
 use rebased_rs::git::{Commit, Graph, build_graph, filter_commits};
 
 use crate::ui::app::{AppView, ConfirmAction, PromptKind};
-use crate::ui::components::{
-    chip, empty_state, menu_item, menu_width, ref_style_with_remotes, shortcuts,
-};
+use crate::ui::components::{empty_state, menu_item, menu_width, ref_style_with_remotes, shortcuts};
 use crate::ui::graph_view::{ROW_HEIGHT, lane_canvas};
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
@@ -25,12 +24,79 @@ use crate::ui::theme;
 pub struct LogData {
     pub commits: Vec<Commit>,
     pub graph: Graph,
+    /// 远程 tip 的**严格祖先**（原版在作者名后缀 `*` 标记这些提交）。
+    pub starred: HashSet<String>,
 }
 
 impl LogData {
     pub fn new(commits: Vec<Commit>) -> Self {
-        let graph = build_graph(&commits);
-        Self { commits, graph }
+        let mut graph = build_graph(&commits);
+        // 原版语义：远程 ref 所在提交及其祖先 = 已推送；
+        // 可达但不在远程的提交 = 未推送（青色节点），其余 = 已推送（紫色节点）。
+        // 无远程仓库时全部按已推送渲染（原版单色紫）。
+        let mut remote_tips: Vec<&Commit> = Vec::new();
+        for commit in commits.iter() {
+            let has_remote = commit
+                .refs
+                .iter()
+                .any(|name| name != "HEAD" && !name.starts_with("HEAD -> ") && name.contains('/'));
+            if has_remote {
+                remote_tips.push(commit);
+            }
+        }
+        let mut pushed: HashSet<String> = HashSet::new();
+        let mut stack: Vec<&Commit> = remote_tips.iter().copied().collect();
+        while let Some(commit) = stack.pop() {
+            if !pushed.insert(commit.id.0.clone()) {
+                continue;
+            }
+            for parent in &commit.parents {
+                if let Some(parent_commit) =
+                    commits.iter().find(|c| c.id.0 == parent.0)
+                {
+                    stack.push(parent_commit);
+                }
+            }
+        }
+        // 严格祖先 = 从远程 tip 的父提交开始再走一遍可达集。
+        let mut starred: HashSet<String> = HashSet::new();
+        let mut stack: Vec<&Commit> = remote_tips
+            .iter()
+            .copied()
+            .flat_map(|tip| {
+                tip.parents
+                    .iter()
+                    .filter_map(|parent| commits.iter().find(|c| c.id.0 == parent.0))
+            })
+            .collect();
+        while let Some(commit) = stack.pop() {
+            if !starred.insert(commit.id.0.clone()) {
+                continue;
+            }
+            for parent in &commit.parents {
+                if let Some(parent_commit) = commits.iter().find(|c| c.id.0 == parent.0) {
+                    stack.push(parent_commit);
+                }
+            }
+        }
+        // 重绘泳道配色：按推送状态二色（原版），连线与节点同色。
+        let has_remotes = !remote_tips.is_empty();
+        for (row, commit) in graph.rows.iter_mut().zip(commits.iter()) {
+            let color = if has_remotes && !pushed.contains(&commit.id.0) {
+                theme::LANE_UNPUSHED
+            } else {
+                theme::LANE_PUSHED
+            };
+            row.color = color;
+            for edge in row.edges.iter_mut() {
+                edge.color = color;
+            }
+        }
+        Self {
+            commits,
+            graph,
+            starred,
+        }
     }
 
     pub fn filtered(&self, query: &str) -> Self {
@@ -46,6 +112,8 @@ pub struct LogDelegate {
     data: Option<Arc<LogData>>,
     visible: Option<Arc<LogData>>,
     selected: Option<IndexPath>,
+    /// `.*` 模式（原版搜索框同款开关）：开启后按通配符匹配（`*` 任意段）。
+    pub(crate) regex: bool,
     /// AppView 的弱引用，用于 ref 徽章菜单与双击 checkout 联动应用层动作。
     app: Option<WeakEntity<AppView>>,
 }
@@ -56,8 +124,22 @@ impl LogDelegate {
             data: None,
             visible: None,
             selected: None,
+            regex: false,
             app: None,
         }
+    }
+
+    pub fn set_regex(&mut self, regex: bool) {
+        self.regex = regex;
+    }
+
+    /// 在可见（含过滤后）提交中查找指定 id 的行号。
+    pub fn row_of_commit(&self, id: &str) -> Option<usize> {
+        self.visible
+            .as_ref()?
+            .commits
+            .iter()
+            .position(|c| c.id.0 == id)
     }
 
     pub fn set_app(&mut self, app: WeakEntity<AppView>) {
@@ -87,13 +169,6 @@ impl LogDelegate {
         self.visible.as_ref().map_or(0, |data| data.commits.len())
     }
 
-    /// 当前可见数据的泳道数（Log 表头列宽对齐用）。
-    pub fn lane_count(&self) -> usize {
-        self.visible
-            .as_ref()
-            .map_or(1, |data| data.graph.lane_count)
-    }
-
     /// 已加载提交的去重作者名（日志「用户」过滤下拉的数据源，升序）。
     pub fn authors(&self) -> Vec<String> {
         let mut names: Vec<String> = self
@@ -117,6 +192,8 @@ impl LogDelegate {
         };
         self.visible = if query.trim().is_empty() {
             Some(data)
+        } else if self.regex {
+            Some(Arc::new(wildcard_filtered(&data, query)))
         } else {
             Some(Arc::new(data.filtered(query)))
         };
@@ -168,8 +245,6 @@ impl ListDelegate for LogDelegate {
         let commit = data.commits.get(ix.row)?;
         let selected = self.selected == Some(ix);
         let fg = cx.theme().foreground;
-        let muted = cx.theme().muted_foreground;
-        let mono = cx.theme().mono_font_family.clone();
         let app = self.app.clone();
         // 精确区分本地/远程分支：本地分支名可能含 `/`（如 `feature/x`），
         // 只靠名字启发式会误判，这里读仓库的 remote 列表。
@@ -185,6 +260,14 @@ impl ListDelegate for LogDelegate {
                     .collect()
             })
             .unwrap_or_default();
+        // HEAD 提交渲染为环形节点（原版同款）。
+        let head_id = app
+            .as_ref()
+            .and_then(|app| app.upgrade())
+            .and_then(|view| view.read(cx).state.head_id.clone());
+        let is_head = head_id.as_deref() == Some(commit.id.0.as_str());
+        // 远程 tip 严格祖先在作者名后缀 `*`（原版同款标记）。
+        let starred = data.starred.contains(&commit.id.0);
 
         let mut row = div()
             .id(SharedString::from(format!("commit-row-{}", ix.row)))
@@ -192,7 +275,7 @@ impl ListDelegate for LogDelegate {
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(theme::SPACE_MD))
+            .gap(px(theme::SPACE_SM))
             .overflow_hidden();
 
         let graph_row = data.graph.rows.get(ix.row).cloned();
@@ -200,11 +283,23 @@ impl ListDelegate for LogDelegate {
             graph_row,
             data.graph.lane_count,
             commit.is_merge(),
+            is_head,
             // merge 环形节点的挖空色 = Log 列表真实背景，避免与容器色差。
             theme::log_list_bg(),
         ));
 
-        // Subject 单元格 = ref 标签（可并排多个）+ 提交标题，与表头列一一对应。
+        // Subject 单元格 = 提交标题（flex），ref 标签列紧贴作者列（原版布局）。
+        row = row.child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_size(px(theme::font_size_meta()))
+                .text_color(fg)
+                .child(commit.subject.clone()),
+        );
+
         let mut refs_col = div()
             .flex_none()
             .flex()
@@ -215,29 +310,10 @@ impl ListDelegate for LogDelegate {
             let badge_id = SharedString::from(format!("ref-badge-{}-{}", ix.row, i));
             refs_col = refs_col.child(ref_badge(&badge_id, ref_name, app.clone(), &remotes));
         }
-        row = row.child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(theme::SPACE_SM))
-                .child(refs_col)
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_size(px(theme::font_size_meta()))
-                        .text_color(fg)
-                        .child(commit.subject.clone()),
-                ),
-        );
+        row = row.child(refs_col);
 
-        // 列式布局：graph | subject(refs + 标题, flex) | author | date | hash，
-        // 与原版一致——author/date/hash 始终纵向对齐，且与表头列一一对应。
+        // 列式布局：graph | subject(flex) | refs | author | date。
+        // 与原版一致——无哈希列，作者加粗，author/date 纵向对齐。
         row = row
             .child(
                 div()
@@ -246,8 +322,13 @@ impl ListDelegate for LogDelegate {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_size(px(theme::font_size_meta()))
-                    .text_color(muted)
-                    .child(commit.author.name.clone()),
+                    .font_weight(theme::WEIGHT_BOLD)
+                    .text_color(fg)
+                    .child(if starred {
+                        format!("{}*", commit.author.name)
+                    } else {
+                        commit.author.name.clone()
+                    }),
             )
             .child(
                 div()
@@ -255,18 +336,8 @@ impl ListDelegate for LogDelegate {
                     .w(px(theme::COL_DATE_WIDTH))
                     .whitespace_nowrap()
                     .text_size(px(theme::font_size_meta()))
-                    .text_color(muted)
+                    .text_color(fg)
                     .child(format_time(commit.time)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(theme::COL_HASH_WIDTH))
-                    .whitespace_nowrap()
-                    .text_size(px(theme::font_size_code()))
-                    .font_family(mono)
-                    .text_color(muted)
-                    .child(short_id(&commit.id.0).to_string()),
             );
 
         // 双击 commit = Checkout（IntelliJ 惯例）。行选中由 ListState 统一处理，
@@ -305,6 +376,54 @@ impl ListDelegate for LogDelegate {
     }
 }
 
+/// `.*` 模式过滤：把查询串当作通配符模式（`*` 匹配任意段，其余字面匹配），
+/// 对 subject / author / hash 做大小写不敏感匹配（无 regex 依赖的轻量实现）。
+fn wildcard_filtered(data: &LogData, query: &str) -> LogData {
+    let pattern = query.trim().to_lowercase();
+    let commits: Vec<Commit> = data
+        .commits
+        .iter()
+        .filter(|c| {
+            wildcard_match(&pattern, &c.subject.to_lowercase())
+                || wildcard_match(&pattern, &c.author.name.to_lowercase())
+                || wildcard_match(&pattern, c.id.0.to_lowercase().as_str())
+        })
+        .cloned()
+        .collect();
+    LogData::new(commits)
+}
+
+/// 单 `*` 通配符匹配（支持多个 `*`；无 `*` 时退化为子串匹配）。
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    if !pattern.contains('*') {
+        return text.contains(pattern);
+    }
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let (mut star, mut mark) = (None::<usize>, 0usize);
+    while ti < t.len() {
+        if pi < p.len() && p[pi] == t[ti] {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            pi += 1;
+            mark = ti;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
 fn ref_badge(
     id: &str,
     name: &str,
@@ -312,14 +431,50 @@ fn ref_badge(
     remotes: &[String],
 ) -> impl IntoElement {
     let (label, color) = ref_style_with_remotes(name, remotes);
+    // 原版观感：tag 图标 + 文字，无底色胶囊；
+    // 本地分支 = 金色双 tag 图标 + 亮文字，远程 = 紫罗兰单 tag + 弱文字。
+    let is_tag = name.starts_with("tag: ");
+    let is_remote = !is_tag
+        && name != "HEAD"
+        && !name.starts_with("HEAD -> ")
+        && remotes
+            .iter()
+            .any(|remote| name.starts_with(&format!("{remote}/")));
+    let icon = if is_tag {
+        Ic::Tag
+    } else if is_remote {
+        Ic::RefTagRemote
+    } else {
+        Ic::RefTagLocal
+    };
+    let text = if is_remote || is_tag {
+        theme::text_muted()
+    } else {
+        theme::text_primary()
+    };
 
     let name = name.to_string();
-    chip(SharedString::from(id.to_string()), label, color).context_menu(move |menu, _window, cx| {
-        match &app {
-            Some(app) => build_ref_menu(menu, &name, app, cx),
-            None => menu,
-        }
-    })
+    div()
+        .id(SharedString::from(id.to_string()))
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(theme::SPACE_XS))
+        .child(Icon::new(icon).with_size(Size::Small).text_color(color))
+        .child(
+            div()
+                .text_size(px(theme::font_size_meta()))
+                .text_color(text)
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(label),
+        )
+        .context_menu(move |menu, _window, cx| {
+            match &app {
+                Some(app) => build_ref_menu(menu, &name, app, cx),
+                None => menu,
+            }
+        })
 }
 
 /// ref 徽章的右键菜单：tag 可删除；分支按本地/远程给出对应操作
