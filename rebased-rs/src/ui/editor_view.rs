@@ -307,6 +307,10 @@ fn render_line(
     }
 
     let row = div()
+        // 行必须有唯一 id：ContextMenu 的元素状态按 GlobalElementId 存取，
+        // uniform_list 不为虚拟行提供独立 id 上下文，无 id 时所有可见行共享
+        // 同一个菜单状态（同一把 hitbox / open / menu_view），点击菜单项无效。
+        .id(("ed-line", line.number as usize))
         .flex_none()
         .h(px(theme::diff_line_height()))
         .min_w(px(row_min_w))
