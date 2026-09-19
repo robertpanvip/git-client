@@ -66,7 +66,7 @@ fn load_window_icon() -> Option<Arc<image::RgbaImage>> {
 
 fn open_and_load(path: &Path) -> Result<Loaded, GitError> {
     let repo = open_backend(path)?;
-    let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None, None)?;
+    let data = load_repo_data_filtered(repo.as_ref(), DEFAULT_LOG_LIMIT, None, None, None, None)?;
     Ok(Loaded { repo, data })
 }
 
@@ -255,12 +255,12 @@ impl AppView {
             return;
         };
         match sync_repo_state(repo.as_ref(), &mut self.state, data) {
-            Ok((commits, graph)) => {
+            Ok((commits, _graph)) => {
                 // 注入自身弱引用，供 delegate 内（ref 徽章菜单 / 双击）回调应用动作。
                 let weak = cx.entity().downgrade();
                 self.list.update(cx, |list, cx| {
                     list.delegate_mut().set_app(weak);
-                    list.delegate_mut().set_data(LogData { commits, graph });
+                    list.delegate_mut().set_data(LogData::new(commits));
                     cx.notify();
                 });
             }
@@ -288,6 +288,7 @@ impl AppView {
         };
         let branch = self.state.filter_branch.clone();
         let since = self.state.filter_since.clone().map(|(_, expr)| expr);
+        let path = self.state.filter_path.clone();
         let task = cx.background_spawn(async move {
             load_repo_data_filtered(
                 repo.as_ref(),
@@ -295,6 +296,7 @@ impl AppView {
                 branch.as_deref(),
                 author.as_deref(),
                 since.as_deref(),
+                path.as_deref(),
             )
         });
         cx.spawn(async move |this, cx| match task.await {

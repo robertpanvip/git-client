@@ -2,8 +2,9 @@
 //!
 //! 几何模型（唯一基准，所有圆点与连线共用，禁止 magic number 平移）：
 //! - lane center：`x = lane * LANE_WIDTH + LANE_WIDTH / 2`；
-//! - row center：`y = bounds.top + bounds.height / 2`（泳道画布 `h_full`
-//!   等于行高 `ROW_HEIGHT`，即圆点恒在行的垂直中心）；
+//! - row center：`y = bounds.top + bounds.height / 2`（泳道画布撑满
+//!   `ROW_HEIGHT` 的行容器，即圆点恒在行的垂直中心；canvas 自身必须
+//!   `.size_full()`，否则 bounds 高度为 0、row center 退化为行顶）；
 //! - dot：圆心 = `(lane_x(lane), row_center)`，直径 `2 * DOT_RADIUS`；
 //! - line：路径中心线必须经过 `lane_x(lane)`，描边以中心线对称展开；
 //! - 泳道切换：`竖直 → 圆角 elbow → 水平 → 圆角 elbow → 竖直`，
@@ -26,7 +27,9 @@ use gpui::{
 };
 use rebased_rs::git::GraphRow;
 
-use crate::ui::theme::{DOT_RADIUS, LANE_WIDTH, LINE_WIDTH};
+use crate::ui::theme::{
+    DOT_RADIUS, FIRST_LANE_CENTER, HEAD_RING_RADIUS, HEAD_RING_WIDTH, LANE_WIDTH, LINE_WIDTH,
+};
 
 pub const ROW_HEIGHT: f32 = crate::ui::theme::ROW_HEIGHT;
 pub use crate::ui::theme::lane_color;
@@ -35,34 +38,35 @@ pub use crate::ui::theme::lane_color;
 /// IDEA 转折半径约 `ROW_HEIGHT / 5`（24px 行 ≈ 5px），比 3px 更平滑自然。
 const ELBOW_RADIUS: f32 = 5.0;
 
-/// lane center x（相对 graph 列左缘）。`LANE_WIDTH = 18` 保证所有
-/// lane center 落在整数像素上，圆点与连线不会产生半像素错位。
+/// lane center x（相对 graph 列左缘）。首泳道圆心固定在
+/// `FIRST_LANE_CENTER`（原版实测 15px），后续泳道按 `LANE_WIDTH` 递进。
 fn lane_x(lane: usize) -> f32 {
-    LANE_WIDTH * lane as f32 + LANE_WIDTH / 2.0
+    FIRST_LANE_CENTER + LANE_WIDTH * lane as f32
 }
 
-/// 泳道列占宽（Log 表头需要与之对齐，故公开）。
+/// 泳道列占宽（Log 行内布局需要与之对齐，故公开）。
 ///
-/// 列宽 = `LANE_WIDTH * lane_count`：每条泳道内的圆点/线条天然居中
-/// （左右各 5px 余量），不额外加 `DOT_RADIUS`，避免列右侧多出与
-/// 左侧不对称的空隙。
+/// 列宽 = 首泳道圆心 + 最后一条泳道的圆点直径 + 少量右余量，
+/// 保证最后一个 lane 的圆点/连线完整落在列内。
 pub fn graph_column_width(lane_count: usize) -> Pixels {
-    px(LANE_WIDTH * lane_count.max(1) as f32)
+    px(FIRST_LANE_CENTER + DOT_RADIUS + (LANE_WIDTH * (lane_count.max(1) - 1) as f32) + 4.0)
 }
 
 struct LaneCanvas {
     lane: usize,
     color: usize,
     is_merge: bool,
+    is_head: bool,
     edges: Vec<(usize, usize, usize)>,
 }
 
 impl LaneCanvas {
-    fn from_row(row: &GraphRow, is_merge: bool) -> Self {
+    fn from_row(row: &GraphRow, is_merge: bool, is_head: bool) -> Self {
         Self {
             lane: row.lane,
             color: row.color,
             is_merge,
+            is_head,
             edges: row
                 .edges
                 .iter()
@@ -110,17 +114,55 @@ impl LaneCanvas {
         }
 
         // 圆点：圆心 = (lane_x(lane), row center)，不叠加任何平移。
+        // HEAD 提交为环形节点（外径 12px / 环厚 2px + 中心小圆点），
+        // 其余提交为实心圆；merge 提交在实心圆上再挖空中心。
         let x = left + lane_x(self.lane);
-        window.paint_quad(
-            fill(
-                Bounds::new(
-                    point(px(x - DOT_RADIUS), px(mid_y - DOT_RADIUS)),
-                    size(px(DOT_RADIUS * 2.0), px(DOT_RADIUS * 2.0)),
-                ),
-                lane_color(self.color),
-            )
-            .corner_radii(px(DOT_RADIUS)),
-        );
+        let color = lane_color(self.color);
+        if self.is_head {
+            window.paint_quad(
+                fill(
+                    Bounds::new(
+                        point(px(x - HEAD_RING_RADIUS), px(mid_y - HEAD_RING_RADIUS)),
+                        size(px(HEAD_RING_RADIUS * 2.0), px(HEAD_RING_RADIUS * 2.0)),
+                    ),
+                    color,
+                )
+                .corner_radii(px(HEAD_RING_RADIUS)),
+            );
+            let hole = HEAD_RING_RADIUS - HEAD_RING_WIDTH;
+            window.paint_quad(
+                fill(
+                    Bounds::new(
+                        point(px(x - hole), px(mid_y - hole)),
+                        size(px(hole * 2.0), px(hole * 2.0)),
+                    ),
+                    bg,
+                )
+                .corner_radii(px(hole)),
+            );
+            let inner = HEAD_RING_WIDTH + 0.5;
+            window.paint_quad(
+                fill(
+                    Bounds::new(
+                        point(px(x - inner), px(mid_y - inner)),
+                        size(px(inner * 2.0), px(inner * 2.0)),
+                    ),
+                    color,
+                )
+                .corner_radii(px(inner)),
+            );
+        } else {
+            window.paint_quad(
+                fill(
+                    Bounds::new(
+                        point(px(x - DOT_RADIUS), px(mid_y - DOT_RADIUS)),
+                        size(px(DOT_RADIUS * 2.0), px(DOT_RADIUS * 2.0)),
+                    ),
+                    color,
+                )
+                .corner_radii(px(DOT_RADIUS)),
+            );
+        }
         if self.is_merge {
             // 双节点：中心挖空成环形。挖空色 = 所在列表的真实背景，
             // 由调用方传入，避免依赖 `bg_main()` 造成色差。
@@ -139,25 +181,32 @@ impl LaneCanvas {
     }
 }
 
-/// 单个提交行的泳道画布。`is_merge` 决定节点是实心还是双节点；
-/// `bg` 是所在列表的背景色（Log = `theme::log_list_bg()`），用于
-/// merge 环形节点的中心挖空。
+/// 单个提交行的泳道画布。`is_merge` 决定节点是否挖空中心（merge 双节点）；
+/// `is_head` 决定节点是实心圆还是 HEAD 环形节点；`bg` 是所在列表的背景色
+/// （Log = `theme::log_list_bg()`），用于挖空部分。
 pub fn lane_canvas(
     row: Option<GraphRow>,
     lane_count: usize,
     is_merge: bool,
+    is_head: bool,
     bg: Hsla,
 ) -> impl IntoElement {
     div()
         .w(graph_column_width(lane_count))
-        .h_full()
+        .h(px(ROW_HEIGHT))
         .flex_none()
-        .child(canvas(
-            move |_, _, _| (row, bg),
-            move |bounds, (row, bg), window, _| {
-                if let Some(row) = row.as_ref() {
-                    LaneCanvas::from_row(row, is_merge).paint(bg, bounds, window);
-                }
-            },
-        ))
+        .child(
+            canvas(
+                move |_, _, _| (row, bg),
+                move |bounds, (row, bg), window, _| {
+                    if let Some(row) = row.as_ref() {
+                        LaneCanvas::from_row(row, is_merge, is_head).paint(bg, bounds, window);
+                    }
+                },
+            )
+            // canvas 默认 style 尺寸为 0，bounds 高度为 0 会让 row center
+            // 退化为行顶，圆点上半被行容器 `overflow_hidden` 裁掉；
+            // 必须显式撑满父容器。
+            .size_full(),
+        )
 }

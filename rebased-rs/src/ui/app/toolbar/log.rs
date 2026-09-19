@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, WeakEntity, div, px,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div, px,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
@@ -13,7 +13,6 @@ use gpui_kit::component::{
 
 use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{empty_state, error_state, menu_item, menu_width};
-use crate::ui::graph_view::graph_column_width;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -37,131 +36,70 @@ impl AppView {
             .into_any_element()
     }
 
-    /// Log 表头：Subject / Author / Date 三列，列宽与提交行完全一致。
-    /// 原实现无表头，导致 author/date 列语义不可见。
-    fn render_log_columns(&self, cx: &mut Context<Self>) -> Div {
-        let muted = cx.theme().muted_foreground;
-        let lane_count = self.list.read(cx).delegate().lane_count();
-        div()
-            .h(px(theme::SECTION_HEADER_HEIGHT))
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(theme::SPACE_MD))
-            .px(px(theme::SPACE_MD))
-            .bg(theme::log_list_bg())
-            .border_b_1()
-            .border_color(theme::separator())
-            .text_size(px(theme::font_size_meta()))
-            .font_weight(theme::WEIGHT_MEDIUM)
-            .text_color(muted)
-            .child(
-                div()
-                    .w(graph_column_width(lane_count))
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .child(tr("Graph", "图谱")),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(tr("Subject", "主题")),
-            )
-            .child(
-                div()
-                    .w(px(theme::COL_AUTHOR_WIDTH))
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .child(tr("Author", "作者")),
-            )
-            .child(
-                div()
-                    .w(px(theme::COL_DATE_WIDTH))
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .child(tr("Date", "日期")),
-            )
-            .child(
-                div()
-                    .w(px(theme::COL_HASH_WIDTH))
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .child(tr("Hash", "哈希")),
-            )
-    }
-
-    /// Log 主区标题行（对齐原版 41px）：折叠指示 + “Log: <分支>” 蓝底白字标签。
-    fn render_log_header(&self, cx: &mut Context<Self>) -> Div {
-        let muted = cx.theme().muted_foreground;
-        let branch = self
-            .state
-            .filter_branch
-            .clone()
-            .or_else(|| self.state.current_branch.clone())
-            .unwrap_or_else(|| tr("All Branches", "所有分支").to_string());
-        div()
-            .h(px(theme::LOG_HEADER_HEIGHT))
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(theme::SPACE_MD))
-            .px(px(theme::SPACE_MD))
-            .child(
-                Icon::new(Ic::ChevronDown)
-                    .with_size(Size::XSmall)
-                    .flex_none()
-                    .text_color(muted),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .px(px(theme::SPACE_XS))
-                    .py(px(theme::SPACE_XS))
-                    .rounded(px(theme::RADIUS_SM))
-                    .bg(theme::log_tag_bg())
-                    .text_size(px(theme::font_size_meta()))
-                    .text_color(theme::white())
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(format!("{}: {branch}", tr("Log", "日志"))),
-            )
-            .child(div().flex_1())
-    }
-
-    /// 蓝字过滤 chip（对齐原版 “Branch: HEAD ×”），点击清除对应过滤。
+    /// 过滤 chip（原版同款）：「分支: main ×」——标签弱色、值亮色，点击整体清除。
     fn render_filter_chip(
         &self,
         id: &'static str,
         label: String,
+        value: String,
         on_clear: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let link = theme::link_blue();
+        let muted = theme::text_muted();
+        let fg = theme::text_primary();
         div()
             .id(id)
             .flex_none()
             .flex()
             .items_center()
             .gap(px(theme::SPACE_XS))
-            .px(px(theme::SPACE_SM))
+            .px(px(theme::SPACE_XS))
             .rounded(px(theme::RADIUS_SM))
             .text_size(px(theme::font_size_meta()))
-            .text_color(link)
             .cursor_pointer()
-            .hover(move |s| s.bg(theme::hover_bg(link)))
+            .hover(move |s| s.bg(theme::hover_bg(fg)))
             .on_click(cx.listener(move |this, _, _, cx| on_clear(this, cx)))
-            .child(label)
-            .child(Icon::new(Ic::Close).with_size(Size::Small))
+            .child(div().flex_none().text_color(muted).child(label))
+            .child(div().flex_none().text_color(fg).child(value))
+            .child(Icon::new(Ic::Close).with_size(Size::XSmall).text_color(muted))
     }
 
-    /// Log 过滤行（对齐图2）：搜索框「文本或哈希」+
-    /// 分支 / 用户 / 日期 三个过滤下拉（固定显示过滤器名）+
-    /// 已激活过滤 chip（显示选中值，点击清除）。
+    /// 过滤行小工具按钮（原版工具栏同款）：24px 命中、灰图标、悬停提亮。
+    fn render_log_tool_button(
+        &self,
+        id: &'static str,
+        icon: Ic,
+        _tooltip: String,
+        active: bool,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let fg = if active {
+            theme::white()
+        } else {
+            theme::text_muted()
+        };
+        div()
+            .id(id)
+            .size(px(theme::ICON_BUTTON_SIZE))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_SM))
+            .text_color(fg)
+            .cursor_pointer()
+            .when(active, |b| b.bg(theme::selection_bg()))
+            .when(!active, |b| b.hover(move |s| s.bg(theme::hover_bg(fg))))
+            .on_click(cx.listener(move |this, _: &gpui::ClickEvent, window, cx| {
+                on_click(this, window, cx)
+            }))
+            .child(Icon::new(icon).with_size(Size::Small))
+    }
+
+    /// Log 过滤行（对齐原版）：搜索框「文本或哈希」（内嵌 `.*` / `Cc`）+
+    /// 「分支: main ×」过滤 chip + 用户 / 日期 / 路径 过滤下拉 +
+    /// 右侧工具按钮组（抓取 / 刷新 / 分支 / 预览 / 搜索）。
     ///
     /// 注意：caret 由 [`DropdownButton`] 自带的 popup 半区渲染，
     /// 内层 [`Button`] 不得再设 `dropdown_caret`，否则出现双箭头。
@@ -174,18 +112,20 @@ impl AppView {
             .iter()
             .map(|b| b.name.clone())
             .collect();
-        // 「用户」下拉的数据源：已加载日志的去重作者名（IDEA 同样从当前日志取作者集）。
+        // 「用户」下拉的数据源：已加载日志的去重作者名（原版同样从当前日志取作者集）。
         let author_names = self.list.read(cx).delegate().authors();
         let filter_branch = self.state.filter_branch.clone();
         let filter_author = self.state.filter_author.clone();
         let filter_since = self.state.filter_since.clone();
+        let filter_path = self.state.filter_path.clone();
+        let regex_on = self.list.read(cx).delegate().regex;
+        let path_candidates = self.filter_path_candidates();
 
-        // IDEA 语义：下拉按钮固定显示过滤器名（Branch / User / Date），
-        // 选中值只通过右侧的 active filter chip 呈现——同一过滤条件
-        // 绝不同时作为按钮 label 和 chip 重复展示。
-        let branch_label = tr("Branch", "分支").to_string();
+        // 原版语义：无激活值时下拉按钮固定显示过滤器名；
+        // 分支过滤激活后改为「分支: main ×」chip 呈现，不再重复出下拉。
         let author_label = tr("User", "用户").to_string();
         let date_label = tr("Date", "日期").to_string();
+        let path_label = tr("Path", "路径").to_string();
 
         let branch_weak = weak.clone();
         let branch_filter = filter_branch.clone();
@@ -193,6 +133,8 @@ impl AppView {
         let author_filter = filter_author.clone();
         let date_weak = weak.clone();
         let date_filter = filter_since.clone();
+        let path_weak = weak.clone();
+        let path_filter = filter_path.clone();
 
         div()
             .h(px(theme::LOG_FILTER_HEIGHT))
@@ -205,66 +147,116 @@ impl AppView {
             .items_center()
             .gap(px(theme::SPACE_SM))
             .px(px(theme::SPACE_SM))
+            // 搜索框：外框自绘（边框 + 内嵌 `.*` / `Cc`），对齐原版搜索框观感。
             .child(
-                div().w(px(theme::SEARCH_WIDTH)).flex_none().child(
-                    Input::new(&self.log_query)
-                        .with_size(Size::Small)
-                        .prefix(Icon::new(Ic::Search).text_color(muted))
-                        .cleanable(true)
-                        .appearance(false),
-                ),
-            )
-            .child(
-                DropdownButton::new("log-branch-filter")
-                    .button(
-                        Button::new("log-branch-filter-button")
-                            .ghost()
-                            .compact()
-                            .label(branch_label),
+                div()
+                    .w(px(theme::SEARCH_WIDTH))
+                    .h(px(theme::INPUT_HEIGHT_SINGLE - 4.0))
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(theme::SPACE_XS))
+                    .px(px(theme::SPACE_SM))
+                    .bg(theme::input_bg())
+                    .border_1()
+                    .border_color(theme::input_border())
+                    .rounded(px(theme::RADIUS_SM))
+                    .overflow_hidden()
+                    .child(
+                        Icon::new(Ic::Search)
+                            .with_size(Size::XSmall)
+                            .flex_none()
+                            .text_color(muted),
                     )
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let mut result = menu.item(menu_item(
-                            Ic::Branch,
-                            tr("All Branches", "所有分支"),
-                            None,
-                            false,
-                            branch_filter.is_none(),
-                            {
-                                let weak = branch_weak.clone();
-                                move |_, _, cx| {
-                                    let _ = weak
-                                        .update(cx, |this, cx| this.set_branch_filter(None, cx));
-                                }
-                            },
-                        ));
-                        for name in branch_names.iter() {
-                            let checked = branch_filter.as_deref() == Some(name.as_str());
-                            let weak = branch_weak.clone();
-                            let name = name.clone();
-                            result = result.item(menu_item(
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            Input::new(&self.log_query)
+                                .with_size(Size::Small)
+                                .appearance(false)
+                                .cleanable(false),
+                        ),
+                    )
+                    .child(self.render_log_mini_button(
+                        "log-regex-toggle",
+                        ".*",
+                        tr("Wildcard match", "通配符匹配").to_string(),
+                        regex_on,
+                        |this, window, cx| this.toggle_log_regex(window, cx),
+                        cx,
+                    ))
+                    .child(self.render_log_mini_button(
+                        "log-clear",
+                        "Cc",
+                        tr("Clear search", "清空搜索").to_string(),
+                        false,
+                        |this, window, cx| this.clear_log_query(window, cx),
+                        cx,
+                    )),
+            )
+            // 分支过滤：未激活 = 下拉；激活 = 「分支: main ×」chip。
+            .when_some(filter_branch.clone(), |row, branch| {
+                row.child(self.render_filter_chip(
+                    "branch-chip",
+                    format!("{}:", tr("Branch", "分支")),
+                    branch,
+                    |this, cx| this.set_branch_filter(None, cx),
+                    cx,
+                ))
+            })
+            .when(filter_branch.is_none(), |row| {
+                row.child(
+                    DropdownButton::new("log-branch-filter")
+                        .button(
+                            Button::new("log-branch-filter-button")
+                                .ghost()
+                                .compact()
+                                .label(tr("Branch", "分支"))
+                            )
+                        .dropdown_menu(move |menu, _window, _cx| {
+                            let mut result = menu.item(menu_item(
                                 Ic::Branch,
-                                name.clone(),
+                                tr("All Branches", "所有分支"),
                                 None,
                                 false,
-                                checked,
-                                move |_, _, cx| {
-                                    let _ = weak.update(cx, |this, cx| {
-                                        this.set_branch_filter(Some(name.clone()), cx)
-                                    });
+                                branch_filter.is_none(),
+                                {
+                                    let weak = branch_weak.clone();
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_branch_filter(None, cx)
+                                        });
+                                    }
                                 },
                             ));
-                        }
-                        menu_width(result)
-                    }),
-            )
+                            for name in branch_names.iter() {
+                                let checked = branch_filter.as_deref() == Some(name.as_str());
+                                let weak = branch_weak.clone();
+                                let name = name.clone();
+                                result = result.item(menu_item(
+                                    Ic::Branch,
+                                    name.clone(),
+                                    None,
+                                    false,
+                                    checked,
+                                    move |_, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            this.set_branch_filter(Some(name.clone()), cx)
+                                        });
+                                    },
+                                ));
+                            }
+                            menu_width(result)
+                        }),
+                )
+            })
             .child(
-                // 「用户」过滤 = 下拉选择作者（IDEA 规范），不再是独立弹窗。
                 DropdownButton::new("log-author-filter")
                     .button(
                         Button::new("log-author-filter-button")
                             .ghost()
                             .compact()
-                            .label(author_label),
+                            .label(author_label)
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
@@ -308,7 +300,7 @@ impl AppView {
                         Button::new("log-date-filter-button")
                             .ghost()
                             .compact()
-                            .label(date_label),
+                            .label(date_label)
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut result = menu.item(menu_item(
@@ -354,39 +346,138 @@ impl AppView {
                         menu_width(result)
                     }),
             )
-            .when(self.state.filter_branch.is_some(), |row| {
-                let branch = self.state.filter_branch.clone().unwrap_or_default();
-                row.child(self.render_filter_chip(
-                    "branch-chip",
-                    format!("{}: {branch}", tr("Branch", "分支")),
-                    |this, cx| this.set_branch_filter(None, cx),
-                    cx,
-                ))
-            })
-            .when(!self.state.filter_author.is_empty(), |row| {
-                let author = self.state.filter_author.clone();
-                row.child(self.render_filter_chip(
-                    "author-chip",
-                    format!("{}: {author}", tr("User", "用户")),
-                    |this, cx| this.set_author_filter(String::new(), cx),
-                    cx,
-                ))
-            })
-            .when(self.state.filter_since.is_some(), |row| {
-                let label = self
-                    .state
-                    .filter_since
-                    .as_ref()
-                    .map(|(label, _)| label.clone())
-                    .unwrap_or_default();
-                row.child(self.render_filter_chip(
-                    "date-chip",
-                    label,
-                    |this, cx| this.set_date_filter(None, cx),
-                    cx,
-                ))
-            })
+            .child(
+                DropdownButton::new("log-path-filter")
+                    .button(
+                        Button::new("log-path-filter-button")
+                            .ghost()
+                            .compact()
+                            .label(filter_path.clone().unwrap_or_else(|| path_label.clone()))
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut result = menu.item(menu_item(
+                            Ic::Folder,
+                            tr("All Paths", "所有路径"),
+                            None,
+                            false,
+                            path_filter.is_none(),
+                            {
+                                let weak = path_weak.clone();
+                                move |_, _, cx| {
+                                    let _ =
+                                        weak.update(cx, |this, cx| this.set_path_filter(None, cx));
+                                }
+                            },
+                        ));
+                        for name in path_candidates.iter() {
+                            let checked = path_filter.as_deref() == Some(name.as_str());
+                            let weak = path_weak.clone();
+                            let name = name.clone();
+                            result = result.item(menu_item(
+                                Ic::Folder,
+                                name.clone(),
+                                None,
+                                false,
+                                checked,
+                                move |_, _, cx| {
+                                    let _ = weak.update(cx, |this, cx| {
+                                        this.set_path_filter(Some(name.clone()), cx)
+                                    });
+                                },
+                            ));
+                        }
+                        menu_width(result)
+                    }),
+            )
+            .child(
+                Icon::new(Ic::ChevronRight)
+                    .with_size(Size::XSmall)
+                    .flex_none()
+                    .text_color(muted),
+            )
             .child(div().flex_1())
+            .child(self.render_log_tool_button(
+                "log-fetch",
+                Ic::PlayCircle,
+                tr("Fetch", "抓取").to_string(),
+                false,
+                |this, _, cx| {
+                    this.run_op_progress(
+                        tr("Fetch", "抓取"),
+                        tr("Fetched", "已抓取"),
+                        |repo, progress, cancel| repo.fetch_with_control(progress, cancel),
+                        cx,
+                    );
+                },
+                cx,
+            ))
+            .child(self.render_log_tool_button(
+                "log-refresh",
+                Ic::Refresh,
+                tr("Refresh", "刷新").to_string(),
+                false,
+                |this, _, cx| this.refresh(cx),
+                cx,
+            ))
+            .child(self.render_log_tool_button(
+                "log-branches",
+                Ic::Branch,
+                tr("Search branches and actions", "搜索分支和操作").to_string(),
+                false,
+                |this, window, cx| this.toggle_branch_popup(window, cx),
+                cx,
+            ))
+            .child(self.render_log_tool_button(
+                "log-preview",
+                Ic::Eye,
+                tr("Reveal HEAD commit", "跳到 HEAD 提交").to_string(),
+                false,
+                |this, window, cx| this.reveal_head_commit(window, cx),
+                cx,
+            ))
+            .child(self.render_log_tool_button(
+                "log-search",
+                Ic::Search,
+                tr("Search", "搜索").to_string(),
+                false,
+                |this, window, cx| this.focus_log_query(window, cx),
+                cx,
+            ))
+    }
+
+    /// 搜索框内嵌的迷你文本按钮（`.*` / `Cc`）。
+    fn render_log_mini_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        _tooltip: String,
+        active: bool,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let fg = if active {
+            theme::white()
+        } else {
+            theme::text_muted()
+        };
+        div()
+            .id(id)
+            .w(px(22.0))
+            .h(px(18.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(theme::RADIUS_SM))
+            .text_size(px(theme::font_size_xs()))
+            .text_color(fg)
+            .cursor_pointer()
+            .when(active, |b| b.bg(theme::selection_bg()))
+            .when(!active, |b| b.hover(move |s| s.bg(theme::hover_bg(fg))))
+            .on_click(cx.listener(move |this, _: &gpui::ClickEvent, window, cx| {
+                on_click(this, window, cx)
+            }))
+            .child(label)
     }
 
     pub(crate) fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -426,9 +517,7 @@ impl AppView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(self.render_log_header(cx))
             .child(self.render_log_filter_row(cx))
-            .child(self.render_log_columns(cx))
             .child(
                 div()
                     .flex_1()
