@@ -85,5 +85,7 @@
 
 | R-14 | Cherry-Pick 入口 | Log 列表右键菜单已有摘取提交（log.rs），但侧栏 History / Reflog 面板的提交行无任何右键菜单；用户预期「日志面板某一项的右键菜单」有摘取入口（reflog 摘取更是找回丢失提交的经典路径） | `sidebar/history.rs` 两面板行加 `context_menu`（行 id `history-{id}` / `reflog-{selector}` 唯一，R-7 经验）：History 行 = 检出 {short} / 摘取提交 / 回滚提交 / 查看差异 / 复制 SHA；Reflog 行 = 检出 / 摘取提交 / 查看差异 / 复制 SHA；全部复用既有 actions（`checkout_commit`/`cherry_pick_commit`/`revert_commit`/`copy_commit_id`/`open_commit_diff_window`）与 `menu_item`/`menu_width` 原语，菜单宽度对齐 log.rs | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅ / 历史记录入口 ✅ / Code 编辑区高亮 ✅ / Changes 三态复选框 ✅ / Cherry-Pick 入口 ✅。
+| R-15 | 分支弹层点击失效 | 弹层动作列表（新建分支等）点了没反应：全屏遮罩挂 `on_mouse_down` 关闭弹层，而 GPUI 鼠标事件**由内向外冒泡**——行元素只有 mouseup 才触发的 `on_click`，mousedown 先冒泡到遮罩 → 弹层即刻关闭 → 子树在 mouseup 前被移除 → 完整点击序列永远无法完成；弹层内所有可点元素（动作项/折叠头/分支行/搜索框）全部失灵 | `render_branch_popup` 弹层面板追加 `.on_mouse_down(Left, stop_propagation)`：面板处理器内层先触发并阻断冒泡，遮罩的 dismiss 只对「面板外点击」生效（IDEA 语义）；面板内 padding 区点击不误关 | ✅ |
+
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅ / 交互正确性 ✅ / Editor Blame 显隐 ✅ / Commit 工具窗 ✅ / 分支搜索弹层 ✅ / 历史记录入口 ✅ / Code 编辑区高亮 ✅ / Changes 三态复选框 ✅ / Cherry-Pick 入口 ✅ / 分支弹层点击失效 ✅。
 > 验证：cargo check / clippy / test 全绿。
