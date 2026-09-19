@@ -66,6 +66,8 @@
 | R-2 | Toolbar | `render_toolbar` 手写根容器，缺 IDEA 底部 1px 分隔线；`components::toolbar()` 为零调用死原语 | 根容器切换到共享原语 `toolbar(fg)`（chrome 底色 + `border_b_1` + `chrome_divider`）；原语间距对齐实际值（gap XS + px SM），视觉零回归；工具栏构造唯一口径 | ✅ |
 | R-3 | Commit Graph | 几何已对齐（半径/弯道/合并双节点），差距在配色：泳道统一 s=0.43/l=0.42，深色底上发灰，非 JetBrains 暗色高饱和风格 | `HUES` 统一明度 → `LANES` 每色独立 (s, l)（玫红/琥珀/草绿/天蓝/珊瑚/青/紫/橙）；保留语义色相：lane0 品红=HEAD、lane2 绿=本地分支、lane5 青=远程分支 | ✅ |
 | R-4 | Detail | 动作栏 4 组按钮扁平挂在外层（gap SM），无分组容器，组间距与组内距无差 | 每组包进共享 `toolbar_group()`（组内 gap XS），组间 `v_separator`；4 组语义：提交操作（cherry-pick/revert/undo/drop）、历史改写（rebase/reset/reword/checkout）、ref 操作（branch/tag/copy-sha）、查看（diff/compare） | ✅ |
+| R-5 | Log Filter UI | 双 caret：内层 `Button` 设 `dropdown_caret(true)`，而 `DropdownButton` 自带 popup 半区已渲染 caret（gpui-component `dropdown_button.rs:194`）；双展示模型：按钮 label 显示选中值（main/alice/This week）的同时又渲染「Branch: main ×」等 chip，同一条件重复呈现 | 组件语义归位：删除 3 处内层 `dropdown_caret`（caret 责任归 popup 半区，点击区域/菜单行为不变；其余 3 处 DropdownButton 用法本就干净）；统一为 IDEA 语义：按钮固定显示过滤器名 Branch/User/Date，选中值只走 active filter chip（点击清除即恢复默认名）；菜单 checked 状态与 All Branches/Users/Time 清除逻辑不动 | ✅ |
+| R-6 | Graph Geometry | 几何基准未文档化且列宽不对称：`graph_column_width = LANE_WIDTH*n + DOT_RADIUS` 右侧多 4px 与左侧 5px 不对称；elbow 半径 3px 在 24px 行高上偏紧显歪斜；merge 空心圆挖空色硬编码 `bg_main()`，而 Log 列表实际背景是 `log_list_bg()` → 节点中心色差 | 确立唯一几何模型（模块文档化）：lane center `x = lane*LANE_WIDTH + LANE_WIDTH/2`（整数像素）、dot 圆心 `(lane_x(lane), row_center)`、线中心线过 lane center、转折「竖直→elbow→水平→elbow→竖直」关于 row center 对称；验证 GPUI `curve_to(to, ctrl)` = 二次贝塞尔（终点在前），调用序正确；列宽收敛为 `LANE_WIDTH*n`（两侧各 5px 对称），Graph-Subject 间距由行 `gap` 独立控制与泳道数解耦；elbow 半径 3→5px（`ROW_HEIGHT/5`，IDEA 档）；merge 挖空色改为 `lane_canvas` 接收 `log_list_bg()`，不再依赖 `bg_main()` | ✅ |
 
-> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅。
+> R 系列状态（2026-09-19）：Toolbar ✅ / Commit Graph ✅ / Detail ✅ / Typography ✅ / Log Filter UI ✅ / Graph Geometry ✅。
 > 验证：cargo check / clippy / test 全绿。

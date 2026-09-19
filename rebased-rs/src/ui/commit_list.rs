@@ -200,6 +200,8 @@ impl ListDelegate for LogDelegate {
             graph_row,
             data.graph.lane_count,
             commit.is_merge(),
+            // merge 环形节点的挖空色 = Log 列表真实背景，避免与容器色差。
+            theme::log_list_bg(),
         ));
 
         // Subject 单元格 = ref 标签（可并排多个）+ 提交标题，与表头列一一对应。
