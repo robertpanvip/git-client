@@ -26,6 +26,10 @@ impl TempRepo {
         std::fs::create_dir_all(&path).expect("create temp dir");
         let repo = Self { path };
         repo.git(&["init", "-b", "main"]);
+        // 夹具必须自洽：关闭主机的 core.autocrlf 换行转换，否则检出内容变成 CRLF，
+        // 断言文件文本的用例会随主机 git 配置时好时坏。
+        repo.git(&["config", "core.autocrlf", "false"]);
+        repo.git(&["config", "core.eol", "lf"]);
         repo.git(&["config", "user.name", "Test User"]);
         repo.git(&["config", "user.email", "test@example.com"]);
         repo

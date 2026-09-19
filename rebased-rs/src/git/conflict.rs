@@ -56,10 +56,13 @@ pub fn conflicted_files(cmd: &GitCommand) -> Result<Vec<ConflictFile>> {
 pub fn parse_conflicted_status(stdout: &str) -> Vec<ConflictFile> {
     stdout
         .lines()
-        .filter(|line| line.len() >= 4)
         .filter_map(|line| {
-            let kind = ConflictKind::from_code(&line[..2])?;
-            let path = line[3..].trim().to_string();
+            // 前两个字符是 XY 状态码（ASCII），其后是空格与路径；用字符切片避免多字节
+            // 首字符导致 `line[..2]`/`line[3..]` 越界 panic。
+            let code: String = line.chars().take(2).collect();
+            let kind = ConflictKind::from_code(&code)?;
+            let path: String = line.chars().skip(3).collect();
+            let path = path.trim().to_string();
             if path.is_empty() {
                 return None;
             }
@@ -167,18 +170,24 @@ pub fn conflict_hunks(content: &str) -> Vec<ConflictHunk> {
 pub fn resolve_markers(content: &str, choices: &[HunkChoice]) -> Option<String> {
     let sections = parse_conflict_markers(content);
     let mut index = 0usize;
-    let mut out: Vec<String> = Vec::new();
+    let mut lines: Vec<String> = Vec::new();
     for section in sections {
         match section {
-            ConflictSection::Clean(text) => out.push(text),
+            ConflictSection::Clean(text) => {
+                // 逐行还原干净内容，确保冲突块之间的空行（如 `>>>>>>> b` 与 `<<<<<<< c`
+                // 之间的分隔空行）不被 `join` 吞掉。
+                for l in text.split('\n') {
+                    lines.push(l.to_string());
+                }
+            }
             ConflictSection::Hunk(hunk) => {
                 let choice = choices.get(index)?;
                 match choice {
-                    HunkChoice::Ours => out.extend(hunk.ours),
-                    HunkChoice::Theirs => out.extend(hunk.theirs),
+                    HunkChoice::Ours => lines.extend(hunk.ours.iter().cloned()),
+                    HunkChoice::Theirs => lines.extend(hunk.theirs.iter().cloned()),
                     HunkChoice::Both => {
-                        out.extend(hunk.ours);
-                        out.extend(hunk.theirs);
+                        lines.extend(hunk.ours.iter().cloned());
+                        lines.extend(hunk.theirs.iter().cloned());
                     }
                 }
                 index += 1;
@@ -188,7 +197,7 @@ pub fn resolve_markers(content: &str, choices: &[HunkChoice]) -> Option<String> 
     if index != choices.len() {
         return None;
     }
-    let mut text = out.join("\n");
+    let mut text = lines.join("\n");
     if content.ends_with('\n') && !text.is_empty() {
         text.push('\n');
     }
@@ -256,5 +265,27 @@ mod tests {
         let sections = parse_conflict_markers("just\nplain\n");
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0], ConflictSection::Clean("just\nplain".into()));
+    }
+
+    #[test]
+    fn resolve_markers_keeps_blank_line_between_hunks() {
+        // 两个相邻冲突块之间若有分隔空行，resolve 后必须保留该空行，
+        // 不能被 `join` 吞掉（见 resolve_markers 的逐行重建）。
+        let content = "\
+<<<<<<< HEAD
+A
+=======
+B
+>>>>>>> branch1
+
+<<<<<<< HEAD
+C
+=======
+D
+>>>>>>> branch2
+";
+        let choices = [HunkChoice::Ours, HunkChoice::Ours];
+        let resolved = resolve_markers(content, &choices).expect("resolved");
+        assert_eq!(resolved, "A\n\nC\n");
     }
 }

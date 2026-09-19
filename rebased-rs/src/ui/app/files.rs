@@ -131,8 +131,10 @@ impl AppView {
             cx.notify();
         }
         let blame = self.state.files_blame_enabled;
-        let task = cx
-            .background_spawn(async move { use_cases::load_worktree_file(repo.as_ref(), &path, blame) });
+        let ignore_whitespace = self.state.ignore_whitespace;
+        let task = cx.background_spawn(async move {
+            use_cases::load_worktree_file(repo.as_ref(), &path, blame, ignore_whitespace)
+        });
         cx.spawn(async move |this, cx| {
             let data = task.await;
             let _ = this.update(cx, |this, cx| {

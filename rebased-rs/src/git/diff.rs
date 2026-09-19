@@ -151,6 +151,8 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                 is_new: false,
                 is_deleted: false,
                 is_binary: false,
+                mode: None,
+                old_mode: None,
                 status: None,
                 hunks: Vec::new(),
             });
@@ -159,12 +161,19 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
         let Some(file) = current.as_mut() else {
             continue;
         };
-        if line.starts_with("new file mode") {
+        if let Some(m) = line.strip_prefix("new file mode ") {
+            // 保留真实模式（可执行位 100755 / 符号链接 120000 等），勿写死 100644。
             file.is_new = true;
             file.status = Some(ChangeStatus::Added);
-        } else if line.starts_with("deleted file mode") {
+            file.mode = Some(m.to_string());
+        } else if let Some(m) = line.strip_prefix("deleted file mode ") {
             file.is_deleted = true;
             file.status = Some(ChangeStatus::Deleted);
+            file.mode = Some(m.to_string());
+        } else if let Some(m) = line.strip_prefix("old mode ") {
+            file.old_mode = Some(m.to_string());
+        } else if let Some(m) = line.strip_prefix("new mode ") {
+            file.mode = Some(m.to_string());
         } else if line.starts_with("untracked file") {
             // 合成 untracked diff 的标记行：状态语义优先于 new file 推导。
             file.status = Some(ChangeStatus::Untracked);
@@ -202,6 +211,14 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                     lines: Vec::new(),
                 });
             }
+        } else if line == "\\ No newline at end of file" {
+            // 标记上一行在文件末尾无换行：记到该 DiffLine 上，hunk_patch 重建时还原，
+            // 避免暂存/撤销 hunk 时悄悄改变文件末尾换行。
+            if let Some(hunk_ref) = hunk.as_mut() {
+                if let Some(last) = hunk_ref.lines.last_mut() {
+                    last.no_newline = true;
+                }
+            }
         } else if hunk.is_some() {
             let hunk_ref = hunk.as_mut().expect("hunk checked");
             let parsed = if let Some(content) = line.strip_prefix('+') {
@@ -210,6 +227,7 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                     old_no: None,
                     new_no: Some(new_no),
                     content: content.to_string(),
+                    no_newline: false,
                 };
                 new_no += 1;
                 Some(out)
@@ -219,6 +237,7 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                     old_no: Some(old_no),
                     new_no: None,
                     content: content.to_string(),
+                    no_newline: false,
                 };
                 old_no += 1;
                 Some(out)
@@ -228,6 +247,7 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                     old_no: Some(old_no),
                     new_no: Some(new_no),
                     content: content.to_string(),
+                    no_newline: false,
                 };
                 old_no += 1;
                 new_no += 1;
@@ -262,8 +282,8 @@ fn split_diff_git_paths(rest: &str) -> (Option<String>, Option<String>) {
 
 /// 从解析后的 FileDiff 重建单个 hunk 的 patch 文本（含文件级头），
 /// 供 `git apply --cached [-R] -` 使用。
-/// 注意：parse_unified_diff 会丢弃 "\ No newline at end of file" 行，
-/// 跨文件末尾改动的 hunk 重建后不含该标记（P1 已知限制）。
+/// 会还原真实文件模式（可执行位/符号链接）与 `\ No newline at end of file` 标记，
+/// 避免暂存/撤销 hunk 时丢失模式位或悄悄改变文件末尾换行。
 pub fn hunk_patch(file: &FileDiff, hunk_index: usize) -> String {
     let Some(hunk) = file.hunks.get(hunk_index) else {
         return String::new();
@@ -271,10 +291,25 @@ pub fn hunk_patch(file: &FileDiff, hunk_index: usize) -> String {
     let old_seg = file.old_path.as_deref().unwrap_or(&file.path);
     let mut out = format!("diff --git a/{old_seg} b/{}\n", file.path);
     if file.is_new {
-        out.push_str("new file mode 100644\n");
+        out.push_str(&format!(
+            "new file mode {}\n",
+            file.mode.as_deref().unwrap_or("100644")
+        ));
     }
     if file.is_deleted {
-        out.push_str("deleted file mode 100644\n");
+        out.push_str(&format!(
+            "deleted file mode {}\n",
+            file.mode.as_deref().unwrap_or("100644")
+        ));
+    }
+    if !file.is_new && !file.is_deleted {
+        // 纯 chmod：git apply 需要 old/new mode 两行才能改模式位。
+        if let (Some(om), Some(nm)) = (&file.old_mode, &file.mode) {
+            if om != nm {
+                out.push_str(&format!("old mode {om}\n"));
+                out.push_str(&format!("new mode {nm}\n"));
+            }
+        }
     }
     let old_path = if file.is_new {
         "/dev/null".to_string()
@@ -293,7 +328,12 @@ pub fn hunk_patch(file: &FileDiff, hunk_index: usize) -> String {
     for line in &hunk.lines {
         out.push_str(line.kind.prefix());
         out.push_str(&line.content);
-        out.push('\n');
+        if line.no_newline {
+            // 末尾无换行：不补 '\n'，改附 git 标记行。
+            out.push_str("\n\\ No newline at end of file\n");
+        } else {
+            out.push('\n');
+        }
     }
     out
 }
@@ -401,6 +441,49 @@ index 0000000..1111111
         assert!(patch.contains("--- /dev/null\n"));
         assert!(patch.contains("+++ b/created.txt\n"));
         assert!(patch.ends_with("+world\n"));
+    }
+
+    #[test]
+    fn hunk_patch_preserves_no_newline_marker() {
+        // 末尾无换行的行：重建 patch 必须还原 `\ No newline at end of file`，
+        // 且不能在其后补多余换行（否则暂存/撤销会改变文件末尾换行）。
+        let out = "\
+diff --git a/foo.txt b/foo.txt
+new file mode 100644
+--- /dev/null
++++ b/foo.txt
+@@ -0,0 +1 @@
++no newline here
+\\ No newline at end of file
+";
+        let files = parse_unified_diff(out);
+        let patch = hunk_patch(&files[0], 0);
+        assert!(
+            patch.contains("+no newline here\n\\ No newline at end of file\n"),
+            "no-newline marker must follow the line without an extra newline: {patch}"
+        );
+        assert!(
+            !patch.contains("+no newline here\n\n"),
+            "must not insert a spurious trailing newline: {patch}"
+        );
+    }
+
+    #[test]
+    fn hunk_patch_keeps_real_file_mode() {
+        // 新增可执行文件：重建 patch 必须保留真实模式 100755，而非写死 100644。
+        let out = "\
+diff --git a/run.sh b/run.sh
+new file mode 100755
+index 0000000..1111111
+--- /dev/null
++++ b/run.sh
+@@ -0,0 +1,1 @@
++echo hi
+";
+        let files = parse_unified_diff(out);
+        let patch = hunk_patch(&files[0], 0);
+        assert!(patch.contains("new file mode 100755\n"), "mode lost: {patch}");
+        assert!(!patch.contains("new file mode 100644\n"));
     }
 
     #[test]

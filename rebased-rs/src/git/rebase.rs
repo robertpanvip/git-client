@@ -181,23 +181,35 @@ pub fn copy_editor(path: &Path) -> String {
     format!("cp \"{rendered}\"")
 }
 
-/// 生成一份 POSIX `sh` 脚本，用作 `GIT_EDITOR`。git 每次调用编辑器时都会把待改写的
-/// 提交消息文件作为 `$1` 传入；脚本读取其中第一个「非注释、非空」行（即真正的提交
-/// 主题；squash 时 git 会在文件头插入 `#` 注释），若与某个自定义消息对应的目标主题
-/// 一致，就用自定义消息覆盖整个文件。这样可以在一次 `rebase -i` 里为多个 reword /
-/// squash 逐个注入不同的消息，而不依赖 git 交互式编辑器。
-pub fn editor_script(entries: &[(String, String)]) -> String {
-    // 先剔除以 `#` 开头的注释行和空行，再取第一行作为要匹配的主题。
-    let mut out = String::from(
-        "#!/bin/sh\nsubj=\"$(grep -v '^#' \"$1\" | grep -v '^[[:space:]]*$' | head -n 1)\"\n",
-    );
-    for (subject, message) in entries {
-        out.push_str(&format!(
-            "if [ \"$subj\" = {} ]; then printf '%s\\n' {} > \"$1\"; fi\n",
-            shell_single_quoted(subject),
-            shell_single_quoted(message)
-        ));
+/// 生成一份 POSIX `sh` 脚本，用作 `rebase -i` 的 `GIT_EDITOR`。
+///
+/// git 会按 todo 顺序，为每一条 `reword` / `squash` / `fixup` 调用一次编辑器（传入
+/// 待改写的消息文件 `$1`）。脚本用一个计数器文件记录「这是第几次调用」，再按 `entries`
+/// 中对应的自定义消息覆盖文件——`entries` 与 plan 里 reword/squash/fixup 的出现顺序
+/// 一一对应，某条没有自定义消息则为 `None`（保持 git 默认行为，不清空文件）。
+///
+/// 为什么不用「按提交主题匹配」：reword 会改变主题，导致后续 squash/fixup 的自定义
+/// 消息因主题对不上而静默失效；同主题多条 entry 还会互相覆盖。按调用次序匹配则无此问题。
+pub fn editor_script(entries: &[Option<String>]) -> String {
+    let mut out = String::from("#!/bin/sh\n");
+    // 计数器文件路径从环境变量注入；缺失时从 0 开始（每次 rebase 用唯一文件名，不会残留）。
+    out.push_str("STATE=\"${REBASED_EDIT_CNT:-}\"\n");
+    out.push_str("n=0\n[ -f \"$STATE\" ] && n=$(cat \"$STATE\" 2>/dev/null || echo 0)\n");
+    out.push_str("case $n in\n");
+    for (i, msg) in entries.iter().enumerate() {
+        out.push_str(&format!("  {i})"));
+        match msg {
+            Some(m) => out.push_str(&format!(
+                " printf '%s\\n' {} > \"$1\";;",
+                shell_single_quoted(m)
+            )),
+            None => out.push_str(" :;;"),
+        }
+        out.push('\n');
     }
+    out.push_str("esac\n");
+    out.push_str("n=$((n+1))\n");
+    out.push_str("printf '%s' \"$n\" > \"$STATE\"\n");
     out
 }
 
@@ -239,44 +251,52 @@ pub fn run(cmd: &GitCommand, base: &str, plan: &[RebaseAction]) -> Result<()> {
     // squash 时按消息文件首行匹配并替换成自定义消息；为空则沿用默认的 no-op 编辑器。
     // 注意 git 在 squash 时打开编辑器收到的是「合并后的消息」，其首行等于所属合并组
     // 的第一个目标提交主题，因此 squash/fixup 的自定义消息要按目标提交来匹配。
-    let mut dest_subject: Option<&str> = None;
-    let mut custom: Vec<(String, String)> = Vec::new();
+    // 按 plan 顺序，为每条 reword/squash/fixup 记录其自定义消息（无则 None）。
+    // git 会按此顺序逐一调用 GIT_EDITOR，脚本据此把第 n 次调用映射到第 n 条消息，
+    // 避免 reword 改主题后 squash/fixup 的自定义消息因主题不匹配而静默失效。
+    let mut ordered: Vec<Option<String>> = Vec::new();
     for action in plan {
-        if let Some(message) = action.message.as_deref().filter(|m| !m.trim().is_empty()) {
-            let key = match action.kind {
-                RebaseActionKind::Squash | RebaseActionKind::Fixup => {
-                    dest_subject.unwrap_or(action.subject.as_str())
-                }
-                _ => action.subject.as_str(),
-            };
-            custom.push((key.to_string(), message.to_string()));
-        }
-        if matches!(
-            action.kind,
-            RebaseActionKind::Pick | RebaseActionKind::Edit | RebaseActionKind::Reword
-        ) {
-            dest_subject = Some(action.subject.as_str());
+        match action.kind {
+            RebaseActionKind::Reword | RebaseActionKind::Squash | RebaseActionKind::Fixup => {
+                ordered.push(
+                    action
+                        .message
+                        .as_deref()
+                        .filter(|m| !m.trim().is_empty())
+                        .map(|m| m.to_string()),
+                );
+            }
+            _ => {}
         }
     }
-    let (message_editor, script_path) = if custom.is_empty() {
-        ("true".to_string(), None)
+    let (message_editor, script_path, counter_path) = if ordered.iter().all(|m| m.is_none()) {
+        ("true".to_string(), None, None)
     } else {
         let sp = std::env::temp_dir().join(format!("rebased-rs-editor-{}", unique));
-        std::fs::write(&sp, editor_script(&custom)).map_err(|e| {
+        let cp = std::env::temp_dir().join(format!("rebased-rs-editcnt-{}", unique));
+        std::fs::write(&sp, editor_script(&ordered)).map_err(|e| {
             GitError::with_stderr("failed to write rebase message editor", e.to_string())
         })?;
-        (format!("sh {}", quote_path(&sp)), Some(sp))
+        (format!("sh {}", quote_path(&sp)), Some(sp), Some(cp))
     };
-    let output = cmd.execute_env(
-        &["rebase", "-i", base],
-        &[
-            ("GIT_SEQUENCE_EDITOR", editor.as_str()),
-            ("GIT_EDITOR", message_editor.as_str()),
-        ],
-    );
+    let counter_owned = counter_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+    let mut env: Vec<(&str, &str)> = vec![
+        ("GIT_SEQUENCE_EDITOR", editor.as_str()),
+        ("GIT_EDITOR", message_editor.as_str()),
+    ];
+    if let Some(cs) = &counter_owned {
+        // 计数器文件：脚本据此把第 n 次编辑器调用映射到 plan 中第 n 条 reword/squash/fixup。
+        env.push(("REBASED_EDIT_CNT", cs));
+    }
+    let output = cmd.execute_env(&["rebase", "-i", base], &env);
     let _ = std::fs::remove_file(&tmp);
     if let Some(sp) = &script_path {
         let _ = std::fs::remove_file(sp);
+    }
+    if let Some(cp) = &counter_path {
+        let _ = std::fs::remove_file(cp);
     }
     let output = output?;
     if !output.success {
@@ -442,28 +462,48 @@ fn combine_into_parent(
     std::fs::write(&tmp_todo, todo)
         .map_err(|e| GitError::with_stderr("failed to write combine todo", e.to_string()))?;
     let seq_editor = copy_editor(&tmp_todo);
-    let msg_editor = editor_script(
-        &plan
-            .iter()
-            .filter_map(|a| {
-                a.message.as_deref().map(|m| {
-                    (
-                        // git squash 时编辑器收到的消息首行是吸收者的主题。
-                        base_todos[target_idx - 1].subject.clone(),
-                        m.to_string(),
-                    )
-                })
-            })
-            .collect::<Vec<_>>(),
-    );
-    let output = cmd.execute_env(
-        &["rebase", "-i", &parent],
-        &[
-            ("GIT_SEQUENCE_EDITOR", seq_editor.as_str()),
-            ("GIT_EDITOR", msg_editor.as_str()),
-        ],
-    );
+    // 按 plan 中 reword/squash/fixup 的出现顺序注入自定义消息（调用次序匹配），
+    // 与 run() 保持一致，避免 reword 改主题后 squash 消息按主题匹配而失效。
+    let combine_ordered: Vec<Option<String>> = plan
+        .iter()
+        .map(|a| match a.kind {
+            RebaseActionKind::Reword | RebaseActionKind::Squash | RebaseActionKind::Fixup => a
+                .message
+                .as_deref()
+                .filter(|m| !m.trim().is_empty())
+                .map(|m| m.to_string()),
+            _ => None,
+        })
+        .collect();
+    let (msg_editor, combine_script, combine_counter) = if combine_ordered.iter().all(|m| m.is_none())
+    {
+        ("true".to_string(), None, None)
+    } else {
+        let sp = std::env::temp_dir().join(format!("rebased-rs-combine-editor-{}", unique));
+        let cp = std::env::temp_dir().join(format!("rebased-rs-combine-cnt-{}", unique));
+        std::fs::write(&sp, editor_script(&combine_ordered)).map_err(|e| {
+            GitError::with_stderr("failed to write combine message editor", e.to_string())
+        })?;
+        (format!("sh {}", quote_path(&sp)), Some(sp), Some(cp))
+    };
+    let counter_owned = combine_counter
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+    let mut env: Vec<(&str, &str)> = vec![
+        ("GIT_SEQUENCE_EDITOR", seq_editor.as_str()),
+        ("GIT_EDITOR", msg_editor.as_str()),
+    ];
+    if let Some(cs) = &counter_owned {
+        env.push(("REBASED_EDIT_CNT", cs));
+    }
+    let output = cmd.execute_env(&["rebase", "-i", &parent], &env);
     let _ = std::fs::remove_file(&tmp_todo);
+    if let Some(sp) = &combine_script {
+        let _ = std::fs::remove_file(sp);
+    }
+    if let Some(cp) = &combine_counter {
+        let _ = std::fs::remove_file(cp);
+    }
     match output {
         Err(err) => {
             let _ = cmd.run_ok(&["rebase", "--abort"]);
@@ -723,17 +763,18 @@ mod tests {
     }
 
     #[test]
-    fn editor_script_escapes_and_matches_subjects() {
+    fn editor_script_applies_messages_by_call_order() {
         let script = editor_script(&[
-            ("add api".to_string(), "Add the API module".to_string()),
-            ("it's here".to_string(), "replacement\nline two".to_string()),
+            Some("Add the API module".to_string()),
+            Some("it's here".to_string()),
         ]);
-        assert!(script.starts_with("#!/bin/sh\nsubj="));
-        assert!(script.contains("if [ \"$subj\" = 'add api' ]"));
-        assert!(script.contains("printf '%s\\n' 'Add the API module'"));
+        assert!(script.starts_with("#!/bin/sh\n"));
+        // 按编辑器调用次序（case 分支下标）注入，而非按主题匹配。
+        assert!(script.contains("case $n in"));
+        assert!(script.contains("REBASED_EDIT_CNT"));
+        assert!(script.contains("  0) printf '%s\\n' 'Add the API module' > \"$1\";;"));
         // 单引号被转义，整体仍是合法单引号字面量
         assert!(script.contains("it'\\''s here"));
-        assert!(script.contains("replacement\nline two"));
     }
 
     #[test]

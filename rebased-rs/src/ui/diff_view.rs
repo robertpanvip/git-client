@@ -61,6 +61,8 @@ fn status_badge(file: &FileDiff) -> (&'static str, Hsla) {
 /// 将 hunk 内的行配对成并排两栏行：连续 Deleted 段与紧跟的连续 Added 段
 /// 按序 zip，短的一侧补 None（渲染为空半行）；Context 行自成一对
 /// （左右同一行）；独立 Added 段左侧补 None。
+/// 注意：删除段与新增段之间若夹着 Context 行，这些 Context 会先作为对齐行输出，
+/// 随后删除段仍与新增段配对（见 Bug #12），避免新增沦为右栏"孤立新增"。
 pub(crate) fn side_by_side_rows(hunk: &Hunk) -> Vec<(Option<&DiffLine>, Option<&DiffLine>)> {
     let lines = &hunk.lines;
     let mut rows: Vec<(Option<&DiffLine>, Option<&DiffLine>)> = Vec::new();
@@ -77,12 +79,19 @@ pub(crate) fn side_by_side_rows(hunk: &Hunk) -> Vec<(Option<&DiffLine>, Option<&
                     idx += 1;
                 }
                 let del_end = idx;
-                let mut add_end = del_end;
+                // 删除段与新增段之间可能夹着 Context 行：先把这些 Context 作为
+                // 左右对齐的同行输出，再让删除段与紧跟的新增段按序配对，
+                // 避免新增被当成右栏"孤立新增"而错位（Bug #12）。
+                while idx < lines.len() && lines[idx].kind == DiffLineKind::Context {
+                    rows.push((Some(&lines[idx]), Some(&lines[idx])));
+                    idx += 1;
+                }
+                let mut add_end = idx;
                 while add_end < lines.len() && lines[add_end].kind == DiffLineKind::Added {
                     add_end += 1;
                 }
                 let dels = &lines[del_start..del_end];
-                let adds = &lines[del_end..add_end];
+                let adds = &lines[idx..add_end];
                 for i in 0..dels.len().max(adds.len()) {
                     rows.push((dels.get(i), adds.get(i)));
                 }
@@ -294,7 +303,7 @@ pub fn render_diff_files(
             let min_w = if is_folded {
                 0.0
             } else {
-                code_min_width(max_line_chars(hunk))
+                code_min_width(max_line_width(hunk))
             };
             let row_min_w = if is_folded {
                 0.0
@@ -537,16 +546,32 @@ pub(crate) fn scroll_hunk_into_view(
     handle.set_offset(Point::new(handle.offset().x, px(-y)));
 }
 
-/// 估算正文所需最小宽度（按最长行字符数 × 单字符步进）。
-fn code_min_width(max_chars: usize) -> f32 {
-    let chars = max_chars.max(1) as f32;
-    chars * crate::ui::theme::diff_char_width() + crate::ui::theme::SPACE_LG
+/// 估算正文所需最小宽度（按最长行**显示列宽** × 单字符步进）。
+fn code_min_width(cols: usize) -> f32 {
+    let cols = cols.max(1) as f32;
+    cols * crate::ui::theme::diff_char_width() + crate::ui::theme::SPACE_LG
 }
 
-fn max_line_chars(hunk: &Hunk) -> usize {
+/// 行在编辑器中的显示宽度（列数）：tab 按 4 列制表位展开，CJK/宽字符计 2 列。
+/// 用于估算横向滚动宽度，避免含 tab / 宽字符的长行被按字符数低估而横向裁切（Bug #9）。
+/// diff 面板与文件视图编辑器（`editor_view`）共用同一套列宽口径。
+pub(crate) fn display_width(s: &str) -> usize {
+    use unicode_width::UnicodeWidthChar;
+    let mut col = 0usize;
+    for c in s.chars() {
+        if c == '\t' {
+            col += 4 - (col % 4);
+        } else {
+            col += c.width().unwrap_or(0).max(1);
+        }
+    }
+    col
+}
+
+fn max_line_width(hunk: &Hunk) -> usize {
     hunk.lines
         .iter()
-        .map(|line| line.content.chars().count())
+        .map(|line| display_width(&line.content))
         .max()
         .unwrap_or(0)
 }
@@ -561,6 +586,7 @@ mod tests {
             old_no: old,
             new_no: new,
             content: content.to_string(),
+            no_newline: false,
         }
     }
 
@@ -618,6 +644,26 @@ mod tests {
     }
 
     #[test]
+    fn side_by_side_pairs_delete_across_context() {
+        // 删除段与新增段之间夹一段 Context 时，新增段仍应与删除段按序配对，
+        // 而不应沦为右栏"孤立新增"（Bug #12）。
+        let hunk = Hunk {
+            header: "@@ -1,3 +1,3 @@".to_string(),
+            lines: vec![
+                line(DiffLineKind::Deleted, Some(1), None, "old"),
+                line(DiffLineKind::Context, Some(2), Some(2), "keep"),
+                line(DiffLineKind::Added, None, Some(1), "new"),
+            ],
+        };
+        let rows = side_by_side_rows(&hunk);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0.unwrap().content, "keep");
+        assert_eq!(rows[0].1.unwrap().content, "keep");
+        assert_eq!(rows[1].0.unwrap().content, "old");
+        assert_eq!(rows[1].1.unwrap().content, "new");
+    }
+
+    #[test]
     fn side_by_side_lone_added_lines_left_none() {
         let hunk = Hunk {
             header: "@@ -0,0 +1,2 @@".to_string(),
@@ -660,8 +706,20 @@ mod tests {
                 &"x".repeat(200),
             )],
         };
-        assert!(code_min_width(max_line_chars(&long)) > code_min_width(max_line_chars(&short)));
-        assert_eq!(max_line_chars(&long), 200);
+        assert!(code_min_width(max_line_width(&long)) > code_min_width(max_line_width(&short)));
+        assert_eq!(max_line_width(&long), 200);
+    }
+
+    /// Bug #9：列宽口径必须是"显示列"而非字符数——tab 展开到制表位、CJK 计 2 列。
+    #[test]
+    fn display_width_expands_tabs_and_wide_chars() {
+        assert_eq!(display_width("abcd"), 4);
+        // tab 展开到下一个 4 列制表位
+        assert_eq!(display_width("\tx"), 5);
+        assert_eq!(display_width("abc\tx"), 5);
+        // 4 个汉字 = 8 列，远比字符数 4 宽
+        assert_eq!(display_width("中文中文"), 8);
+        assert!(display_width("中文中文") > "中文中文".chars().count());
     }
 
     fn ctx(n: u32) -> DiffLine {
@@ -682,6 +740,8 @@ mod tests {
             is_new: false,
             is_deleted: false,
             is_binary: false,
+            mode: None,
+            old_mode: None,
             status: None,
             hunks,
         }

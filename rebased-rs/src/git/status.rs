@@ -28,26 +28,28 @@ pub fn parse_status(output: &str) -> RepoStatus {
             parse_branch_line(branch_line, &mut status);
             continue;
         }
-        let bytes = line.as_bytes();
-        if bytes.len() < 4 {
+        if line.chars().count() < 4 {
             continue;
         }
-        let x = line[..1].chars().next().unwrap_or(' ');
-        let y = line[1..2].chars().next().unwrap_or(' ');
+        // 用字符切片取 XY 与路径，避免路径首字符为多字节时 `line[..1]`/`line[3..]` 越界 panic。
+        let mut chars = line.chars();
+        let x = chars.next().unwrap_or(' ');
+        let y = chars.next().unwrap_or(' ');
         if x == '?' && y == '?' {
+            let path: String = line.chars().skip(3).collect();
             status.changes.push(Change {
                 status: ChangeStatus::Untracked,
-                path: line[3..].to_string(),
+                path: path.trim().to_string(),
                 original_path: None,
                 staged: false,
             });
             continue;
         }
         if let Some((code, staged)) = status_code(x, y) {
-            let rest = &line[3..];
+            let rest: String = line.chars().skip(3).collect();
             let (original_path, path) = match rest.split_once(" -> ") {
                 Some((orig, new)) => (Some(orig.to_string()), new.to_string()),
-                None => (None, rest.to_string()),
+                None => (None, rest),
             };
             status.changes.push(Change {
                 status: code,

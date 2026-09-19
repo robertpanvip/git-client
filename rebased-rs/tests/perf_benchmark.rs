@@ -19,6 +19,9 @@ impl TempRepo {
         std::fs::create_dir_all(&path).expect("create temp dir");
         let repo = Self { path };
         repo.git(&["init", "-b", "main"]);
+        // 与其它夹具一致：关闭主机 core.autocrlf，避免换行转换影响基准/断言。
+        repo.git(&["config", "core.autocrlf", "false"]);
+        repo.git(&["config", "core.eol", "lf"]);
         repo.fast_import(commits);
         repo.git(&["reset", "--hard"]);
         repo

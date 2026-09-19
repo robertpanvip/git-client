@@ -22,6 +22,7 @@ use rebased_rs::git::{BlameGroup, DiffLineKind, FileDiff};
 
 use crate::ui::blame_view::{BlameJump, BlameToggle};
 use crate::ui::commit_list::format_time;
+use crate::ui::diff_view::display_width;
 use crate::ui::components::{menu_item, menu_width};
 use crate::ui::graph_view::lane_color;
 use crate::ui::highlight::{HighlightState, Span, TokenKind, highlight_line, lang_of};
@@ -61,11 +62,12 @@ pub(crate) struct EditorLine {
     pub(crate) blame: Option<EditorBlame>,
 }
 
-/// 编辑器内容：逐行数据 + 最长行字符数（决定横向滚动宽度）。
+/// 编辑器内容：逐行数据 + 最长行**显示列宽**（决定横向滚动宽度）。
+/// 列宽按 tab 展开到制表位、CJK/宽字符计 2 列计算，与 diff 面板同一口径（Bug #9）。
 #[derive(Default)]
 pub(crate) struct EditorContent {
     pub(crate) lines: Vec<EditorLine>,
-    pub(crate) max_chars: usize,
+    pub(crate) max_width: usize,
 }
 
 /// 构建编辑器逐行数据（内容 + 相对 HEAD 的 diff + 工作区 blame）。
@@ -82,10 +84,10 @@ pub(crate) fn build_content(
     let lang = lang_of(path);
     let mut state = HighlightState::default();
     let mut lines = Vec::new();
-    let mut max_chars = 0;
+    let mut max_width = 0;
     for (offset, text) in content.lines().enumerate() {
         let number = offset as u32 + 1;
-        max_chars = max_chars.max(text.chars().count());
+        max_width = max_width.max(display_width(text));
         let blame = match index.get(&number) {
             Some(slot) => blame.get(*slot).map(|group| editor_blame(group, *slot)),
             None => None,
@@ -99,7 +101,7 @@ pub(crate) fn build_content(
             blame,
         });
     }
-    EditorContent { lines, max_chars }
+    EditorContent { lines, max_width }
 }
 
 fn editor_blame(group: &BlameGroup, color_index: usize) -> EditorBlame {
@@ -208,7 +210,7 @@ pub(crate) fn render_editor(
     let mono = cx.theme().mono_font_family.clone();
     let fg = cx.theme().foreground;
     let muted = cx.theme().muted_foreground;
-    let code_width = (content.max_chars.max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG;
+    let code_width = (content.max_width.max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG;
     // 行最小宽度需与实际渲染的列一致：关闭注解时 blame 列不渲染，
     // 若仍计入其宽度，横向滚动条会虚长一截（代码区“变多”也体现在这里）。
     let row_min_w = theme::EDITOR_CHANGE_BAR_WIDTH
@@ -434,9 +436,10 @@ fn span_color(kind: TokenKind, fg: Hsla) -> Hsla {
     }
 }
 
-/// 单行正文的最小宽度（按字符数估算，空行也保留一格）。
+/// 单行正文的最小宽度（按**显示列宽**估算，空行也保留一格）：
+/// tab 展开到制表位、CJK/宽字符计 2 列，与 diff 面板同一口径（Bug #9）。
 fn code_width_of(line: &EditorLine) -> f32 {
-    (line.text.chars().count().max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG
+    (display_width(&line.text).max(1) as f32) * theme::diff_char_width() + theme::SPACE_LG
 }
 
 #[cfg(test)]
@@ -451,6 +454,7 @@ mod tests {
             old_no: old,
             new_no: new,
             content: content.to_string(),
+            no_newline: false,
         }
     }
 
@@ -461,9 +465,26 @@ mod tests {
             is_new: false,
             is_deleted: false,
             is_binary: false,
+            mode: None,
+            old_mode: None,
             status: None,
             hunks,
         }
+    }
+
+    /// Bug #9：编辑器正文宽度按**显示列宽**估算，否则含 tab / 宽字符的行被横向裁切。
+    #[test]
+    fn build_content_max_width_uses_display_columns() {
+        let content = build_content("ab\n中文\n\ta", &[], &[], "");
+        // "\ta" -> tab 展开到 4 列，再加 'a' 1 列 = 5 列，是三者中最宽
+        assert_eq!(content.max_width, 5);
+        let max_chars = content
+            .lines
+            .iter()
+            .map(|l| l.text.chars().count())
+            .max()
+            .unwrap();
+        assert!(content.max_width > max_chars);
     }
 
     #[test]

@@ -284,7 +284,13 @@ pub(crate) fn open_blame(
     state: &mut AppState,
     path: String,
 ) -> Result<(), GitError> {
-    state.blame_groups = repo.blame("HEAD", &path)?;
+    // 查看历史提交的文件时，blame 该提交而非永远 blame HEAD（Bug #5）。
+    let rev = state
+        .diff_commit
+        .clone()
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| "HEAD".to_string());
+    state.blame_groups = repo.blame(&rev, &path)?;
     state.blame_path = path;
     state.sidebar = SidebarMode::Blame;
     state.error = None;
@@ -393,7 +399,12 @@ pub(crate) struct WorktreeFileData {
 /// （`HEAD` 无法解析）都属正常状态——保留空结果，代码区仍显示文件内容。
 /// `blame` 为 false 时跳过 blame 计算（「关闭注解」），行数据不带提交者。
 /// 逐行数据在这里（后台线程）一次算好，渲染时不再重复解析 diff / blame。
-pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str, blame: bool) -> WorktreeFileData {
+pub(crate) fn load_worktree_file(
+    repo: &dyn GitBackend,
+    path: &str,
+    blame: bool,
+    ignore_whitespace: bool,
+) -> WorktreeFileData {
     let (content, read_failed) = match repo.worktree_file_content(path) {
         Ok(text) => (text, false),
         Err(_) => (String::new(), true),
@@ -403,7 +414,7 @@ pub(crate) fn load_worktree_file(repo: &dyn GitBackend, path: &str, blame: bool)
     } else {
         Vec::new()
     };
-    let diff = parse_unified_diff(&repo.diff_head(Some(path), false).unwrap_or_default());
+    let diff = parse_unified_diff(&repo.diff_head(Some(path), ignore_whitespace).unwrap_or_default());
     let binary = read_failed || diff.iter().any(|file| file.is_binary);
     WorktreeFileData {
         path: path.to_string(),

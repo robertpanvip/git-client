@@ -105,7 +105,6 @@ impl AppView {
             Ok(()) => {
                 self.state.error = None;
                 self.state.status_message = format!("Resolved {}", path);
-                self.reload_conflict_state(cx);
             }
             Err(e) => {
                 self.state.error = Some(e.to_string());
@@ -123,7 +122,6 @@ impl AppView {
                 self.state.error = None;
                 let side = if ours { "ours" } else { "theirs" };
                 self.state.status_message = format!("Took {side} for {path}");
-                self.reload_conflict_state(cx);
             }
             Err(e) => {
                 self.state.error = Some(e.to_string());
