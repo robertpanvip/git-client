@@ -35,6 +35,11 @@ pub const MESSAGE_MAX_WIDTH: f32 = 520.0;
 /// 分段控件（tabs / segmented）高度。
 pub const SEGMENT_HEIGHT: f32 = 20.0;
 
+/// 文件 Tab 条高度（编辑器顶部，IDEA New UI 编辑器 Tab 同档）。
+pub const FILE_TAB_BAR_HEIGHT: f32 = 32.0;
+/// 单个文件 Tab 的最大宽度（超长文件名省略号截断）。
+pub const FILE_TAB_MAX_WIDTH: f32 = 220.0;
+
 // ---------- 三栏布局（Three-Column Layout）----------
 /// 左侧 Commit 面板宽度：变更列表 + 提交输入区。
 pub const COMMIT_PANEL_WIDTH: f32 = 340.0;
@@ -99,6 +104,9 @@ pub const EDITOR_BLAME_WIDTH: f32 = 200.0;
 pub const ICON_BUTTON_SIZE: f32 = 24.0;
 /// 图标条按钮（含 4px 内边距）外框边长（**IntelliJ = 32×32**）。
 pub const ICON_STRIP_BUTTON_SIZE: f32 = 32.0;
+/// 彩色文件类型 / 文件夹图标边长（**IntelliJ = 16×16**，项目树 / 编辑器
+/// Tab / Changes 列表全局同一套类型图标）。
+pub const FILE_TYPE_ICON_SIZE: f32 = 16.0;
 
 // ---------- 输入 / 搜索（Input & Search）----------
 /// Log 搜索框宽度（IntelliJ 搜索框偏宽，便于输入过滤条件）。

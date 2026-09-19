@@ -14,9 +14,10 @@
 //!
 //! 两个 surface（右侧面板 / 独立窗口）共用本模块，保证呈现一致。
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use gpui::{App, Div, Hsla, ParentElement, SharedString, Styled, div, px};
+use gpui::{App, Div, Hsla, ParentElement, Point, ScrollHandle, SharedString, Styled, div, px};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use rebased_rs::git::{DiffLine, DiffLineKind, FileDiff, Hunk};
@@ -39,7 +40,13 @@ fn line_fg(kind: DiffLineKind, base: Hsla) -> Hsla {
     }
 }
 
+/// 文件头状态徽章：与 Changes 面板**同一语义源头** `theme::status_color`——
+/// 重命名显示 R 黄、冲突显示 U 品红、untracked 显示 ? 灰绿，
+/// 不再是列表 "R"/diff "M" 的两套口径。仅当数据未标注状态时按 bool 兜底。
 fn status_badge(file: &FileDiff) -> (&'static str, Hsla) {
+    if let Some(status) = file.status {
+        return (status.short_label(), crate::ui::theme::status_color(&status));
+    }
     if file.is_new {
         ("A", added_color())
     } else if file.is_deleted {
@@ -111,7 +118,7 @@ fn gutter_cell(no: Option<u32>, mono: &SharedString, muted: Hsla) -> Div {
         .border_r_1()
         .border_color(gutter_border())
         .text_size(px(crate::ui::theme::font_size_mono()))
-        .text_color(muted.opacity(0.7))
+        .text_color(crate::ui::theme::gutter_number_fg(muted))
         .font_family(mono.clone())
         .child(no.map(|n| n.to_string()).unwrap_or_default())
 }
@@ -222,11 +229,15 @@ fn sbs_row(
 /// - `sync_action`: 「左栏内容同步到右栏」箭头（对齐 IntelliJ change marker 的 revert
 ///   箭头），点击后把右栏（当前版本）该 hunk 还原成左栏（基线）内容。仅 Unstaged 来源
 ///   提供——Staged 的等价操作是 Unstage，Commit 只读。
+/// - `folded`: 已折叠的 hunk 集合（IDEA diff：折叠后只剩 header 行）
+/// - `fold_action`: hunk header chevron 回调；两个 surface 各自桥接到自己的状态。
 pub fn render_diff_files(
     files: &[FileDiff],
     side_by_side: bool,
     hunk_controls: Option<(&'static str, &HunkAction)>,
     sync_action: Option<&HunkAction>,
+    folded: &HashSet<(usize, usize)>,
+    fold_action: Option<&HunkAction>,
     cx: &App,
 ) -> Div {
     let mono = cx.theme().mono_font_family.clone();
@@ -275,17 +286,61 @@ pub fn render_diff_files(
             );
 
         for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-            let min_w = code_min_width(max_line_chars(hunk));
+            let is_folded = folded.contains(&(file_index, hunk_index));
             // 行宽 = 行号 gutter 区 + 正文最窄宽度。并排两栏按基线宽计
             // （与内容长度解耦，保证左右两半同时可见）；统一视图按内容
-            // 实际宽度计（长行靠横向滚动查看）。
-            let row_min_w = if side_by_side {
+            // 实际宽度计（长行靠横向滚动查看）。折叠的 hunk 不参与撑宽：
+            // 收起后不再为隐藏内容保留横向滚动范围。
+            let min_w = if is_folded {
+                0.0
+            } else {
+                code_min_width(max_line_chars(hunk))
+            };
+            let row_min_w = if is_folded {
+                0.0
+            } else if side_by_side {
                 crate::ui::theme::DIFF_GUTTER_WIDTH
                     + 2.0 * crate::ui::theme::DIFF_SBS_CODE_BASE_WIDTH
             } else {
                 crate::ui::theme::DIFF_GUTTER_WIDTH + min_w
             };
             content_min_w = content_min_w.max(row_min_w);
+            // header 左段：chevron（IDEA diff 折叠开关）+ hunk 头文本。
+            let mut header_left = div()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(crate::ui::theme::SPACE_XS));
+            if let Some(action) = fold_action {
+                let action = Arc::clone(action);
+                header_left = header_left.child(
+                    Button::new(SharedString::from(format!(
+                        "hunk-fold-{file_index}-{hunk_index}"
+                    )))
+                    .ghost()
+                    .compact()
+                    .icon(if is_folded {
+                        Ic::ChevronRight
+                    } else {
+                        Ic::ChevronDown
+                    })
+                    .accessibility_label(if is_folded {
+                        "Expand hunk"
+                    } else {
+                        "Collapse hunk"
+                    })
+                    .on_click(move |_, _, app| action(file_index, hunk_index, app)),
+                );
+            }
+            header_left = header_left.child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .font_family(mono.clone())
+                    .child(hunk.header.clone()),
+            );
             let mut header_row = div()
                 .flex_none()
                 .h(px(crate::ui::theme::SECTION_HEADER_HEIGHT))
@@ -301,14 +356,7 @@ pub fn render_diff_files(
                 .border_t_1()
                 .border_b_1()
                 .border_color(crate::ui::theme::border_color(fg))
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .font_family(mono.clone())
-                        .child(hunk.header.clone()),
-                );
+                .child(header_left);
             if sync_action.is_some() || hunk_controls.is_some() {
                 // 右端按钮组：同步箭头（若有）+ Stage/Unstage（若有）。
                 let mut actions_row = div()
@@ -346,35 +394,38 @@ pub fn render_diff_files(
             }
             block = block.child(header_row);
 
-            if side_by_side {
-                for (left, right) in side_by_side_rows(hunk) {
-                    block = block.child(sbs_row(left, right, &mono, fg, muted));
-                }
-            } else {
-                for line in &hunk.lines {
-                    let bg = match line.kind {
-                        DiffLineKind::Added => added_line_bg(),
-                        DiffLineKind::Deleted => deleted_line_bg(),
-                        DiffLineKind::Context | DiffLineKind::HunkHeader => transparent(),
-                    };
-                    block = block.child(
-                        div()
-                            .flex_none()
-                            .h(px(crate::ui::theme::diff_line_height()))
-                            .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .bg(bg)
-                            .child(gutter_cell(line.old_no, &mono, muted))
-                            .child(gutter_cell(line.new_no, &mono, muted))
-                            .child(code_cell(
-                                line.content.clone(),
-                                line_fg(line.kind, fg),
-                                &mono,
-                                min_w,
-                            )),
-                    );
+            // 折叠的 hunk：header 之后不再渲染内容行（IDEA diff 行为）。
+            if !is_folded {
+                if side_by_side {
+                    for (left, right) in side_by_side_rows(hunk) {
+                        block = block.child(sbs_row(left, right, &mono, fg, muted));
+                    }
+                } else {
+                    for line in &hunk.lines {
+                        let bg = match line.kind {
+                            DiffLineKind::Added => added_line_bg(),
+                            DiffLineKind::Deleted => deleted_line_bg(),
+                            DiffLineKind::Context | DiffLineKind::HunkHeader => transparent(),
+                        };
+                        block = block.child(
+                            div()
+                                .flex_none()
+                                .h(px(crate::ui::theme::diff_line_height()))
+                                .min_w(px(crate::ui::theme::DIFF_GUTTER_WIDTH + min_w))
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .bg(bg)
+                                .child(gutter_cell(line.old_no, &mono, muted))
+                                .child(gutter_cell(line.new_no, &mono, muted))
+                                .child(code_cell(
+                                    line.content.clone(),
+                                    line_fg(line.kind, fg),
+                                    &mono,
+                                    min_w,
+                                )),
+                        );
+                    }
                 }
             }
         }
@@ -383,6 +434,107 @@ pub fn render_diff_files(
     }
 
     container.min_w(px(content_min_w))
+}
+
+/// 单个 hunk 的渲染高度：折叠时只剩 header 行；展开时
+/// header + 内容行数 × 行高（并排视图按配对后的行数计）。
+/// F7 导航的滚动定位与渲染共用同一算术，保证偏移不漂移。
+pub(crate) fn hunk_height(hunk: &Hunk, side_by_side: bool, folded: bool) -> f32 {
+    if folded {
+        return crate::ui::theme::SECTION_HEADER_HEIGHT;
+    }
+    let rows = if side_by_side {
+        side_by_side_rows(hunk).len()
+    } else {
+        hunk.lines.len()
+    };
+    crate::ui::theme::SECTION_HEADER_HEIGHT + rows as f32 * crate::ui::theme::diff_line_height()
+}
+
+/// 文件块的渲染高度：文件头 + 全部 hunk + 底部分隔线
+/// （block 高度 auto，border 在内容之外另加 1px）。
+fn file_block_height(
+    file: &FileDiff,
+    file_index: usize,
+    side_by_side: bool,
+    folded: &HashSet<(usize, usize)>,
+) -> f32 {
+    crate::ui::theme::SECTION_HEADER_HEIGHT
+        + 1.0
+        + file
+            .hunks
+            .iter()
+            .enumerate()
+            .map(|(hi, h)| hunk_height(h, side_by_side, folded.contains(&(file_index, hi))))
+            .sum::<f32>()
+}
+
+/// hunk 顶边在滚动内容坐标系中的 y 偏移：前序文件块（含块间 gap）+ 本文件头 + 前序 hunk。
+pub(crate) fn hunk_offset_y(
+    files: &[FileDiff],
+    target: (usize, usize),
+    side_by_side: bool,
+    folded: &HashSet<(usize, usize)>,
+) -> f32 {
+    let (target_file, target_hunk) = target;
+    let mut y = 0.0;
+    for (fi, file) in files.iter().enumerate() {
+        if fi == target_file {
+            y += crate::ui::theme::SECTION_HEADER_HEIGHT;
+            for (hi, hunk) in file.hunks.iter().enumerate() {
+                if hi == target_hunk {
+                    return y;
+                }
+                y += hunk_height(hunk, side_by_side, folded.contains(&(fi, hi)));
+            }
+            return y;
+        }
+        y += file_block_height(file, fi, side_by_side, folded) + crate::ui::theme::SPACE_MD;
+    }
+    y
+}
+
+/// hunk 的展开顺序坐标（文件内从上到下、文件间按序）。
+fn hunk_positions(files: &[FileDiff]) -> Vec<(usize, usize)> {
+    files
+        .iter()
+        .enumerate()
+        .flat_map(|(fi, f)| (0..f.hunks.len()).map(move |hi| (fi, hi)))
+        .collect()
+}
+
+/// F7 / Shift+F7 的目标 hunk：从 current 起循环前进/后退；
+/// 无 diff 或无 hunk 返回 None（current 不在列表时从头/尾开始）。
+pub(crate) fn step_hunk(
+    files: &[FileDiff],
+    current: Option<(usize, usize)>,
+    forward: bool,
+) -> Option<(usize, usize)> {
+    let positions = hunk_positions(files);
+    if positions.is_empty() {
+        return None;
+    }
+    let at = current.and_then(|c| positions.iter().position(|&p| p == c));
+    let next = match (at, forward) {
+        (Some(i), true) => (i + 1) % positions.len(),
+        (Some(i), false) => (i + positions.len() - 1) % positions.len(),
+        (None, true) => 0,
+        (None, false) => positions.len() - 1,
+    };
+    Some(positions[next])
+}
+
+/// 把目标 hunk 顶边滚到视口顶部（F7 定位语义），保留横向偏移。
+/// 垂直偏移为负值（向下滚动 y 越负），越界由容器在绘制时 clamp。
+pub(crate) fn scroll_hunk_into_view(
+    handle: &ScrollHandle,
+    files: &[FileDiff],
+    target: (usize, usize),
+    side_by_side: bool,
+    folded: &HashSet<(usize, usize)>,
+) {
+    let y = hunk_offset_y(files, target, side_by_side, folded);
+    handle.set_offset(Point::new(handle.offset().x, px(-y)));
 }
 
 /// 估算正文所需最小宽度（按最长行字符数 × 单字符步进）。
@@ -510,5 +662,93 @@ mod tests {
         };
         assert!(code_min_width(max_line_chars(&long)) > code_min_width(max_line_chars(&short)));
         assert_eq!(max_line_chars(&long), 200);
+    }
+
+    fn ctx(n: u32) -> DiffLine {
+        line(DiffLineKind::Context, Some(n), Some(n), "x")
+    }
+
+    fn hunk_with(lines: Vec<DiffLine>) -> Hunk {
+        Hunk {
+            header: "@@ -1 +1 @@".to_string(),
+            lines,
+        }
+    }
+
+    fn file_with(hunks: Vec<Hunk>) -> FileDiff {
+        FileDiff {
+            path: "a.txt".to_string(),
+            old_path: None,
+            is_new: false,
+            is_deleted: false,
+            is_binary: false,
+            status: None,
+            hunks,
+        }
+    }
+
+    #[test]
+    fn hunk_height_follows_view_mode_and_fold() {
+        let hunk = hunk_with(vec![ctx(1), ctx(2)]);
+        let line_h = crate::ui::theme::diff_line_height();
+        let header_h = crate::ui::theme::SECTION_HEADER_HEIGHT;
+        // 并排视图：两行 Context 配对成 2 行。
+        assert_eq!(hunk_height(&hunk, true, false), header_h + 2.0 * line_h);
+        // 统一视图按原始行数计。
+        assert_eq!(hunk_height(&hunk, false, false), header_h + 2.0 * line_h);
+        // 折叠时只剩 header。
+        assert_eq!(hunk_height(&hunk, true, true), header_h);
+    }
+
+    #[test]
+    fn hunk_offset_y_sums_preceding_blocks_and_gap() {
+        let files = vec![
+            file_with(vec![hunk_with(vec![ctx(1)])]),
+            file_with(vec![hunk_with(vec![ctx(1)])]),
+        ];
+        let folded = HashSet::new();
+        let line_h = crate::ui::theme::diff_line_height();
+        let header_h = crate::ui::theme::SECTION_HEADER_HEIGHT;
+        // 第一个 hunk 顶边 = 本文件头高度。
+        assert_eq!(hunk_offset_y(&files, (0, 0), true, &folded), header_h);
+        // 第二文件的 hunk = 文件块 0（文件头 + hunk + 底线）+ 块间 gap + 文件头。
+        let block0 = header_h + 1.0 + (header_h + line_h);
+        assert_eq!(
+            hunk_offset_y(&files, (1, 0), true, &folded),
+            block0 + crate::ui::theme::SPACE_MD + header_h
+        );
+    }
+
+    #[test]
+    fn folded_preceding_hunk_shifts_offset_up() {
+        let files = vec![file_with(vec![
+            hunk_with(vec![ctx(1), ctx(2), ctx(3)]),
+            hunk_with(vec![ctx(1)]),
+        ])];
+        let open = HashSet::new();
+        let mut folded = HashSet::new();
+        folded.insert((0, 0));
+        let delta =
+            hunk_offset_y(&files, (0, 1), true, &folded) - hunk_offset_y(&files, (0, 1), true, &open);
+        // 前序 hunk 折叠后，后续 hunk 上移正好 3 行的高度。
+        assert_eq!(delta, -3.0 * crate::ui::theme::diff_line_height());
+    }
+
+    #[test]
+    fn step_hunk_cycles_forward_and_backward() {
+        let files = vec![
+            file_with(vec![hunk_with(vec![ctx(1)])]),
+            file_with(vec![hunk_with(vec![ctx(1)]), hunk_with(vec![ctx(1)])]),
+        ];
+        // 无当前：前进从头开始、后退从末尾开始。
+        assert_eq!(step_hunk(&files, None, true), Some((0, 0)));
+        assert_eq!(step_hunk(&files, None, false), Some((1, 1)));
+        // 循环：末尾前进回到开头。
+        assert_eq!(step_hunk(&files, Some((1, 1)), true), Some((0, 0)));
+        assert_eq!(step_hunk(&files, Some((0, 0)), false), Some((1, 1)));
+        // 常规前进。
+        assert_eq!(step_hunk(&files, Some((0, 0)), true), Some((1, 0)));
+        // 无 hunk 时返回 None。
+        assert_eq!(step_hunk(&[file_with(vec![])], None, true), None);
     }
 }

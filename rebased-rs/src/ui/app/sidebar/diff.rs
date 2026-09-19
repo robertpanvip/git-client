@@ -158,6 +158,17 @@ impl AppView {
                 } else {
                     None
                 };
+            // 折叠/展开 hunk：状态存于 AppState::diff_folded，与 F7 导航共享。
+            let fold_action: Option<HunkAction> = {
+                let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                Some(std::sync::Arc::new(
+                    move |file_index, hunk_index, app: &mut gpui::App| {
+                        let _ = weak.update(app, |this, cx| {
+                            this.toggle_hunk_fold(file_index, hunk_index, cx)
+                        });
+                    },
+                ))
+            };
             panel = panel.child(
                 div()
                     .id("diff-content")
@@ -166,6 +177,7 @@ impl AppView {
                     .min_w_0()
                     .overflow_y_scroll()
                     .overflow_x_scroll()
+                    .track_scroll(&self.diff_scroll)
                     .child(render_diff_files(
                         &self.state.diff_files,
                         self.state.diff_side_by_side,
@@ -173,6 +185,8 @@ impl AppView {
                             .as_ref()
                             .map(|(label, action)| (*label, action)),
                         sync_action.as_ref(),
+                        &self.state.diff_folded,
+                        fold_action.as_ref(),
                         cx,
                     )),
             );

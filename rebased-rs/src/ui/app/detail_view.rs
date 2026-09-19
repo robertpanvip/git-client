@@ -12,7 +12,7 @@ use rebased_rs::git::{Change, Commit, Tag};
 
 use crate::ui::commit_list::format_full_time;
 use crate::ui::components::{badge, group_header, ref_style, v_separator};
-use crate::ui::graph_view::status_color;
+use crate::ui::theme::status_color;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;

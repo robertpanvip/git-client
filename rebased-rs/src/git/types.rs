@@ -222,6 +222,9 @@ pub struct FileDiff {
     pub is_new: bool,
     pub is_deleted: bool,
     pub is_binary: bool,
+    /// 文件级 Git 状态（与 Changes 面板同源）：diff 徽章据此取色，
+    /// 未标注（`None`）时 UI 按 `is_new`/`is_deleted` 兜底推导。
+    pub status: Option<ChangeStatus>,
     pub hunks: Vec<Hunk>,
 }
 

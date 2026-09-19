@@ -128,6 +128,37 @@ pub fn text_disabled() -> Hsla {
     rgb(0x6E7073)
 }
 
+// ==================== 文本层级派生（透明度收敛点）====================
+//
+// 全仓所有「基色 × opacity」的魔法系数只允许出现在本节；
+// 调用点（diff/blame/empty/menu…）一律引用下列语义函数，
+// 避免各视图自行定义 0.4/0.5/0.6/… 散点（见 UI_INCONSISTENCIES.md S-1）。
+
+/// Gutter 装饰数字 —— diff / 编辑器 / blame 行号，比元数据再弱一档。
+pub fn gutter_number_fg(base: Hsla) -> Hsla {
+    base.opacity(0.7)
+}
+
+/// 弱元数据文本 —— blame 时间戳、blame 文件名等低强调信息。
+pub fn meta_faint(base: Hsla) -> Hsla {
+    base.opacity(0.8)
+}
+
+/// 空态辅助层级 —— 空态图标与次要提示，比空态主体文案再弱一档。
+pub fn empty_faint(base: Hsla) -> Hsla {
+    base.opacity(0.75)
+}
+
+/// 占位 / 幽灵文本 —— 数据缺失槽位（如未标注 blame 的行）。
+pub fn ghost_text(base: Hsla) -> Hsla {
+    base.opacity(0.5)
+}
+
+/// 危险色弱调 —— 危险菜单项的快捷键等次要危险文本。
+pub fn danger_faint() -> Hsla {
+    danger_color().opacity(0.75)
+}
+
 // ==================== 语义色（Semantic Colors）====================
 
 /// 链接 / 分支 chip 文字蓝 —— JetBrains 链接蓝 `#589DF6`。
@@ -308,9 +339,11 @@ pub fn added_color() -> Hsla {
     success_color()
 }
 
-/// 删除文件红 —— JetBrains 红系 `#FF6B6B`（与 danger 同源，降低饱和度以示区别）。
+/// 删除文件红 —— JetBrains 红系 `#FF6B6B`（与 danger 同源：色相跟随
+/// `danger_color()`，降饱和/降亮度以示区别，调 danger 色板时自动联动）。
 pub fn deleted_color() -> Hsla {
-    hsla(0.0, 0.65, 0.62, 1.0)
+    let danger = danger_color();
+    hsla(danger.h, 0.65, 0.62, 1.0)
 }
 
 /// 修改文件橙 —— JetBrains 橙系 `#F0A020`（与 warning 同源）。

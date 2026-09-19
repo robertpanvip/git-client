@@ -18,7 +18,8 @@ use gpui_kit::component::{ActiveTheme, button::Button};
 
 use crate::ui::blame_view::BlameJump;
 use crate::ui::blame_view::BlameToggle;
-use crate::ui::components::empty_state;
+use crate::ui::components::{empty_state, error_state};
+use crate::ui::components::file_tab_bar::{TabActivate, TabClose, file_tab_bar, neighbor_after_close};
 use crate::ui::components::panel_header;
 use crate::ui::editor_view::render_editor;
 use crate::ui::file_tree::{TreeClick, TreePick, render_file_tree};
@@ -104,6 +105,21 @@ impl AppView {
             return;
         };
         let switched = self.state.files_selected.as_deref() != Some(path.as_str());
+        // Tab 模型（T-1）：激活即打开。新 Tab 插到当前 Tab 右侧（IDEA 行为）；
+        // 已打开的 Tab 只激活，不重复创建。所有「打开文件」入口都经由此函数，
+        // 因此文件树 / blame 跳转等入口自动纳入 Tab 管理。
+        if !self.state.open_tabs.contains(&path) {
+            let insert_at = match self.state.files_selected.as_ref() {
+                Some(active) => self
+                    .state
+                    .open_tabs
+                    .iter()
+                    .position(|p| p == active)
+                    .map_or(self.state.open_tabs.len(), |pos| pos + 1),
+                None => self.state.open_tabs.len(),
+            };
+            self.state.open_tabs.insert(insert_at, path.clone());
+        }
         self.state.files_selected = Some(path.clone());
         if switched {
             self.state.files_binary = false;
@@ -146,6 +162,35 @@ impl AppView {
         cx.notify();
     }
 
+    /// 关闭一个文件 Tab：关闭非当前 Tab 时激活态不变；关闭当前 Tab 时按
+    /// IDEA 语义选中邻位（优先右邻、无右邻取左邻）；关闭最后一个 Tab
+    /// 回到空态（清除右栏数据，见 `render_files_editor` 的空态分支）。
+    pub(crate) fn close_file_tab(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some(pos) = self.state.open_tabs.iter().position(|p| *p == path) else {
+            return;
+        };
+        self.state.open_tabs.remove(pos);
+        let was_active = self.state.files_selected.as_deref() == Some(path.as_str());
+        if was_active {
+            let neighbor = neighbor_after_close(self.state.open_tabs.len(), pos)
+                .and_then(|index| self.state.open_tabs.get(index).cloned());
+            match neighbor {
+                Some(next) => {
+                    // open_file 内部完成激活、装载与 notify。
+                    self.open_file(next, cx);
+                    return;
+                }
+                None => {
+                    self.state.files_selected = None;
+                    self.state.files_binary = false;
+                    self.state.files_deleted = false;
+                    self.state.files_editor = Arc::new(Default::default());
+                }
+            }
+        }
+        cx.notify();
+    }
+
     /// 文件视图左栏：工作区文件夹树。
     pub(crate) fn render_files_tree_column(&self, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
@@ -172,7 +217,6 @@ impl AppView {
             .child(panel_header(tr("Project", "项目"), muted, Vec::new()));
 
         if let Some(ref error) = self.state.error {
-            let error_color = theme::error_color();
             let weak = cx.entity().downgrade();
             let retry_button = Button::new("retry-files")
                 .label(tr("Retry", "重试"))
@@ -184,38 +228,11 @@ impl AppView {
                     });
                 });
             column = column.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .p(px(theme::SPACE_LG))
-                    .gap(px(theme::SPACE_MD))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(theme::SPACE_SM))
-                            .child("⚠️")
-                            .child(
-                                div()
-                                    .text_size(px(theme::font_size_sm()))
-                                    .text_color(error_color)
-                                    .child(tr("Failed to load files", "文件加载失败")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(theme::font_size_xs()))
-                                    .text_color(muted)
-                                    .max_w(px(280.0))
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .child(error.clone()),
-                            ),
-                    )
-                    .child(retry_button),
+                error_state(
+                    tr("Failed to load files", "文件加载失败"),
+                    Some(gpui::SharedString::from(error.clone())),
+                )
+                .child(retry_button),
             );
         } else if self.state.files_loading {
             column = column.child(empty_state(
@@ -228,6 +245,14 @@ impl AppView {
                 muted,
             ));
         } else {
+            // 文件树状态色与 Changes 面板同源：path → Git 状态，由统一
+            // `theme::status_color` 消费（F5：IDEA 项目树对变更文件着色）。
+            let status_of: std::collections::HashMap<String, rebased_rs::git::ChangeStatus> =
+                self.state
+                    .changes
+                    .iter()
+                    .map(|change| (change.path.clone(), change.status))
+                    .collect();
             column = column.child(
                 div()
                     .id("file-tree")
@@ -237,6 +262,7 @@ impl AppView {
                     .child(render_file_tree(
                         &self.state.files,
                         &self.state.files_expanded,
+                        &status_of,
                         self.state.files_selected.as_deref(),
                         &on_pick,
                         cx,
@@ -249,7 +275,7 @@ impl AppView {
     /// 文件视图右栏：代码区域（行号 + 行变更标记 + 行级 blame）。
     pub(crate) fn render_files_editor(&self, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
-        let base = div()
+        let mut base = div()
             .flex_1()
             .min_w_0()
             .min_h_0()
@@ -257,6 +283,30 @@ impl AppView {
             .flex_col()
             .overflow_hidden()
             .bg(theme::bg_main());
+
+        // 文件 Tab 条（T-1/T-2）：有已打开文件就常驻编辑器顶部，
+        // active Tab 高亮下划线，× 关闭（邻位选中在 close_file_tab）。
+        if !self.state.open_tabs.is_empty() {
+            let on_activate: TabActivate = {
+                let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                Arc::new(move |path, app| {
+                    let _ = weak.update(app, |this, cx| this.open_file(path, cx));
+                })
+            };
+            let on_close: TabClose = {
+                let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+                Arc::new(move |path, app| {
+                    let _ = weak.update(app, |this, cx| this.close_file_tab(path, cx));
+                })
+            };
+            base = base.child(file_tab_bar(
+                &self.state.open_tabs,
+                self.state.files_selected.as_deref(),
+                &on_activate,
+                &on_close,
+                cx,
+            ));
+        }
 
         let Some(path) = self.state.files_selected.clone() else {
             return base

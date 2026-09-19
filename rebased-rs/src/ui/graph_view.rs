@@ -15,7 +15,7 @@ use rebased_rs::git::GraphRow;
 use crate::ui::theme::{DOT_RADIUS, LANE_WIDTH, LINE_WIDTH};
 
 pub const ROW_HEIGHT: f32 = crate::ui::theme::ROW_HEIGHT;
-pub use crate::ui::theme::{lane_color, status_color};
+pub use crate::ui::theme::lane_color;
 
 /// elbow 圆角半径；实际取值还会受泳道间距与行高约束。
 const ELBOW_RADIUS: f32 = 3.0;

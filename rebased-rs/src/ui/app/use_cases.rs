@@ -148,6 +148,8 @@ fn sync_views_on_refresh(state: &mut AppState, commits: &[Commit], rebase_in_pro
         state.conflict_hunks.clear();
         state.conflict_choices.clear();
         state.conflict_raw.clear();
+        state.conflict_list.reset(0);
+        state.conflict_nav = None;
     }
     state
         .selected_changes
@@ -178,6 +180,13 @@ pub(crate) fn clear_detail(state: &mut AppState) {
     state.sidebar = SidebarMode::Workspace;
 }
 
+/// 关闭 Blame 面板时清除其数据：关闭 = 清状态，重开 = 重新拉取（B-1），
+/// 避免残留旧数据在仓库变化后「复活」（对照 [`clear_detail`] 的语义）。
+pub(crate) fn clear_blame(state: &mut AppState) {
+    state.blame_groups.clear();
+    state.blame_path = String::new();
+}
+
 pub(crate) fn open_staged_diff(
     repo: &dyn GitBackend,
     state: &mut AppState,
@@ -185,6 +194,9 @@ pub(crate) fn open_staged_diff(
 ) -> Result<(), GitError> {
     let stdout = repo.diff_staged(path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
+    // 新 diff 内容使旧的折叠/导航坐标失效，统一重置。
+    state.diff_folded.clear();
+    state.diff_nav = None;
     state.diff_title = match &path {
         Some(p) => format!("Diff · staged · {p}"),
         None => "Diff · staged".to_string(),
@@ -205,6 +217,8 @@ pub(crate) fn open_unstaged_diff(
 ) -> Result<(), GitError> {
     let stdout = repo.diff_unstaged(path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
+    state.diff_folded.clear();
+    state.diff_nav = None;
     state.diff_title = match &path {
         Some(p) => format!("Diff · unstaged · {p}"),
         None => "Diff · unstaged".to_string(),
@@ -225,6 +239,8 @@ pub(crate) fn open_commit_diff(
     let short = &commit_id[..commit_id.len().min(7)];
     let stdout = repo.show_diff(&commit_id, path.as_deref(), state.ignore_whitespace)?;
     state.diff_files = parse_unified_diff(&stdout);
+    state.diff_folded.clear();
+    state.diff_nav = None;
     state.diff_title = match &path {
         Some(p) => format!("{short} · {p}"),
         None => format!("Commit {short}"),
@@ -292,8 +308,11 @@ pub(crate) fn select_conflict_file(
     let hunks = conflict_hunks(&raw);
     state.conflict_path = Some(path.to_string());
     state.conflict_raw = raw;
-    state.conflict_choices = vec![None; hunks.len()];
+    let hunk_count = hunks.len();
+    state.conflict_choices = vec![None; hunk_count];
     state.conflict_hunks = hunks;
+    state.conflict_list.reset(hunk_count);
+    state.conflict_nav = None;
     Ok(())
 }
 
@@ -302,6 +321,8 @@ pub(crate) fn clear_conflict_selection(state: &mut AppState) {
     state.conflict_raw.clear();
     state.conflict_hunks.clear();
     state.conflict_choices.clear();
+    state.conflict_list.reset(0);
+    state.conflict_nav = None;
 }
 
 pub(crate) fn apply_conflict_resolutions(

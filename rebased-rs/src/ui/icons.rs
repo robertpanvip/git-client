@@ -7,7 +7,9 @@
 
 use std::borrow::Cow;
 
-use gpui::{AssetSource, Result, SharedString};
+use gpui::{Img, img, px, AssetSource, Result, SharedString, Styled};
+
+use crate::ui::theme;
 
 /// JetBrains 图标集（变体名 = 图标文件名的 PascalCase）。
 /// 部分变体暂未被 UI 引用，保留完整映射供后续扩展。
@@ -22,6 +24,7 @@ pub enum Ic {
     Checkout,
     ChevronDown,
     ChevronRight,
+    ChevronUp,
     Close,
     Commit,
     Compare,
@@ -75,6 +78,7 @@ impl gpui_kit::assets::IconNamed for Ic {
             Ic::Checkout => "icons/checkout.svg",
             Ic::ChevronDown => "icons/chevronDown.svg",
             Ic::ChevronRight => "icons/chevronRight.svg",
+            Ic::ChevronUp => "icons/chevronUp.svg",
             Ic::Close => "icons/close.svg",
             Ic::Commit => "icons/commit.svg",
             Ic::Compare => "icons/compare.svg",
@@ -123,34 +127,71 @@ impl gpui_kit::assets::IconNamed for Ic {
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
+#[include = "file_types/**/*.svg"]
 struct IconFiles;
 
-/// 按文件扩展名选择 IDEA 风格的类型图标，未识别的扩展名回退通用文件图标。
+/// 按文件扩展名 / 约定文件名选择 JetBrains 官方**彩色**文件类型图标的
+/// 资产路径，未识别的回退通用文件图标（New UI expui 暗色变体，
+/// [`img`](gpui::img) 经 SVG 光栅化按原色渲染，不走单色 alpha 管线）。
 ///
-/// 渲染管线（`paint_svg` → alpha mask）是单色着色，类型区分依赖形状：
-/// 文件底形挖孔符号（json 的花括号、md 的下箭头等）与纯符号
-/// （rs 齿轮、py 蛇形等），对应 IDEA 的 Monochrome icons 形态。
-pub(crate) fn file_icon(path: &str) -> Ic {
-    let ext = std::path::Path::new(path)
+/// IDEA 全局只有这一套类型图标：项目树、编辑器 Tab、Changes 列表等
+/// 所有出现文件名的位置共用，本项目同样只在 [`file_type_icon`] 一处构造。
+pub(crate) fn colored_file_icon(path: &str) -> &'static str {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let ext = std::path::Path::new(name)
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
     match ext.as_str() {
-        "rs" => Ic::FileRs,
-        "toml" => Ic::FileToml,
-        "lock" => Ic::FileLock,
-        "md" | "markdown" => Ic::FileMd,
-        "json" | "jsonc" | "json5" => Ic::FileJson,
-        "yaml" | "yml" => Ic::FileYaml,
-        "py" | "pyi" | "pyw" => Ic::FilePy,
-        "js" | "mjs" | "cjs" | "jsx" => Ic::FileJs,
-        "ts" | "mts" | "cts" | "tsx" => Ic::FileTs,
-        "html" | "htm" | "xhtml" | "xml" | "svg" => Ic::FileHtml,
-        "css" | "scss" | "sass" | "less" => Ic::FileCss,
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => Ic::FileImage,
-        _ => Ic::File,
+        "rs" => "file_types/rust.svg",
+        "toml" | "lock" => "file_types/toml.svg",
+        "md" | "markdown" => "file_types/markdown.svg",
+        "json" | "jsonc" | "json5" => "file_types/json.svg",
+        "yaml" | "yml" => "file_types/yaml.svg",
+        "py" | "pyi" | "pyw" => "file_types/python.svg",
+        "js" | "mjs" | "cjs" | "jsx" => "file_types/javaScript.svg",
+        "ts" | "mts" | "cts" | "tsx" => "file_types/typeScript.svg",
+        "html" | "htm" => "file_types/html.svg",
+        "xhtml" => "file_types/xhtml.svg",
+        "xml" | "svg" => "file_types/xml.svg",
+        "css" | "scss" | "sass" | "less" => "file_types/css.svg",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => "file_types/image.svg",
+        "txt" => "file_types/text.svg",
+        "properties" => "file_types/properties.svg",
+        "csv" | "tsv" => "file_types/csv.svg",
+        "sh" | "bash" | "zsh" => "file_types/shell.svg",
+        "sql" => "file_types/sql.svg",
+        "patch" | "diff" => "file_types/patch.svg",
+        "gradle" => "file_types/gradle.svg",
+        "zip" | "jar" | "tar" | "gz" | "xz" | "7z" | "rar" => "file_types/archive.svg",
+        "dockerfile" => "file_types/docker.svg",
+        "editorconfig" => "file_types/editorConfig.svg",
+        "gitignore" | "gitattributes" => "file_types/gitignore.svg",
+        _ => match name.to_ascii_lowercase().as_str() {
+            // 无扩展名的 IDE 约定文件（.gitignore / Dockerfile 等）。
+            "dockerfile" => "file_types/docker.svg",
+            ".gitignore" | ".gitattributes" | ".gitmodules" => "file_types/gitignore.svg",
+            ".editorconfig" => "file_types/editorConfig.svg",
+            _ => "file_types/anyType.svg",
+        },
     }
+}
+
+/// 渲染 JetBrains 官方彩色文件类型图标（16×16，IDEA 全局同一套）。
+pub(crate) fn file_type_icon(path: &str) -> Img {
+    img(colored_file_icon(path))
+        .flex_none()
+        .w(px(theme::FILE_TYPE_ICON_SIZE))
+        .h(px(theme::FILE_TYPE_ICON_SIZE))
+}
+
+/// 渲染 JetBrains 官方彩色文件夹图标（New UI 打开 / 折叠共用同形）。
+pub(crate) fn folder_icon() -> Img {
+    img("file_types/folder.svg")
+        .flex_none()
+        .w(px(theme::FILE_TYPE_ICON_SIZE))
+        .h(px(theme::FILE_TYPE_ICON_SIZE))
 }
 
 /// 资产源：优先命中本地 JetBrains 图标，未命中回退 gpui-kit 内置图标

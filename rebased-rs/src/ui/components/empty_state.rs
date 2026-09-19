@@ -35,7 +35,7 @@ pub fn empty_state_with(
         body = body.child(
             Icon::new(icon)
                 .with_size(Size::Medium)
-                .text_color(muted.opacity(0.7)),
+                .text_color(theme::empty_faint(muted)),
         );
     }
     body = body.child(div().text_center().child(title.into()));
@@ -44,19 +44,40 @@ pub fn empty_state_with(
             div()
                 .text_size(px(theme::font_size_meta()))
                 .text_center()
-                .text_color(muted.opacity(0.75))
+                .text_color(theme::empty_faint(muted))
                 .child(hint.to_string()),
         );
     }
     body
 }
 
-/// 面板内联空态提示（非居中，用于面板正文顶部）。
-pub fn empty_hint(message: impl Into<SharedString>, muted: Hsla) -> Div {
-    div()
-        .px(px(theme::SPACE_MD))
-        .py(px(theme::SPACE_SM))
-        .text_size(px(theme::font_size_meta()))
-        .text_color(muted)
-        .child(message.into())
+/// 居中错误态：与 [`empty_state`] 同构（同一布局 / 字号 / 间距 token），
+/// 标题用错误色，可选灰色详情（原始错误串）。
+/// 操作按钮（重试 / 重新打开等）由调用方以 `.child()` 追加，保持单一原语。
+pub fn error_state(title: impl Into<SharedString>, detail: Option<SharedString>) -> Div {
+    let mut body = div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(theme::SPACE_MD))
+        .px(px(theme::SPACE_XL))
+        .text_center()
+        .text_size(px(theme::font_size_body()))
+        .text_color(theme::error_color())
+        .child(title.into());
+    if let Some(detail) = detail {
+        body = body.child(
+            div()
+                .max_w(px(theme::MESSAGE_MAX_WIDTH))
+                .text_center()
+                .overflow_hidden()
+                .text_ellipsis()
+                .text_size(px(theme::font_size_meta()))
+                .text_color(theme::text_disabled())
+                .child(detail),
+        );
+    }
+    body
 }

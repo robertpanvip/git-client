@@ -2,14 +2,14 @@
 //!
 //! 对齐 IntelliJ「项目」工具窗口的经典树形呈现：
 //! - 目录行 = 展开箭头 + IDEA 文件夹图标，点击切换展开；
-//! - 文件行 = IDEA 文本文件图标，点击在右栏打开；
+//! - 文件行 = JetBrains 官方彩色类型图标（按扩展名），点击在右栏打开；
 //! - 缩进按层级递增，选中文件用统一的列表选中底色高亮。
 //!
 //! 折叠状态下的后代节点整体不出现（[`flatten_tree`] 负责摊平）。
 //! 摊平在渲染时现算（纯内存遍历，微秒级），不引入缓存——
 //! 缓存方案曾因与渲染脱节导致整棵树显示为空。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
@@ -18,7 +18,9 @@ use gpui::{
     Styled, div, px,
 };
 use gpui_kit::component::ActiveTheme;
-use gpui_kit::component::{Icon, Sizable, Size};
+use gpui_kit::component::Icon;
+
+use rebased_rs::git::ChangeStatus;
 
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -102,9 +104,14 @@ pub(crate) fn flatten_tree(files: &[String], expanded: &HashSet<String>) -> Vec<
 }
 
 /// 渲染文件夹树（渲染时实时摊平，与 v0.6.0 一致）。
+///
+/// `status_of` 把文件路径映射到 Git 状态：命中的文件行按 IDEA 项目树的
+/// 行为对文件名着状态色（新增绿 / 修改蓝 / 删除褐 / 重命名紫…），
+/// 色值统一来自 [`theme::status_color`]，与 Changes 面板同源。
 pub(crate) fn render_file_tree(
     files: &[String],
     expanded: &HashSet<String>,
+    status_of: &HashMap<String, ChangeStatus>,
     selected: Option<&str>,
     on_pick: &TreePick,
     cx: &App,
@@ -112,26 +119,40 @@ pub(crate) fn render_file_tree(
     let fg = cx.theme().foreground;
     let mut tree = div().flex().flex_col().w_full().py(px(theme::SPACE_XS));
     for row in flatten_tree(files, expanded) {
-        tree = tree.child(render_row(row, selected, on_pick, fg));
+        tree = tree.child(render_row(row, status_of, selected, on_pick, fg));
     }
     tree
 }
 
-fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla) -> Stateful<Div> {
+fn render_row(
+    row: TreeRow,
+    status_of: &HashMap<String, ChangeStatus>,
+    selected: Option<&str>,
+    on_pick: &TreePick,
+    fg: Hsla,
+) -> Stateful<Div> {
     let indent = theme::SPACE_SM + theme::TREE_INDENT * row.depth as f32;
     let is_selected = !row.is_dir && selected == Some(row.path.as_str());
+    // IDEA 项目树：有 Git 状态的文件名按状态着色（选中态除外），其余走默认层级色。
+    let status_fg = if row.is_dir {
+        None
+    } else {
+        status_of.get(&row.path).map(theme::status_color)
+    };
     let text_color = if is_selected {
         theme::white()
+    } else if let Some(status_color) = status_fg {
+        status_color
     } else if row.is_dir {
         fg
     } else {
         theme::file_tree_file_fg(fg)
     };
-    // IDEA 项目树：目录用文件夹图标，文件按扩展名显示对应类型图标。
+    // IDEA 项目树：目录用彩色文件夹图标，文件按扩展名用 JetBrains 官方彩色类型图标。
     let icon = if row.is_dir {
-        Ic::Folder
+        crate::ui::icons::folder_icon()
     } else {
-        crate::ui::icons::file_icon(&row.path)
+        crate::ui::icons::file_type_icon(&row.path)
     };
     let click = if row.is_dir {
         TreeClick::Dir(row.path.clone())
@@ -173,7 +194,7 @@ fn render_row(row: TreeRow, selected: Option<&str>, on_pick: &TreePick, fg: Hsla
                     }))
                 }),
         )
-        .child(Icon::new(icon).with_size(Size::Small))
+        .child(icon)
         .child(row.name.clone());
     if is_selected {
         element = element.bg(theme::list_row_selected());

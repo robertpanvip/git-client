@@ -228,6 +228,12 @@ impl AppView {
     }
 
     pub(crate) fn sidebar_back(&mut self, cx: &mut Context<Self>) {
+        // B-1「关闭注解」：从 Blame 面板退出时清除其数据（关闭 = 清状态，
+        // 重开 = 重新拉取），与 `clear_detail` 对 Detail 的处理对齐；
+        // 否则旧 blame 在仓库变化后会原样「复活」。
+        if self.state.sidebar == SidebarMode::Blame {
+            use_cases::clear_blame(&mut self.state);
+        }
         self.state.sidebar = if self.state.selected.is_some() {
             SidebarMode::Detail
         } else {

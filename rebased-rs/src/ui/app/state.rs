@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use gpui::{ListAlignment, ListState, px};
+
 use rebased_rs::git::{
     BlameGroup, Branch, CancelToken, Change, Commit, ConflictFile, ConflictHunk, FileDiff,
     HunkChoice, MergeMode, RebaseAction, ReflogEntry, Remote, StashEntry, Tag,
@@ -320,6 +322,8 @@ pub(crate) struct AppState {
     pub(crate) sidebar: SidebarMode,
     /// 变更面板当前页签（Commit 面板内切换变更列表 / 贮藏列表）。
     pub(crate) changes_tab: ChangesTab,
+    /// 折叠的变更分组（`changes_section` 的组 id）；不在集合内即展开。
+    pub(crate) changes_collapsed: HashSet<String>,
     /// 主区域视图：工作区（图1 两栏）/ Git 日志（图2 三栏，左栏为分支树）/ 文件树视图。
     pub(crate) main_view: MainView,
     /// 文件视图：工作区文件清单（升序，仓库相对路径）。
@@ -330,6 +334,8 @@ pub(crate) struct AppState {
     pub(crate) files_expanded: HashSet<String>,
     /// 文件视图当前选中的文件（仓库相对路径）。
     pub(crate) files_selected: Option<String>,
+    /// 文件视图中已打开的文件 Tab（按打开顺序；active 即 `files_selected`）。
+    pub(crate) open_tabs: Vec<String>,
     /// 当前文件为二进制 / 非 UTF-8，代码区改为空态提示。
     pub(crate) files_binary: bool,
     /// 当前文件在工作区中已删除。
@@ -350,6 +356,10 @@ pub(crate) struct AppState {
     pub(crate) ignore_whitespace: bool,
     /// 当前 commit diff 的 commit id（切换 whitespace 开关后重载用）。
     pub(crate) diff_commit: Option<String>,
+    /// 已折叠的 diff hunk（(file_index, hunk_index)）；不在集合内即展开（IDEA diff）。
+    pub(crate) diff_folded: HashSet<(usize, usize)>,
+    /// F7 / Shift+F7 最近定位的 hunk（循环导航的起点）。
+    pub(crate) diff_nav: Option<(usize, usize)>,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
@@ -370,6 +380,10 @@ pub(crate) struct AppState {
     pub(crate) conflict_path: Option<String>,
     pub(crate) conflict_hunks: Vec<ConflictHunk>,
     pub(crate) conflict_choices: Vec<Option<HunkChoice>>,
+    /// 冲突卡片虚拟列表滚动状态（GPUI list），供上一处/下一处导航 `scroll_to_reveal_item` 定位。
+    pub(crate) conflict_list: ListState,
+    /// 当前导航定位的冲突块索引（循环导航的起点，同时用于高亮当前卡片）。
+    pub(crate) conflict_nav: Option<usize>,
     pub(crate) conflict_raw: String,
     pub(crate) shelves: Vec<StashEntry>,
     pub(crate) history_path: String,
@@ -420,11 +434,13 @@ impl Default for AppState {
             detail_branches: Vec::new(),
             sidebar: SidebarMode::Workspace,
             changes_tab: ChangesTab::Changes,
+            changes_collapsed: HashSet::new(),
             main_view: MainView::Workspace,
             files: Arc::new(Vec::new()),
             files_loading: false,
             files_expanded: HashSet::new(),
             files_selected: None,
+            open_tabs: Vec::new(),
             files_binary: false,
             files_deleted: false,
             files_editor: Arc::new(EditorContent::default()),
@@ -437,6 +453,8 @@ impl Default for AppState {
             diff_source: None,
             ignore_whitespace: false,
             diff_commit: None,
+            diff_folded: HashSet::new(),
+            diff_nav: None,
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
@@ -452,6 +470,8 @@ impl Default for AppState {
             conflict_path: None,
             conflict_hunks: Vec::new(),
             conflict_choices: Vec::new(),
+            conflict_list: ListState::new(0, ListAlignment::Top, px(1000.)),
+            conflict_nav: None,
             conflict_raw: String::new(),
             shelves: Vec::new(),
             history_path: String::new(),

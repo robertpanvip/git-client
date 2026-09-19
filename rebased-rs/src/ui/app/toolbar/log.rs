@@ -12,7 +12,7 @@ use gpui_kit::component::{
 };
 
 use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
-use crate::ui::components::{menu_item, menu_width};
+use crate::ui::components::{empty_state, error_state, menu_item, menu_width};
 use crate::ui::graph_view::graph_column_width;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
@@ -396,43 +396,30 @@ impl AppView {
 
     pub(crate) fn render_commit_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.state.loading {
-            return div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(cx.theme().muted_foreground)
-                .child(tr("Loading repository...", "正在加载仓库..."))
-                .into_any_element();
+            return empty_state(
+                tr("Loading repository...", "正在加载仓库..."),
+                cx.theme().muted_foreground,
+            )
+            .flex_1()
+            .min_w_0()
+            .into_any_element();
         }
         // 仓库尚未打开（启动路径无效或首次加载失败）：给出明确的错误态与重开入口。
         if self.repo.is_none() {
-            return div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap(px(theme::SPACE_LG))
-                .child(
-                    div()
-                        .max_w(px(theme::MESSAGE_MAX_WIDTH))
-                        .text_center()
-                        .text_color(theme::error_color())
-                        .child(self.state.error.clone().unwrap_or_else(|| {
-                            tr("No repository is open", "尚未打开仓库").to_string()
-                        })),
-                )
-                .child(
-                    Button::new("open-project-error")
-                        .label(tr("Open Project...", "打开项目..."))
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.open_repo_dialog(window, cx)),
-                        ),
-                )
-                .into_any_element();
+            return error_state(
+                tr("No repository is open", "尚未打开仓库"),
+                self.state.error.clone().map(gpui::SharedString::from),
+            )
+            .flex_1()
+            .min_w_0()
+            .child(
+                Button::new("open-project-error")
+                    .label(tr("Open Project...", "打开项目..."))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_repo_dialog(window, cx)),
+                    ),
+            )
+            .into_any_element();
         }
         let list = self.list.clone();
         let weak: WeakEntity<Self> = cx.entity().downgrade();

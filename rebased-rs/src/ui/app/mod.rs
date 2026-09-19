@@ -6,9 +6,9 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext, Bounds, Context, Div, Entity, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Render, StatefulInteractiveElement, Styled,
-    Subscription, UniformListScrollHandle, Window, WindowAppearance, WindowBounds, WindowOptions,
-    div, px, size,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Render, ScrollHandle,
+    StatefulInteractiveElement, Styled, Subscription, UniformListScrollHandle, Window,
+    WindowAppearance, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Root,
@@ -80,6 +80,8 @@ pub struct AppView {
     branch_popup_query: Entity<InputState>,
     /// 文件视图右栏（代码区域）的滚动位置。
     editor_scroll: UniformListScrollHandle,
+    /// Diff 面板滚动容器句柄，供 F7 / Shift+F7 hunk 导航程序化滚动。
+    diff_scroll: ScrollHandle,
     message_input: Entity<TextareaState>,
     prompt_input: Entity<TextareaState>,
     /// AddRemote 对话框的第二个输入框（remote URL）。
@@ -165,6 +167,7 @@ impl AppView {
             right_panel_width: SidebarMode::Workspace.default_width(),
             last_sidebar_mode: SidebarMode::Workspace,
             editor_scroll: UniformListScrollHandle::new(),
+            diff_scroll: ScrollHandle::new(),
             split_drag: None,
             _subscriptions: subscriptions,
         };
@@ -517,7 +520,8 @@ impl AppView {
         cx.notify();
     }
 
-    /// 左侧 40px 图标条（对齐 IDEA New UI 竖条）：Commit / Files / History / Git log 入口。
+    /// 左侧 40px 图标条（对齐 IDEA New UI 竖条）：
+    /// Project(Files) / Commit / History / Git log 入口——Project 居首。
     fn render_icon_strip(&self, cx: &mut Context<Self>) -> Div {
         div()
             .w(px(theme::ICON_STRIP_WIDTH))
@@ -531,6 +535,15 @@ impl AppView {
             .bg(theme::bg_chrome())
             .border_r_1()
             .border_color(theme::separator())
+            // IntelliJ New UI：Project 工具窗图标固定在竖条第一位。
+            .child(self.render_strip_button(
+                "strip-files",
+                icons::Ic::Folder,
+                self.state.main_view == MainView::Files,
+                None,
+                |this, cx| this.open_files_view(cx),
+                cx,
+            ))
             .child(self.render_strip_button(
                 "strip-commit",
                 icons::Ic::Commit,
@@ -541,14 +554,6 @@ impl AppView {
                     this.state.main_view = MainView::Workspace;
                     cx.notify();
                 },
-                cx,
-            ))
-            .child(self.render_strip_button(
-                "strip-files",
-                icons::Ic::Folder,
-                self.state.main_view == MainView::Files,
-                None,
-                |this, cx| this.open_files_view(cx),
                 cx,
             ))
             .child(self.render_strip_button(
@@ -745,6 +750,9 @@ impl Render for AppView {
             .on_action(cx.listener(Self::on_toggle_vcs_palette))
             .on_action(cx.listener(Self::on_blame_current_file))
             .on_action(cx.listener(Self::on_select_sidebar_panel))
+            // IDEA diff 导航：F7 下一处、Shift+F7 上一处（在 hunk 间循环）。
+            .on_action(cx.listener(Self::on_next_diff_hunk))
+            .on_action(cx.listener(Self::on_prev_diff_hunk))
             .child(self.render_toolbar(cx))
             .child({
                 let mut row = div()

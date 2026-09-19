@@ -47,7 +47,7 @@ where
             cx.theme().foreground
         };
         let accent = if danger {
-            theme::danger_color().opacity(0.75)
+            theme::danger_faint()
         } else {
             cx.theme().muted_foreground
         };

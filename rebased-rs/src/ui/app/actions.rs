@@ -3,6 +3,8 @@ use gpui_kit::base::IndexPath;
 
 use rebased_rs::git::{Change, DEFAULT_LOG_LIMIT, MergeMode};
 
+use crate::ui::diff_view::{scroll_hunk_into_view, step_hunk};
+
 use super::{AppView, ConfirmAction, DiffSource, SidebarMode, use_cases::commit_selected};
 
 actions!(
@@ -19,6 +21,8 @@ actions!(
         FocusComposer,
         ToggleVcsPalette,
         BlameCurrentFile,
+        NextDiffHunk,
+        PrevDiffHunk,
     ]
 );
 
@@ -47,6 +51,9 @@ pub(crate) fn register_keybindings(cx: &mut App) {
         KeyBinding::new("down", SelectNextCommit, None),
         KeyBinding::new("alt-backtick", ToggleVcsPalette, None),
         KeyBinding::new("ctrl-alt-b", BlameCurrentFile, None),
+        // IDEA diff 导航：F7 下一处、Shift+F7 上一处（循环）。
+        KeyBinding::new("f7", NextDiffHunk, None),
+        KeyBinding::new("shift-f7", PrevDiffHunk, None),
         KeyBinding::new("ctrl-alt-1", SelectSidebarPanel(1), None),
         KeyBinding::new("ctrl-alt-2", SelectSidebarPanel(2), None),
         KeyBinding::new("ctrl-alt-3", SelectSidebarPanel(3), None),
@@ -607,6 +614,61 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         self.do_pull(cx);
+    }
+
+    /// F7 / 面板 ↓：定位下一个 hunk（目标已折叠时自动展开）。
+    pub(crate) fn on_next_diff_hunk(
+        &mut self,
+        _: &NextDiffHunk,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.step_diff_hunk(true, cx);
+    }
+
+    /// Shift+F7 / 面板 ↑：定位上一个 hunk（目标已折叠时自动展开）。
+    pub(crate) fn on_prev_diff_hunk(
+        &mut self,
+        _: &PrevDiffHunk,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.step_diff_hunk(false, cx);
+    }
+
+    /// hunk 循环导航共用体：更新导航游标 → 展开目标 → 算术滚动定位 → 重绘。
+    pub(crate) fn step_diff_hunk(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let target = {
+            let files = &self.state.diff_files;
+            step_hunk(files, self.state.diff_nav, forward)
+        };
+        let Some(target) = target else {
+            return;
+        };
+        self.state.diff_nav = Some(target);
+        self.state.diff_folded.remove(&target);
+        scroll_hunk_into_view(
+            &self.diff_scroll,
+            &self.state.diff_files,
+            target,
+            self.state.diff_side_by_side,
+            &self.state.diff_folded,
+        );
+        cx.notify();
+    }
+
+    /// hunk header chevron：折叠/展开（IDEA diff）。集合外 = 展开。
+    pub(crate) fn toggle_hunk_fold(
+        &mut self,
+        file_index: usize,
+        hunk_index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let key = (file_index, hunk_index);
+        if !self.state.diff_folded.remove(&key) {
+            self.state.diff_folded.insert(key);
+        }
+        cx.notify();
     }
 
     pub(crate) fn on_refresh_repo(

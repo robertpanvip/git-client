@@ -67,7 +67,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_size(px(theme::font_size_meta()))
-                    .text_color(muted.opacity(0.8))
+                    .text_color(theme::meta_faint(muted))
                     .child(group.filename.clone()),
             );
 
@@ -100,7 +100,7 @@ pub fn render_blame(groups: &[BlameGroup], on_commit: Option<&BlameJump>, cx: &A
                             div()
                                 .flex_none()
                                 .text_size(px(theme::font_size_meta()))
-                                .text_color(muted.opacity(0.7))
+                                .text_color(theme::gutter_number_fg(muted))
                                 .font_family(mono.clone())
                                 .child(format!("{:>4}  ", line.number)),
                         )

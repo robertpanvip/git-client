@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::command::GitCommand;
 use super::error::Result;
-use super::types::{DiffLine, DiffLineKind, FileDiff, Hunk};
+use super::types::{ChangeStatus, DiffLine, DiffLineKind, FileDiff, Hunk};
 
 pub fn diff_unstaged(cmd: &GitCommand, path: Option<&str>, ignore_ws: bool) -> Result<String> {
     let mut args = vec!["diff", "-U3"];
@@ -65,13 +65,13 @@ fn synthetic_new_file_diff(workdir: &Path, file: &str) -> Option<String> {
     let bytes = std::fs::read(workdir.join(file)).ok()?;
     if bytes.starts_with(&[0u8]) {
         return Some(format!(
-            "diff --git a/{file} b/{file}\nnew file mode 100644\nBinary files a/{file} and b/{file} differ\n"
+            "diff --git a/{file} b/{file}\nnew file mode 100644\nuntracked file\nBinary files a/{file} and b/{file} differ\n"
         ));
     }
     let content = String::from_utf8_lossy(&bytes);
     let count = content.lines().count();
     let mut out = format!(
-        "diff --git a/{file} b/{file}\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,{count} @@\n"
+        "diff --git a/{file} b/{file}\nnew file mode 100644\nuntracked file\nindex 0000000..1111111\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,{count} @@\n"
     );
     for line in content.lines() {
         out.push('+');
@@ -151,6 +151,7 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
                 is_new: false,
                 is_deleted: false,
                 is_binary: false,
+                status: None,
                 hunks: Vec::new(),
             });
             continue;
@@ -160,14 +161,27 @@ pub fn parse_unified_diff(stdout: &str) -> Vec<FileDiff> {
         };
         if line.starts_with("new file mode") {
             file.is_new = true;
+            file.status = Some(ChangeStatus::Added);
         } else if line.starts_with("deleted file mode") {
             file.is_deleted = true;
+            file.status = Some(ChangeStatus::Deleted);
+        } else if line.starts_with("untracked file") {
+            // 合成 untracked diff 的标记行：状态语义优先于 new file 推导。
+            file.status = Some(ChangeStatus::Untracked);
         } else if line.starts_with("Binary files") {
             file.is_binary = true;
         } else if let Some(rest) = line.strip_prefix("rename from ") {
             file.old_path = Some(rest.to_string());
+            file.status = Some(ChangeStatus::Renamed);
         } else if let Some(rest) = line.strip_prefix("rename to ") {
             file.path = rest.to_string();
+            file.status = Some(ChangeStatus::Renamed);
+        } else if let Some(rest) = line.strip_prefix("copy from ") {
+            file.old_path = Some(rest.to_string());
+            file.status = Some(ChangeStatus::Copied);
+        } else if let Some(rest) = line.strip_prefix("copy to ") {
+            file.path = rest.to_string();
+            file.status = Some(ChangeStatus::Copied);
         } else if let Some(rest) = line.strip_prefix("+++ ") {
             if rest != "/dev/null" {
                 file.path = strip_path_prefix(rest).to_string();

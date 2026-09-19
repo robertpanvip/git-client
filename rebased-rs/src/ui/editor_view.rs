@@ -268,7 +268,7 @@ fn render_line(
         ),
         None => (
             theme::transparent(),
-            muted.opacity(0.5),
+            theme::ghost_text(muted),
             String::new(),
             String::new(),
             None,
@@ -296,7 +296,7 @@ fn render_line(
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
-                .text_color(muted.opacity(0.8))
+                .text_color(theme::meta_faint(muted))
                 .child(time),
         );
     if let (Some(id), Some(jump)) = (commit_id, on_commit) {
@@ -336,7 +336,7 @@ fn render_line(
                 .border_r_1()
                 .border_color(theme::gutter_border())
                 .text_size(px(theme::font_size_mono()))
-                .text_color(muted.opacity(0.7))
+                .text_color(theme::gutter_number_fg(muted))
                 .font_family(mono.clone())
                 .child(line.number.to_string()),
         )
@@ -416,6 +416,7 @@ mod tests {
             is_new: false,
             is_deleted: false,
             is_binary: false,
+            status: None,
             hunks,
         }
     }

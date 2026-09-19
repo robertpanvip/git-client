@@ -297,10 +297,7 @@ impl ListDelegate for LogDelegate {
         _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) -> impl IntoElement {
-        empty_state(
-            tr("No commits", "没有提交"),
-            cx.theme().muted_foreground.opacity(0.6),
-        )
+        empty_state(tr("No commits", "没有提交"), cx.theme().muted_foreground)
     }
 }
 

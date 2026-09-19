@@ -3,8 +3,10 @@
 //! 该视图与主窗口 `AppView` 完全解耦：自行持有 repo 与 diff 来源元数据，
 //! 可独立切换「忽略空白 / 并排视图」并执行 hunk 级暂存/取消暂存后再刷新自身。
 
+use std::collections::HashSet;
+
 use gpui::{
-    AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render,
+    AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div,
     px, size,
 };
@@ -15,7 +17,10 @@ use gpui_kit::component::{
 };
 use rebased_rs::git::{FileDiff, GitBackend, parse_unified_diff};
 
+use crate::ui::components::{empty_state, error_state};
+use crate::ui::diff_view::{HunkAction, scroll_hunk_into_view, step_hunk};
 use crate::ui::i18n::tr;
+use crate::ui::icons::Ic;
 use crate::ui::theme;
 
 use super::DiffSource;
@@ -42,6 +47,12 @@ pub(crate) struct DiffWindowView {
     side_by_side: bool,
     files: Vec<FileDiff>,
     error: Option<String>,
+    /// 折叠的 hunk 集合（(file_index, hunk_index)），与主窗口 diff_folded 同语义。
+    folded: HashSet<(usize, usize)>,
+    /// F7 / Shift+F7 导航的当前位置。
+    diff_nav: Option<(usize, usize)>,
+    /// 滚动容器句柄，供 hunk 导航程序化滚动定位。
+    scroll: ScrollHandle,
 }
 
 impl DiffWindowView {
@@ -56,6 +67,9 @@ impl DiffWindowView {
             side_by_side: spec.side_by_side,
             files: spec.files,
             error: None,
+            folded: HashSet::new(),
+            diff_nav: None,
+            scroll: ScrollHandle::new(),
         }
     }
 
@@ -80,6 +94,16 @@ impl DiffWindowView {
                 self.error = None;
             }
             Err(e) => self.error = Some(e.to_string()),
+        }
+        // diff 内容变化后，折叠/导航状态只保留仍然有效的坐标。
+        let hunk_counts: Vec<usize> = self.files.iter().map(|f| f.hunks.len()).collect();
+        let file_count = self.files.len();
+        self.folded
+            .retain(|(fi, hi)| *fi < file_count && *hi < hunk_counts[*fi]);
+        if let Some((fi, hi)) = self.diff_nav
+            && (fi >= file_count || hi >= hunk_counts[fi])
+        {
+            self.diff_nav = None;
         }
         cx.notify();
     }
@@ -134,6 +158,32 @@ impl DiffWindowView {
         self.error = None;
         self.reload(cx);
     }
+
+    fn toggle_hunk_fold(&mut self, file_index: usize, hunk_index: usize, cx: &mut Context<Self>) {
+        let key = (file_index, hunk_index);
+        if !self.folded.remove(&key) {
+            self.folded.insert(key);
+        }
+        cx.notify();
+    }
+
+    /// F7 / Shift+F7 或工具栏箭头：在 hunk 间循环导航，展开目标并滚动定位。
+    fn step_hunk_nav(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let target = step_hunk(&self.files, self.diff_nav, forward);
+        let Some(target) = target else {
+            return;
+        };
+        self.diff_nav = Some(target);
+        self.folded.remove(&target);
+        scroll_hunk_into_view(
+            &self.scroll,
+            &self.files,
+            target,
+            self.side_by_side,
+            &self.folded,
+        );
+        cx.notify();
+    }
 }
 
 impl Render for DiffWindowView {
@@ -181,6 +231,24 @@ impl Render for DiffWindowView {
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_view_mode(cx))),
         );
 
+        // hunk 导航（与 F7 / Shift+F7 等价的工具栏入口）。
+        header = header.child(
+            Button::new("dw-prev-hunk")
+                .ghost()
+                .compact()
+                .icon(Ic::ChevronUp)
+                .tooltip(tr("Previous change (Shift+F7)", "上一处（Shift+F7）"))
+                .on_click(cx.listener(|this, _, _, cx| this.step_hunk_nav(false, cx))),
+        );
+        header = header.child(
+            Button::new("dw-next-hunk")
+                .ghost()
+                .compact()
+                .icon(Ic::ChevronDown)
+                .tooltip(tr("Next change (F7)", "下一处（F7）"))
+                .on_click(cx.listener(|this, _, _, cx| this.step_hunk_nav(true, cx))),
+        );
+
         // hunk 级暂存/取消暂存按钮（仅 staged/unstaged 来源展示）。
         let weak: gpui::WeakEntity<Self> = cx.entity().downgrade();
         let hunk_controls: Option<(&'static str, crate::ui::diff_view::HunkAction)> = match self
@@ -219,34 +287,24 @@ impl Render for DiffWindowView {
             };
 
         let body: gpui::Stateful<gpui::Div> = if let Some(error) = &self.error {
-            div()
+            error_state(error.clone(), None)
                 .flex_1()
                 .min_h_0()
-                .flex()
-                .items_center()
-                .justify_center()
                 .id("dw-error")
-                .child(
-                    div()
-                        .text_size(px(theme::font_size_body()))
-                        .text_color(crate::ui::theme::error_color())
-                        .child(error.clone()),
-                )
         } else if self.files.is_empty() {
-            div()
+            empty_state(tr("No changes", "无更改"), muted)
                 .flex_1()
                 .min_h_0()
-                .flex()
-                .items_center()
-                .justify_center()
                 .id("dw-empty")
-                .child(
-                    div()
-                        .text_size(px(theme::font_size_body()))
-                        .text_color(muted)
-                        .child(tr("No changes", "无更改")),
-                )
         } else {
+            let fold_action: HunkAction = {
+                let weak: gpui::WeakEntity<Self> = cx.entity().downgrade();
+                std::sync::Arc::new(move |file_index, hunk_index, app: &mut gpui::App| {
+                    let _ = weak.update(app, |this, cx| {
+                        this.toggle_hunk_fold(file_index, hunk_index, cx)
+                    });
+                })
+            };
             div()
                 .id("dw-content")
                 .flex_1()
@@ -254,6 +312,7 @@ impl Render for DiffWindowView {
                 .min_w_0()
                 .overflow_y_scroll()
                 .overflow_x_scroll()
+                .track_scroll(&self.scroll)
                 .child(crate::ui::diff_view::render_diff_files(
                     &self.files,
                     self.side_by_side,
@@ -261,6 +320,8 @@ impl Render for DiffWindowView {
                         .as_ref()
                         .map(|(label, action)| (*label, action)),
                     sync_action.as_ref(),
+                    &self.folded,
+                    Some(&fold_action),
                     cx,
                 ))
         };

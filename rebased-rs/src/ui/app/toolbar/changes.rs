@@ -16,11 +16,11 @@ use rebased_rs::git::{Change, ChangeStatus};
 
 use crate::ui::app::{AppView, ChangesTab, ConfirmAction, PromptKind};
 use crate::ui::components::{
-    Checkbox, DropdownButton, empty_state, group_header_controls, list_row, menu_item,
+    Checkbox, DropdownButton, collapsible_group_header, empty_state, list_row, menu_item,
     menu_width, row_icon_button, selected, status_bar, status_message, status_segment,
 };
 use crate::ui::components::tabs::{segment, segmented};
-use crate::ui::graph_view::status_color;
+use crate::ui::theme::status_color;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
 use crate::ui::theme;
@@ -58,6 +58,9 @@ impl AppView {
         let menu_change = change.clone();
         let menu_path = change.path.clone();
         let row = list_row(format!("change-{index}"), fg)
+            // 子行相对组头缩进一级：明确「更改」组与文件行的树形层级
+            //（IDEA 高密度风格，左缩进 TREE_INDENT，行高/悬停保持不变）。
+            .pl(px(theme::ROW_PADDING_X + theme::TREE_INDENT))
             .gap(px(theme::SPACE_SM))
             .when(checked, |row| selected(row, true, fg))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_stage(&change_for_click, cx)))
@@ -72,18 +75,8 @@ impl AppView {
                         });
                     }),
             )
-            // 状态标记列：固定宽度，与列表中的图标槽对齐。
-            // （IntelliJ 用按状态着色的文件类型图标表达同一信息；本项目未引入
-            //  文件类型图标集，改用同色的状态字母占位。）
-            .child(
-                div()
-                    .w(px(theme::ICON_SIZE_SM))
-                    .flex_none()
-                    .text_size(px(theme::font_size_meta()))
-                    .font_weight(theme::WEIGHT_MEDIUM)
-                    .text_color(color)
-                    .child(change.status.short_label()),
-            )
+            // 类型图标槽：JetBrains 官方彩色文件类型图标（IDEA Changes 同款）。
+            .child(crate::ui::icons::file_type_icon(&change.path))
             // 文件名（按状态着色，始终可见） + 父目录（灰色，先被压缩省略）。
             .child(
                 div()
@@ -114,6 +107,17 @@ impl AppView {
                         )
                     }),
             );
+        // 行尾状态列：状态字母 + 统一状态色（与文件名着色 / 文件树状态色同源），
+        // 不依赖纯颜色即可分辨状态。
+        let row = row.child(
+            div()
+                .flex_none()
+                .w(px(theme::ICON_SIZE_SM))
+                .text_size(px(theme::font_size_meta()))
+                .font_weight(theme::WEIGHT_MEDIUM)
+                .text_color(color)
+                .child(change.status.short_label()),
+        );
 
         let row = row.child(
             row_icon_button(
@@ -265,7 +269,8 @@ impl AppView {
     /// 一个变更分组（更改 / 未进行版本管理的文件）：标题行 + 文件行。
     ///
     /// 标题行的前导复选框对该组做全选/全不选，尾部显示条目数——与 IntelliJ
-    /// 变更列表的分组行一致（组名左侧可勾选、右侧计数）。
+    /// 变更列表的分组行一致（组名左侧可勾选、右侧计数）。组头带 chevron，
+    /// 整行可点击折叠/展开；折叠时不渲染子行。
     fn changes_section(
         &self,
         id: &'static str,
@@ -278,15 +283,18 @@ impl AppView {
             return Vec::new();
         }
         let muted = cx.theme().muted_foreground;
+        let expanded = !self.state.changes_collapsed.contains(id);
         let all_selected = group
             .iter()
             .all(|change| self.state.selected_changes.contains(&change.path));
         let paths: Vec<String> = group.iter().map(|change| change.path.clone()).collect();
         let weak = cx.entity().downgrade();
 
-        let header = group_header_controls(
+        let header = collapsible_group_header(
+            format!("{id}-header"),
             label,
             muted,
+            expanded,
             Some(
                 Checkbox::new(id)
                     .checked(all_selected)
@@ -305,12 +313,24 @@ impl AppView {
                     .child(group.len().to_string())
                     .into_any_element(),
             ),
-        );
+            cx.listener(move |this, _, _, cx| {
+                // 整行点击切换折叠；前导复选框已 stop_propagation，互不干扰。
+                if !this.state.changes_collapsed.remove(id) {
+                    this.state.changes_collapsed.insert(id.to_string());
+                }
+                cx.notify();
+            }),
+        )
+        // 组间留出小间隔（首组之上还有列表自身的 pt），保持高密度。
+        .mt(px(theme::SPACE_SM));
 
-        let mut out: Vec<AnyElement> = Vec::with_capacity(group.len() + 1);
+        let mut out: Vec<AnyElement> =
+            Vec::with_capacity(if expanded { group.len() + 1 } else { 1 });
         out.push(header.into_any_element());
-        for (offset, change) in group.iter().enumerate() {
-            out.push(self.render_change_row(start_index + offset, change, cx));
+        if expanded {
+            for (offset, change) in group.iter().enumerate() {
+                out.push(self.render_change_row(start_index + offset, change, cx));
+            }
         }
         out
     }
@@ -436,7 +456,6 @@ impl AppView {
     /// 已暂存与未暂存的已跟踪文件同属「更改」（提交按勾选路径执行，与
     /// IntelliJ 一致，不依赖暂存区），未跟踪文件单列一组。
     fn render_changes_list(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let fg = cx.theme().foreground;
         let count = self.state.changes.len();
 
         let changes: Vec<&Change> = self
@@ -479,7 +498,7 @@ impl AppView {
             .when(count == 0, |container| {
                 container.child(empty_state(
                     tr("Working tree clean", "工作区干净"),
-                    fg.opacity(0.4),
+                    cx.theme().muted_foreground,
                 ))
             })
     }
