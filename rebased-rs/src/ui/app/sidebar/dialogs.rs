@@ -1,10 +1,10 @@
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
     SharedString, Styled, Window, WindowAppearance, div, px,
 };
 use gpui_kit::base::Disableable;
 use gpui_kit::component::{
-    ActiveTheme,
+    ActiveTheme, Icon, Sizable, Size,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     input::Textarea,
@@ -13,9 +13,10 @@ use gpui_kit::component::{
 
 use rebased_rs::git::{MergeMode, ResetMode};
 
-use crate::ui::app::{AppView, PromptKind};
+use crate::ui::app::{AppView, CommitChecks, PromptKind};
 use crate::ui::components::{cancel_button, dialog_field, dialog_footer, dialog_shell};
 use crate::ui::i18n::{self, Language, tr};
+use crate::ui::icons::Ic;
 use crate::ui::settings;
 use crate::ui::theme;
 
@@ -32,6 +33,16 @@ impl AppView {
             self.state.prompt_focus_pending = false;
             self.prompt_input
                 .update(cx, |state, cx| state.focus(window, cx));
+        }
+        // 提交设置对话框首帧回显「作者(A)」输入框（开框同步一次，避免每帧重置光标）。
+        if self.state.prompt_author_sync_pending {
+            self.state.prompt_author_sync_pending = false;
+            let author = self.state.commit_author.clone();
+            self.commit_author_input.update(cx, |state, cx| {
+                if state.value() != author {
+                    state.set_value(&author, window, cx);
+                }
+            });
         }
         let muted = cx.theme().muted_foreground;
         let (title, hint): (String, String) = match &kind {
@@ -533,35 +544,238 @@ impl AppView {
                     (body, footer)
                 }
                 PromptKind::CommitSettings => {
-                    // 提交设置（提交区右侧齿轮）：分组对齐 IDEA 的
-                    // 「提交选项 / 提交信息检查」，设置项即时生效，与提交区共享状态。
+                    // 提交设置（提交区右侧齿轮）：按 IDEA Settings→Git 的
+                    // 「Git / 提交检查 / 高级 提交检查 / 在提交之后」分组还原。
+                    // 作者与 Sign-off 直接作用于下一次提交参数；检查组作为
+                    // 持久化偏好呈现（IDE 功能在独立客户端中不适用）。
+                    let border = cx.theme().border;
+                    let link = cx.theme().link;
+                    let checks = self.state.commit_checks;
                     let body = div()
                         .flex()
                         .flex_col()
-                        .gap(px(theme::SPACE_MD))
-                        .child(settings_section_label(tr("Commit Options", "提交选项")))
+                        .gap(px(theme::SPACE_LG))
+                        // ── Git ─────────────────────────────
+                        .child(commit_section_header(tr("Git", "Git"), border))
                         .child(
-                            Checkbox::new("commit-settings-amend")
-                                .checked(self.state.amend)
-                                .label(tr("Amend previous commit", "修正上一次提交"))
-                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                    this.state.amend = *checked;
-                                    cx.notify();
-                                })),
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(theme::SPACE_MD))
+                                .pl(px(theme::SPACE_LG))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_size(px(theme::font_size_body()))
+                                        .child(tr("Author(A):", "作者(A):")),
+                                )
+                                .child(
+                                    Textarea::new(&self.commit_author_input)
+                                        .h(px(theme::INPUT_HEIGHT_SINGLE))
+                                        .flex_1(),
+                                ),
                         )
-                        .child(settings_section_label(tr(
-                            "Commit Message Checks",
-                            "提交信息检查",
-                        )))
+                        .child(commit_check_row(
+                            "commit-settings-signoff",
+                            self.state.commit_signoff,
+                            tr("Sign-off commit(G)", "Sign-off 提交(G)"),
+                            None,
+                            cx.listener(|this, checked: &bool, _, cx| {
+                                this.state.commit_signoff = *checked;
+                                crate::ui::settings::persist_commit_signoff(*checked);
+                                cx.notify();
+                            }),
+                        ))
+                        .child(commit_check_row(
+                            "commit-settings-amend",
+                            self.state.amend,
+                            tr("Amend previous commit", "修正上一次提交"),
+                            None,
+                            cx.listener(|this, checked: &bool, _, cx| {
+                                this.state.amend = *checked;
+                                cx.notify();
+                            }),
+                        ))
+                        .child(commit_check_row(
+                            "commit-settings-allow-empty",
+                            self.state.allow_empty_commit_message,
+                            tr("Allow empty commit message", "允许空提交信息"),
+                            None,
+                            cx.listener(|this, checked: &bool, _, cx| {
+                                this.state.allow_empty_commit_message = *checked;
+                                cx.notify();
+                            }),
+                        ))
+                        // ── 提交检查 ────────────────────────
+                        .child(commit_section_header(
+                            tr("Before Commit", "提交检查"),
+                            border,
+                        ))
+                        .children(commit_check_group(
+                            cx,
+                            &checks,
+                            link,
+                            &[
+                                (
+                                    "commit-check-copyright",
+                                    tr("Update copyright", "更新版权"),
+                                    None,
+                                    CheckField::UpdateCopyright,
+                                ),
+                                (
+                                    "commit-check-reformat",
+                                    tr("Reformat code(R)", "重新设置代码格式(R)"),
+                                    None,
+                                    CheckField::ReformatCode,
+                                ),
+                                (
+                                    "commit-check-rearrange",
+                                    tr("Rearrange code(N)", "重新整理代码(N)"),
+                                    None,
+                                    CheckField::RearrangeCode,
+                                ),
+                                (
+                                    "commit-check-imports",
+                                    tr("Optimize imports(O)", "优化 import(O)"),
+                                    None,
+                                    CheckField::OptimizeImports,
+                                ),
+                                (
+                                    "commit-check-cleanup",
+                                    tr("Cleanup(L)", "清理(L)"),
+                                    Some(tr("Choose profile", "选择配置文件")),
+                                    CheckField::Cleanup,
+                                ),
+                                (
+                                    "commit-check-dependencies",
+                                    tr("Check for vulnerabilities", "检查恶意依赖项"),
+                                    None,
+                                    CheckField::CheckDependencies,
+                                ),
+                            ],
+                        ))
+                        // ── 高级 提交检查 ───────────────────
+                        .child(commit_section_header(
+                            tr("Advanced Commit Checks", "高级 提交检查"),
+                            border,
+                        ))
+                        .children(commit_check_group(
+                            cx,
+                            &checks,
+                            link,
+                            &[
+                                (
+                                    "commit-check-run-config",
+                                    tr("Run configuration", "运行配置"),
+                                    Some(tr("Choose configuration", "选择配置")),
+                                    CheckField::RunConfiguration,
+                                ),
+                                (
+                                    "commit-check-analyze",
+                                    tr("Analyze code(A)", "分析代码(A)"),
+                                    Some(tr("Choose profile", "选择配置文件")),
+                                    CheckField::AnalyzeCode,
+                                ),
+                                (
+                                    "commit-check-todo",
+                                    tr("Check TODO", "检查 TODO"),
+                                    Some(tr("Configure", "配置")),
+                                    CheckField::CheckTodo,
+                                ),
+                            ],
+                        ))
+                        .child(commit_check_row(
+                            "commit-check-advanced",
+                            checks.run_advanced_after_commit,
+                            tr("Run advanced checks after commit", "提交完成后运行高级检查"),
+                            None,
+                            cx.listener(|this, checked: &bool, _, cx| {
+                                this.state.commit_checks.run_advanced_after_commit = *checked;
+                                crate::ui::settings::persist_commit_checks(
+                                    &this.state.commit_checks,
+                                );
+                                cx.notify();
+                            }),
+                        ))
                         .child(
-                            Checkbox::new("commit-settings-allow-empty")
-                                .checked(self.state.allow_empty_commit_message)
-                                .label(tr("Allow empty commit message", "允许空提交信息"))
-                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                    this.state.allow_empty_commit_message = *checked;
-                                    cx.notify();
-                                })),
-                        );
+                            div()
+                                .pl(px(theme::SPACE_LG * 2.0 + theme::SPACE_MD))
+                                .text_size(px(theme::font_size_meta()))
+                                .text_color(muted)
+                                .child(tr(
+                                    "Failed checks will not prevent the commit",
+                                    "检查失败不会阻止提交",
+                                )),
+                        )
+                        // ── 在提交之后 ──────────────────────
+                        .child(commit_section_header(
+                            tr("After Commit", "在提交之后"),
+                            border,
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(theme::SPACE_MD))
+                                .pl(px(theme::SPACE_LG))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_size(px(theme::font_size_body()))
+                                        .child(tr("Upload files to:", "将文件上传到:")),
+                                )
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .w(px(180.0))
+                                        .h(px(theme::INPUT_HEIGHT_SINGLE))
+                                        .rounded(px(theme::RADIUS_SM))
+                                        .border_1()
+                                        .border_color(theme::input_border())
+                                        .bg(theme::input_bg())
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap(px(theme::SPACE_SM))
+                                        .pl(px(theme::SPACE_MD))
+                                        .pr(px(theme::SPACE_MD))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .text_size(px(theme::font_size_body()))
+                                                .child("<无>"),
+                                        )
+                                        .child(
+                                            Icon::new(Ic::ChevronDown)
+                                                .with_size(Size::XSmall)
+                                                .text_color(muted),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("commit-settings-upload-more")
+                                        .ghost()
+                                        .compact()
+                                        .label("…"),
+                                ),
+                        )
+                        .child(commit_check_row(
+                            "commit-check-server",
+                            checks.always_use_server,
+                            tr(
+                                "Always use selected server or server group",
+                                "始终使用选定服务器或服务器组",
+                            ),
+                            None,
+                            cx.listener(|this, checked: &bool, _, cx| {
+                                this.state.commit_checks.always_use_server = *checked;
+                                crate::ui::settings::persist_commit_checks(
+                                    &this.state.commit_checks,
+                                );
+                                cx.notify();
+                            }),
+                        ));
                     let footer = dialog_footer(
                         div().into_any_element(),
                         Button::new("commit-settings-done")
@@ -622,6 +836,130 @@ fn settings_section_label(text: impl Into<SharedString>) -> Div {
         .text_size(px(theme::font_size_meta()))
         .font_weight(theme::WEIGHT_MEDIUM)
         .child(text.into())
+}
+
+/// IDEA 设置页分组头：左侧分组名 + 右侧延伸到底的细分隔线（截图样式）。
+fn commit_section_header(text: impl Into<SharedString>, border: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(theme::SPACE_MD))
+        .child(
+            div()
+                .flex_none()
+                .text_size(px(theme::font_size_body()))
+                .font_weight(theme::WEIGHT_MEDIUM)
+                .child(text.into()),
+        )
+        .child(div().flex_1().h(px(1.0)).bg(border))
+}
+
+/// 提交设置里的单个复选框行（缩进一级，对齐 IDEA 设置页层级）。
+///
+/// `on_click` 直接接收 `cx.listener(...)` 的产物（`Fn(&bool, &mut Window, &mut App)`）；
+/// `link` 为 IDEA 里复选框右侧的蓝色配置链接（如「选择配置文件」），纯展示。
+fn commit_check_row(
+    id: &'static str,
+    checked: bool,
+    label: impl Into<SharedString>,
+    link: Option<(&'static str, Hsla)>,
+    on_click: impl Fn(&bool, &mut Window, &mut gpui::App) + 'static,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(theme::SPACE_LG))
+        .pl(px(theme::SPACE_LG))
+        .child(
+            Checkbox::new(id)
+                .checked(checked)
+                .label(label.into())
+                .on_click(on_click),
+        )
+        .children(link.map(|(text, color)| commit_settings_link(text, color)))
+        .into_any_element()
+}
+
+/// 「提交检查」组内的蓝色链接文字（IDEA 中指向对应配置页；纯展示）。
+fn commit_settings_link(text: &'static str, link: Hsla) -> Div {
+    div()
+        .flex_none()
+        .text_size(px(theme::font_size_body()))
+        .text_color(link)
+        .child(text)
+}
+
+/// 提交检查开关字段（用于批量构造复选框行时定位到具体字段）。
+#[derive(Clone, Copy)]
+enum CheckField {
+    UpdateCopyright,
+    ReformatCode,
+    RearrangeCode,
+    OptimizeImports,
+    Cleanup,
+    CheckDependencies,
+    RunConfiguration,
+    AnalyzeCode,
+    CheckTodo,
+}
+
+impl CheckField {
+    fn get(self, checks: &CommitChecks) -> bool {
+        match self {
+            Self::UpdateCopyright => checks.update_copyright,
+            Self::ReformatCode => checks.reformat_code,
+            Self::RearrangeCode => checks.rearrange_code,
+            Self::OptimizeImports => checks.optimize_imports,
+            Self::Cleanup => checks.cleanup,
+            Self::CheckDependencies => checks.check_dependencies,
+            Self::RunConfiguration => checks.run_configuration,
+            Self::AnalyzeCode => checks.analyze_code,
+            Self::CheckTodo => checks.check_todo,
+        }
+    }
+
+    fn set(self, checks: &mut CommitChecks, value: bool) {
+        match self {
+            Self::UpdateCopyright => checks.update_copyright = value,
+            Self::ReformatCode => checks.reformat_code = value,
+            Self::RearrangeCode => checks.rearrange_code = value,
+            Self::OptimizeImports => checks.optimize_imports = value,
+            Self::Cleanup => checks.cleanup = value,
+            Self::CheckDependencies => checks.check_dependencies = value,
+            Self::RunConfiguration => checks.run_configuration = value,
+            Self::AnalyzeCode => checks.analyze_code = value,
+            Self::CheckTodo => checks.check_todo = value,
+        }
+    }
+}
+
+/// 批量构造「提交检查」组的复选框行；点击即写回 state 并持久化。
+/// `items` 的第三项为复选框右侧的蓝色链接文字（无则 None）。
+fn commit_check_group(
+    cx: &mut Context<AppView>,
+    checks: &CommitChecks,
+    link: Hsla,
+    items: &[(&'static str, &'static str, Option<&'static str>, CheckField)],
+) -> Vec<AnyElement> {
+    items
+        .iter()
+        .map(|(id, label, link_text, field)| {
+            let field = *field;
+            commit_check_row(
+                id,
+                field.get(checks),
+                *label,
+                link_text.map(|text| (text, link)),
+                cx.listener(move |this, checked: &bool, _, cx| {
+                    field.set(&mut this.state.commit_checks, *checked);
+                    crate::ui::settings::persist_commit_checks(&this.state.commit_checks);
+                    cx.notify();
+                }),
+            )
+        })
+        .collect()
 }
 
 /// 设置面板互斥选项按钮（当前项 primary 高亮，其余 ghost）。

@@ -4,7 +4,7 @@ use super::command::{CancelToken, ProgressHandle};
 use super::conflict::{ConflictFile, HunkChoice};
 use super::error::Result;
 use super::merge::MergeMode;
-use super::ops::ResetMode;
+use super::ops::{CommitOptions, ResetMode};
 use super::rebase::RebaseAction;
 use super::repo::Repository;
 use super::types::{
@@ -52,6 +52,14 @@ pub trait GitBackend: Send + Sync {
     fn reset(&self, paths: &[&str]) -> Result<()>;
     fn commit(&self, message: &str, amend: bool) -> Result<()>;
     fn commit_paths(&self, message: &str, paths: &[&str], amend: bool) -> Result<()>;
+    /// 带选项的提交（作者覆盖 / Sign-off），`paths` 非空时限定提交路径。
+    fn commit_opts(
+        &self,
+        message: &str,
+        amend: bool,
+        paths: &[&str],
+        opts: &CommitOptions,
+    ) -> Result<()>;
     fn push(&self, branch: &str, set_upstream: bool) -> Result<()>;
     fn push_force(&self, branch: &str) -> Result<()>;
     fn push_tags(&self) -> Result<()>;
@@ -242,6 +250,17 @@ impl GitBackend for Repository {
 
     fn commit(&self, message: &str, amend: bool) -> Result<()> {
         Repository::commit(self, message, amend)
+    }
+
+    /// 带选项的提交（作者覆盖 / Sign-off / 路径限定），见 [`Repository::commit_opts`]。
+    fn commit_opts(
+        &self,
+        message: &str,
+        amend: bool,
+        paths: &[&str],
+        opts: &CommitOptions,
+    ) -> Result<()> {
+        Repository::commit_opts(self, message, amend, paths, opts)
     }
 
     fn commit_paths(&self, message: &str, paths: &[&str], amend: bool) -> Result<()> {

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use super::branches;
 use super::command::{CancelToken, GitCommand, ProgressHandle};
 use super::error::{GitError, Result};
-use super::ops;
+use super::ops::{self, CommitOptions};
 use super::status::STATUS_ARGS;
 use super::types::{
     Branch, Change, Commit, FileDiff, ReflogEntry, Remote, RepoStatus, StashEntry, Tag,
@@ -186,6 +186,19 @@ impl Repository {
 
     pub fn commit(&self, message: &str, amend: bool) -> Result<()> {
         ops::commit(&self.cmd, message, amend)
+    }
+
+    /// 带选项的提交（IDEA「提交设置」：作者覆盖 / Sign-off）；
+    /// `paths` 非空时先暂存并列路径、以路径限定提交（局部提交语义）。
+    pub fn commit_opts(
+        &self,
+        message: &str,
+        amend: bool,
+        paths: &[&str],
+        opts: &CommitOptions,
+    ) -> Result<()> {
+        ops::add(&self.cmd, paths)?;
+        ops::commit_opts(&self.cmd, message, amend, paths, opts)
     }
 
     pub fn commit_paths(&self, message: &str, paths: &[&str], amend: bool) -> Result<()> {

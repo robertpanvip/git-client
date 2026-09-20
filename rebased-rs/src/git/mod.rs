@@ -26,7 +26,7 @@ pub use diff::{hunk_patch, parse_unified_diff};
 pub use error::{GitError, Result};
 pub use graph::{Graph, GraphRow, MAX_COLORS, RowEdge, build_graph};
 pub use merge::MergeMode;
-pub use ops::ResetMode;
+pub use ops::{CommitOptions, ResetMode};
 pub use rebase::{RebaseAction, RebaseActionKind, autosquash_plan};
 pub use repo::Repository;
 pub use repo_data::{

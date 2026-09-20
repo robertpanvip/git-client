@@ -305,6 +305,10 @@ impl AppView {
     }
 
     pub(crate) fn open_prompt(&mut self, kind: PromptKind, cx: &mut Context<Self>) {
+        // 提交设置对话框需要首帧回显「作者(A)」当前值（见 render_prompt_overlay）。
+        if matches!(kind, PromptKind::CommitSettings) {
+            self.state.prompt_author_sync_pending = true;
+        }
         self.state.prompt = Some(kind);
         self.state.prompt_focus_pending = true;
         cx.notify();

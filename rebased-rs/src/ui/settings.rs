@@ -88,6 +88,68 @@ pub fn persist_editor_font_size(size: f32) {
     write_config_value("editor_font_size", &format!("{size:.1}"));
 }
 
+/// 提交设置：作者覆盖（IDEA「作者(A)」，空 = 使用仓库配置）。
+pub fn load_commit_author() -> String {
+    read_config_value("commit_author").unwrap_or_default()
+}
+
+pub fn persist_commit_author(author: &str) {
+    write_config_value("commit_author", author);
+}
+
+/// 提交设置：Sign-off 提交（`--signoff`）。
+pub fn load_commit_signoff() -> bool {
+    read_config_value("commit_signoff").is_some_and(|value| value == "1")
+}
+
+pub fn persist_commit_signoff(on: bool) {
+    write_config_value("commit_signoff", if on { "1" } else { "0" });
+}
+
+/// 提交设置：检查组开关（`key` 为 `commit_checks` 配置段内的一个名字）。
+fn load_check(key: &str, default: bool) -> bool {
+    read_config_value(&format!("commit_check_{key}"))
+        .map(|value| value == "1")
+        .unwrap_or(default)
+}
+
+fn persist_check(key: &str, on: bool) {
+    write_config_value(&format!("commit_check_{key}"), if on { "1" } else { "0" });
+}
+
+/// 启动时恢复提交检查组开关（缺省沿用 IDEA 默认值）。
+pub fn load_commit_checks() -> crate::ui::app::CommitChecks {
+    use crate::ui::app::CommitChecks;
+    let defaults = CommitChecks::default();
+    CommitChecks {
+        update_copyright: load_check("copyright", defaults.update_copyright),
+        reformat_code: load_check("reformat", defaults.reformat_code),
+        rearrange_code: load_check("rearrange", defaults.rearrange_code),
+        optimize_imports: load_check("imports", defaults.optimize_imports),
+        cleanup: load_check("cleanup", defaults.cleanup),
+        check_dependencies: load_check("dependencies", defaults.check_dependencies),
+        run_configuration: load_check("run_config", defaults.run_configuration),
+        analyze_code: load_check("analyze", defaults.analyze_code),
+        check_todo: load_check("todo", defaults.check_todo),
+        run_advanced_after_commit: load_check("advanced", defaults.run_advanced_after_commit),
+        always_use_server: load_check("server", defaults.always_use_server),
+    }
+}
+
+pub fn persist_commit_checks(checks: &crate::ui::app::CommitChecks) {
+    persist_check("copyright", checks.update_copyright);
+    persist_check("reformat", checks.reformat_code);
+    persist_check("rearrange", checks.rearrange_code);
+    persist_check("imports", checks.optimize_imports);
+    persist_check("cleanup", checks.cleanup);
+    persist_check("dependencies", checks.check_dependencies);
+    persist_check("run_config", checks.run_configuration);
+    persist_check("analyze", checks.analyze_code);
+    persist_check("todo", checks.check_todo);
+    persist_check("advanced", checks.run_advanced_after_commit);
+    persist_check("server", checks.always_use_server);
+}
+
 /// 追加一条启动/运行诊断日志到 `<数据目录>/startup.log`；任何失败静默忽略，
 /// 日志属于尽力而为的观测手段，不允许影响主流程。
 pub fn log_event(message: &str) {

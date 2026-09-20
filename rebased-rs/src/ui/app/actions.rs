@@ -1,7 +1,7 @@
 use gpui::{Action, App, AppContext, ClipboardItem, Context, KeyBinding, Window, actions};
 use gpui_kit::base::IndexPath;
 
-use rebased_rs::git::{Change, DEFAULT_LOG_LIMIT, MergeMode};
+use rebased_rs::git::{Change, CommitOptions, DEFAULT_LOG_LIMIT, MergeMode};
 
 use crate::ui::diff_view::{scroll_hunk_into_view, step_hunk};
 
@@ -193,12 +193,13 @@ impl AppView {
         }
         let amend = self.state.amend;
         let selected = self.state.selected_changes.clone();
+        let options = self.commit_options();
         self.message_input
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.state.amend = false;
         self.run_op(
             "Committed",
-            move |repo| commit_selected(repo, &message, amend, &selected),
+            move |repo| commit_selected(repo, &message, amend, &selected, &options),
             cx,
         );
     }
@@ -224,17 +225,27 @@ impl AppView {
         let set_upstream = self.state.current_upstream.is_none();
         let amend = self.state.amend;
         let selected = self.state.selected_changes.clone();
+        let options = self.commit_options();
         self.message_input
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.state.amend = false;
         self.run_op(
             "Committed & pushed",
             move |repo| {
-                commit_selected(repo, &message, amend, &selected)?;
+                commit_selected(repo, &message, amend, &selected, &options)?;
                 repo.push(&branch, set_upstream)
             },
             cx,
         );
+    }
+
+    /// 从提交设置收集本次提交的附加参数（作者覆盖 / Sign-off）。
+    fn commit_options(&self) -> CommitOptions {
+        let author = self.state.commit_author.trim().to_string();
+        CommitOptions {
+            author: (!author.is_empty()).then_some(author),
+            signoff: self.state.commit_signoff,
+        }
     }
 
     pub(crate) fn do_push(&mut self, cx: &mut Context<Self>) {

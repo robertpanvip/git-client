@@ -14,7 +14,7 @@ use gpui::{
 };
 use gpui_kit::component::{ActiveTheme, Icon, Sizable, Size, input::Input};
 
-use crate::ui::branch_tree::{BranchPick, render_branch_tree};
+use crate::ui::branch_tree::{BranchPick, GroupToggle, render_branch_tree};
 use crate::ui::components::empty_state;
 use crate::ui::i18n::tr;
 use crate::ui::icons::Ic;
@@ -68,6 +68,18 @@ impl AppView {
                 let _ = weak.update(app, |this, cx| this.set_branch_filter(branch, cx));
             })
         };
+        let on_toggle_group: GroupToggle = {
+            let weak: gpui::WeakEntity<AppView> = cx.entity().downgrade();
+            std::sync::Arc::new(move |key: &str, app: &mut gpui::App| {
+                let _ = weak.update(app, |this, cx| {
+                    let key = key.to_string();
+                    if !this.state.branch_groups_collapsed.remove(&key) {
+                        this.state.branch_groups_collapsed.insert(key);
+                    }
+                    cx.notify();
+                });
+            })
+        };
         let query = self.branch_query.read(cx).value().to_string();
         div()
             .w(px(theme::LOG_BRANCH_PANEL_WIDTH))
@@ -99,7 +111,9 @@ impl AppView {
                         self.state.head_id.as_deref(),
                         self.state.filter_branch.as_deref(),
                         &query,
+                        &self.state.branch_groups_collapsed,
                         Some(&on_pick),
+                        Some(&on_toggle_group),
                         cx,
                     )),
             )

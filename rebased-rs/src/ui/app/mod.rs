@@ -43,7 +43,8 @@ mod toolbar;
 mod use_cases;
 
 pub(crate) use state::{
-    AppState, ChangesTab, ConfirmAction, DiffSource, MainView, PromptKind, RebaseFlow, SidebarMode,
+    AppState, ChangesTab, CommitChecks, ConfirmAction, DiffSource, MainView, PromptKind,
+    RebaseFlow, SidebarMode,
 };
 use use_cases::{reload_conflict_state, sync_repo_state};
 
@@ -91,6 +92,8 @@ pub struct AppView {
     prompt_input: Entity<TextareaState>,
     /// AddRemote 对话框的第二个输入框（remote URL）。
     prompt_input2: Entity<TextareaState>,
+    /// 提交设置对话框的「作者(A)」输入框（Change 事件实时写回 state 并持久化）。
+    commit_author_input: Entity<TextareaState>,
     diff_edit_input: Entity<TextareaState>,
     /// 左栏（Commit 面板）宽度，用户可拖拽分隔条调整。
     commit_panel_width: f32,
@@ -132,6 +135,11 @@ impl AppView {
                 .placeholder("URL")
                 .soft_wrap(false)
         });
+        let commit_author_input = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder(tr("Optional — default is repo config", "可选 — 默认用仓库配置"))
+                .soft_wrap(false)
+        });
         let diff_edit_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .placeholder(tr("File content", "文件内容"))
@@ -144,6 +152,19 @@ impl AppView {
             cx.subscribe_in(&branch_query, window, |_, _, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
+                }
+            }),
+            // 提交设置「作者(A)」输入：变化实时写回 state 并持久化。
+            cx.subscribe_in(&commit_author_input, window, |this, _, event, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    let value = this
+                        .commit_author_input
+                        .read(cx)
+                        .value()
+                        .trim()
+                        .to_string();
+                    this.state.commit_author = value.clone();
+                    crate::ui::settings::persist_commit_author(&value);
                 }
             }),
             // 分支弹窗内的搜索同理：仅驱动弹窗内容过滤。
@@ -167,6 +188,7 @@ impl AppView {
             message_input,
             prompt_input,
             prompt_input2,
+            commit_author_input,
             diff_edit_input,
             commit_panel_width: theme::COMMIT_PANEL_WIDTH,
             right_panel_width: SidebarMode::Workspace.default_width(),

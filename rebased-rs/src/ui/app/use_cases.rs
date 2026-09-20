@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use rebased_rs::git::{
-    Commit, GitBackend, GitError, Graph, HunkChoice, RepoData, conflict_hunks, parse_unified_diff,
+    Commit, CommitOptions, GitBackend, GitError, Graph, HunkChoice, RepoData, conflict_hunks,
+    parse_unified_diff,
 };
 #[cfg(test)]
 use rebased_rs::git::{DEFAULT_LOG_LIMIT, load_repo_data, open_backend};
@@ -14,6 +15,7 @@ pub(crate) fn commit_with_autoadd(
     repo: &dyn GitBackend,
     message: &str,
     amend: bool,
+    opts: &CommitOptions,
 ) -> Result<(), GitError> {
     if !amend {
         let status = repo.status()?;
@@ -21,7 +23,7 @@ pub(crate) fn commit_with_autoadd(
             repo.add_all()?;
         }
     }
-    repo.commit(message, amend)
+    repo.commit_opts(message, amend, &[], opts)
 }
 
 pub(crate) fn commit_selected(
@@ -29,12 +31,13 @@ pub(crate) fn commit_selected(
     message: &str,
     amend: bool,
     paths: &[String],
+    opts: &CommitOptions,
 ) -> Result<(), GitError> {
     if paths.is_empty() {
-        commit_with_autoadd(repo, message, amend)
+        commit_with_autoadd(repo, message, amend, opts)
     } else {
         let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
-        repo.commit_paths(message, &refs, amend)
+        repo.commit_opts(message, amend, &refs, opts)
     }
 }
 
@@ -482,7 +485,7 @@ mod tests {
         let repo_dir = TempRepo::new();
         let repo = open_backend(&repo_dir.path).unwrap();
         std::fs::write(repo_dir.path.join("a.txt"), "hello").unwrap();
-        commit_with_autoadd(repo.as_ref(), "add file", false).unwrap();
+        commit_with_autoadd(repo.as_ref(), "add file", false, &CommitOptions::default()).unwrap();
         let status = repo.status().unwrap();
         assert!(status.changes.is_empty());
         let log = repo.log(5).unwrap();
@@ -530,6 +533,7 @@ mod tests {
             "partial commit",
             false,
             &["a.txt".to_string()],
+            &CommitOptions::default(),
         )
         .unwrap();
         let status = repo.status().unwrap();

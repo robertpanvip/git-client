@@ -293,6 +293,46 @@ impl RebaseFlow {
     }
 }
 
+/// IDEA「提交检查 / 高级 提交检查 / 在提交之后」设置组的开关集合。
+///
+/// 这些检查在 IntelliJ 里由 IDE 功能驱动（版权更新、代码格式化等）；
+/// 独立 git 客户端中作为持久化偏好原样呈现，实际执行只包含 git 层能做的
+/// 作者覆盖与 Sign-off。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CommitChecks {
+    pub(crate) update_copyright: bool,
+    pub(crate) reformat_code: bool,
+    pub(crate) rearrange_code: bool,
+    pub(crate) optimize_imports: bool,
+    pub(crate) cleanup: bool,
+    pub(crate) check_dependencies: bool,
+    pub(crate) run_configuration: bool,
+    pub(crate) analyze_code: bool,
+    pub(crate) check_todo: bool,
+    pub(crate) run_advanced_after_commit: bool,
+    pub(crate) always_use_server: bool,
+}
+
+impl Default for CommitChecks {
+    fn default() -> Self {
+        // IDEA 默认值：仅「分析代码 / 检查 TODO / 提交完成后运行高级检查 /
+        // 始终使用选定服务器」勾选。
+        Self {
+            update_copyright: false,
+            reformat_code: false,
+            rearrange_code: false,
+            optimize_imports: false,
+            cleanup: false,
+            check_dependencies: false,
+            run_configuration: false,
+            analyze_code: true,
+            check_todo: true,
+            run_advanced_after_commit: true,
+            always_use_server: true,
+        }
+    }
+}
+
 pub(crate) struct AppState {
     pub(crate) branches: Arc<Vec<String>>,
     /// 本地 + 远程分支的完整信息（tracking/ahead/behind），供 Branches 菜单展示。
@@ -323,6 +363,8 @@ pub(crate) struct AppState {
     pub(crate) detail_branches: Vec<String>,
     /// 详情面板文件树中折叠的目录路径（单链折叠后的展示路径）；不在集合内即展开。
     pub(crate) detail_tree_collapsed: HashSet<String>,
+    /// 分支树中折叠的分组（"local" / "remote"）；不在集合内即展开（IDEA 分支树同款）。
+    pub(crate) branch_groups_collapsed: HashSet<String>,
     pub(crate) sidebar: SidebarMode,
     /// 变更面板当前页签（Commit 面板内切换变更列表 / 贮藏列表）。
     pub(crate) changes_tab: ChangesTab,
@@ -370,11 +412,19 @@ pub(crate) struct AppState {
     pub(crate) pending_stage_gen: u64,
     /// 提交设置：允许空提交信息（IDEA 关闭空信息检查的对应项）。
     pub(crate) allow_empty_commit_message: bool,
+    /// 提交设置：作者覆盖（IDEA「作者(A)」输入框；空 = 使用仓库配置）。
+    pub(crate) commit_author: String,
+    /// 提交设置：Sign-off 提交（`--signoff`）。
+    pub(crate) commit_signoff: bool,
+    /// 提交设置：IDEA「提交检查 / 高级 提交检查 / 在提交之后」组的开关集合。
+    pub(crate) commit_checks: CommitChecks,
     pub(crate) blame_groups: Vec<BlameGroup>,
     pub(crate) blame_path: String,
     pub(crate) prompt: Option<PromptKind>,
     /// 对话框刚打开、等待首帧聚焦输入框（渲染一次后清除，避免每帧抢焦点）。
     pub(crate) prompt_focus_pending: bool,
+    /// 提交设置对话框刚打开、等待首帧把「作者(A)」输入框同步为当前设置值。
+    pub(crate) prompt_author_sync_pending: bool,
     /// Stash 对话框选项：保留暂存区（--keep-index）。
     pub(crate) prompt_stash_keep_index: bool,
     /// Stash 对话框选项：包含未跟踪文件（--include-untracked）。
@@ -448,6 +498,7 @@ impl Default for AppState {
             detail_files: Vec::new(),
             detail_branches: Vec::new(),
             detail_tree_collapsed: HashSet::new(),
+            branch_groups_collapsed: HashSet::new(),
             sidebar: SidebarMode::Workspace,
             changes_tab: ChangesTab::Changes,
             changes_collapsed: HashSet::new(),
@@ -474,10 +525,14 @@ impl Default for AppState {
             commit_diff_tabs: Vec::new(),
             pending_stage_gen: 0,
             allow_empty_commit_message: false,
+            commit_author: crate::ui::settings::load_commit_author(),
+            commit_signoff: crate::ui::settings::load_commit_signoff(),
+            commit_checks: crate::ui::settings::load_commit_checks(),
             blame_groups: Vec::new(),
             blame_path: String::new(),
             prompt: None,
             prompt_focus_pending: false,
+            prompt_author_sync_pending: false,
             prompt_stash_keep_index: false,
             prompt_stash_include_untracked: true,
             prompt_merge_mode: MergeMode::NoFastForward,

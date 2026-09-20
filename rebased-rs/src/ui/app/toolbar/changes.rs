@@ -9,7 +9,7 @@ use gpui::{
 use gpui_kit::base::CheckboxState;
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, Size,
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonVariants, DropdownButton},
     input::Textarea,
     menu::ContextMenuExt,
 };
@@ -608,30 +608,46 @@ impl AppView {
                         cx.notify();
                     })),
             )
-            // 主操作区（IDEA Commit 工具窗）：「提交」primary 主按钮占满剩余宽度，
-            // 右侧「提交并推送」次级按钮，最右为提交设置齿轮。
+            // 主操作区（IDEA Commit 工具窗）：「提交」primary split 按钮
+            //（主体=提交，caret 下拉=提交并推送…），最右为提交设置齿轮。
             // 贮藏入口收敛在 Alt+` VCS 快切与 Shelve 页签，不再挤占提交操作区。
             .child(
                 div()
                     .flex_none()
                     .flex()
                     .flex_row()
+                    .items_center()
                     .gap(px(theme::SPACE_SM))
                     .child(
-                        Button::new("composer-commit")
-                            .primary()
-                            .flex_1()
-                            .label(commit_label)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.do_commit(window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("composer-commit-push")
-                            .label(tr("Commit and Push…", "提交并推送…"))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.do_commit_and_push(window, cx)
-                            })),
+                        div().flex_1().min_w_0().child(
+                            DropdownButton::new("composer-commit")
+                                .button(
+                                    Button::new("composer-commit-btn")
+                                        .primary()
+                                        .label(commit_label)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.do_commit(window, cx)
+                                        })),
+                                )
+                                .dropdown_menu({
+                                    let weak = cx.entity().downgrade();
+                                    move |menu, _, _| {
+                                        let weak = weak.clone();
+                                        menu.item(menu_item(
+                                            Ic::Push,
+                                            tr("Commit and Push…", "提交并推送…"),
+                                            None,
+                                            false,
+                                            false,
+                                            move |_, window, app| {
+                                                let _ = weak.update(app, |this, cx| {
+                                                    this.do_commit_and_push(window, cx)
+                                                });
+                                            },
+                                        ))
+                                    }
+                                }),
+                        ),
                     )
                     .child(
                         row_icon_button(

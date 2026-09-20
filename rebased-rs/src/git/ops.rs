@@ -24,12 +24,44 @@ pub fn reset(cmd: &GitCommand, paths: &[&str]) -> Result<()> {
     cmd.run_ok(&args)
 }
 
+/// 单次提交的附加选项（对应 IDEA「提交设置」中的 Git 段）。
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub struct CommitOptions {
+    /// 覆盖本次提交的作者（`--author`）；None / 空串 = 使用仓库配置。
+    pub author: Option<String>,
+    /// 在提交信息中附加 `Signed-off-by`（`--signoff`）。
+    pub signoff: bool,
+}
+
 pub fn commit(cmd: &GitCommand, message: &str, amend: bool) -> Result<()> {
-    let mut args = vec!["commit", "-m", message];
+    commit_opts(cmd, message, amend, &[], &CommitOptions::default())
+}
+
+/// 组装并执行 `git commit`：附加 `--amend` / `--signoff` / `--author`，
+/// `paths` 非空时以 `-- <paths>` 限定本次提交的路径（IDEA 局部提交语义）。
+pub fn commit_opts(
+    cmd: &GitCommand,
+    message: &str,
+    amend: bool,
+    paths: &[&str],
+    opts: &CommitOptions,
+) -> Result<()> {
+    let mut args: Vec<String> = vec!["commit".into(), "-m".into(), message.into()];
     if amend {
-        args.push("--amend");
+        args.push("--amend".into());
     }
-    cmd.run_ok(&args)
+    if opts.signoff {
+        args.push("--signoff".into());
+    }
+    if let Some(author) = opts.author.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+        args.push(format!("--author={author}"));
+    }
+    if !paths.is_empty() {
+        args.push("--".into());
+        args.extend(paths.iter().map(|path| path.to_string()));
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    cmd.run_ok(&refs)
 }
 
 pub fn commit_paths(cmd: &GitCommand, message: &str, paths: &[&str], amend: bool) -> Result<()> {
@@ -37,13 +69,7 @@ pub fn commit_paths(cmd: &GitCommand, message: &str, paths: &[&str], amend: bool
     if paths.is_empty() && !amend {
         return Ok(());
     }
-    let mut args: Vec<&str> = if amend {
-        vec!["commit", "--amend", "-m", message, "--"]
-    } else {
-        vec!["commit", "-m", message, "--"]
-    };
-    args.extend_from_slice(paths);
-    cmd.run_ok(&args)
+    commit_opts(cmd, message, amend, paths, &CommitOptions::default())
 }
 
 pub fn push(cmd: &GitCommand, remote: &str, branch: &str, set_upstream: bool) -> Result<()> {

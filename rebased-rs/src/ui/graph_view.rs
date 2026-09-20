@@ -114,10 +114,15 @@ impl LaneCanvas {
         }
 
         // 圆点：圆心 = (lane_x(lane), row center)，不叠加任何平移。
-        // HEAD 提交为环形节点（外径 12px / 环厚 2px + 中心小圆点），
-        // 其余提交为实心圆；merge 提交在实心圆上再挖空中心。
+        // HEAD 提交为环形节点（外径 12px / 环厚 2px + 中心小圆点），颜色用
+        // 专用橙色（原版 HEAD 标记色，不随泳道色变化）；其余提交为实心圆；
+        // merge 提交在实心圆上再挖空中心。
         let x = left + lane_x(self.lane);
-        let color = lane_color(self.color);
+        let color = if self.is_head {
+            crate::ui::theme::head_dot_color()
+        } else {
+            lane_color(self.color)
+        };
         if self.is_head {
             window.paint_quad(
                 fill(
